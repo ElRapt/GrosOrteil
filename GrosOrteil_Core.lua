@@ -223,7 +223,15 @@ function Core.DamageWithArmor(amount)
   local s = Core.state
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
-  local mit = (s.armor or 0) + (s.tempBlock or 0) + (s.trueArmor or 0)
+
+  local block = math.max(0, s.tempBlock or 0)
+  if block > 0 and amount > 0 then
+    local absorbed = math.min(block, amount)
+    s.tempBlock = block - absorbed
+    amount = amount - absorbed
+  end
+
+  local mit = (s.armor or 0) + (s.trueArmor or 0)
   s.hp = (s.hp or 0) - effDmg(amount, mit)
   updateWoundsSticky(s)
   bump(); notify()

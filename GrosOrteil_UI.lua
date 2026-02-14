@@ -177,6 +177,15 @@ function ns.UI_Init()
   UI.hpText = hpText
   hpText:SetPoint("CENTER")
 
+
+  local blockOverlay = hpBar:CreateTexture(nil, "OVERLAY")
+  UI.hpBlockOverlay = blockOverlay
+  blockOverlay:SetTexture("Interface/Buttons/WHITE8x8")
+  blockOverlay:SetColorTexture(0.65, 0.65, 0.65, 0.55)
+  blockOverlay:SetPoint("TOP", hpBar, "TOP", 0, 0)
+  blockOverlay:SetPoint("BOTTOM", hpBar, "BOTTOM", 0, 0)
+  blockOverlay:Hide()
+
   -- Marqueurs 50/25/10%
   UI.hpMarkers = {}
   local function makeMarker(parent, pct)
@@ -390,6 +399,35 @@ function ns.UI_Init()
     local hpPct = (s.maxHp and s.maxHp > 0) and (s.hp / s.maxHp) or 0
     hpBar:SetValue(math.max(0, math.min(1, hpPct)))
     hpText:SetText(string.format("PV : %d / %d (%d%%)", s.hp or 0, s.maxHp or 0, roundPct(hpPct)))
+
+    -- Blocage overlay (gris)
+    if UI.hpBlockOverlay then
+      local maxHp = (s.maxHp or 0)
+      local block = math.max(0, s.tempBlock or 0)
+      local wBar = hpBar:GetWidth() or 0
+
+      local hpFrac = 0
+      if maxHp > 0 then hpFrac = (s.hp or 0) / maxHp end
+      hpFrac = math.max(0, math.min(1, hpFrac))
+
+      local blockFrac = 0
+      if maxHp > 0 then blockFrac = block / maxHp end
+      blockFrac = math.max(0, blockFrac)
+
+      local startX = wBar * hpFrac
+      local avail = wBar - startX
+      local blockW = math.min(avail, wBar * blockFrac)
+
+      if blockW > 0.5 and avail > 0.5 then
+        UI.hpBlockOverlay:Show()
+        UI.hpBlockOverlay:ClearAllPoints()
+        UI.hpBlockOverlay:SetPoint("TOPLEFT", hpBar, "TOPLEFT", startX, 0)
+        UI.hpBlockOverlay:SetPoint("BOTTOMLEFT", hpBar, "BOTTOMLEFT", startX, 0)
+        UI.hpBlockOverlay:SetWidth(blockW)
+      else
+        UI.hpBlockOverlay:Hide()
+      end
+    end
 
     local w = hpBar:GetWidth()
     for i = 1, #UI.hpMarkers do
