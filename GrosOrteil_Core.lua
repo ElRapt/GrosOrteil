@@ -181,6 +181,15 @@ local function clampToMax(s, valueKey, maxKey)
   end
 end
 
+local WARLOCK_CORRUPTION_MAX = 60
+
+local function clampWarlockCorruption(s)
+  if not s then return end
+  s.maxRes2 = WARLOCK_CORRUPTION_MAX
+  if type(s.res2) ~= "number" then s.res2 = 0 end
+  if s.res2 < 0 then s.res2 = 0 elseif s.res2 > WARLOCK_CORRUPTION_MAX then s.res2 = WARLOCK_CORRUPTION_MAX end
+end
+
 local function effDmg(dmg, mitigation)
   dmg = math.max(0, dmg or 0)
   mitigation = math.max(0, mitigation or 0)
@@ -196,7 +205,6 @@ function ns.Core_Init()
     hp = 50, maxHp = 50,
     bonusHp = 0,
     classKey = nil,
-    resEnabled = true,
     res = 20, maxRes = 20,
     res2 = 0, maxRes2 = 20,
     res3 = 0, maxRes3 = 20,
@@ -240,7 +248,6 @@ function ns.Core_Init()
 
   if db.state.dodge == nil then db.state.dodge = 0 end
   if db.state.tempMagicBlock == nil then db.state.tempMagicBlock = 0 end
-  if db.state.resEnabled == nil then db.state.resEnabled = true end
 
   -- Ensure multi-resource fields exist (Warlock/Shadow Priest/Shaman).
   if db.state.res2 == nil then db.state.res2 = 0 end
@@ -270,9 +277,7 @@ function Core.SetClassKey(classKey)
 
   -- Warlock: Corruption has a fixed max of 60.
   if classKey == "WARLOCK" then
-    s.maxRes2 = 60
-    if type(s.res2) ~= "number" then s.res2 = 0 end
-    if s.res2 < 0 then s.res2 = 0 elseif s.res2 > 60 then s.res2 = 60 end
+    clampWarlockCorruption(s)
   end
   bump(); notify()
 end
@@ -342,8 +347,8 @@ function Core.SetResIndex(i, res, maxRes)
   local isShadowInsanity = (i == 2 and s.classKey == "SHADOWPRIEST")
 
   if isWarlockCorruption then
-    maxRes = 60
-    res = clampNumber(res, 0, 60)
+    maxRes = WARLOCK_CORRUPTION_MAX
+    res = clampNumber(res, 0, WARLOCK_CORRUPTION_MAX)
   else
     res = clampNumber(res, -1e9, 1e9)
     maxRes = clampNumber(maxRes, 1, 1e9)
@@ -356,9 +361,7 @@ function Core.SetResIndex(i, res, maxRes)
   end
 
   if isWarlockCorruption then
-    if type(s[resKey]) ~= "number" then s[resKey] = 0 end
-    if s[resKey] < 0 then s[resKey] = 0 elseif s[resKey] > 60 then s[resKey] = 60 end
-    s[maxKey] = 60
+    clampWarlockCorruption(s)
   end
   bump(); notify()
 end
@@ -375,18 +378,10 @@ function Core.AddResIndex(i, amount)
   s[resKey] = (s[resKey] or 0) + amount
 
   if isWarlockCorruption then
-    if maxKey then s[maxKey] = 60 end
-    if s[resKey] < 0 then s[resKey] = 0 elseif s[resKey] > 60 then s[resKey] = 60 end
+    clampWarlockCorruption(s)
   elseif not isShadowInsanity then
     clampToMax(s, resKey, maxKey)
   end
-  bump(); notify()
-end
-
-function Core.SetResEnabled(enabled)
-  local s = Core.state
-  if not s then return end
-  s.resEnabled = not not enabled
   bump(); notify()
 end
 

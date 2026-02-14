@@ -17,40 +17,86 @@ local CLASS_STYLES = {
   SHAMAN = { label = "Points élémentaires", r = 0.00, g = 0.44, b = 0.87 },
 }
 
+local RES_PROFILES_BY_CLASS = {
+  WARRIOR = {},
+  MEDIC = {
+    { idx = 1, label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 },
+  },
+  WARLOCK = {
+    { idx = 1, label = "Energie gangrénée", r = 0.20, g = 0.85, b = 0.25 },
+    { idx = 2, label = "Corruption", r = 0.55, g = 0.20, b = 0.85 },
+  },
+  SHADOWPRIEST = {
+    { idx = 1, label = "Points de foi", r = 1.0, g = 1.0, b = 1.0 },
+    { idx = 2, label = "Insanité", r = 0.60, g = 0.20, b = 0.85 },
+  },
+  SHAMAN = {
+    { idx = 1, label = "Terre", r = 0.55, g = 0.35, b = 0.15 },
+    { idx = 2, label = "Air", r = 0.60, g = 0.95, b = 0.95 },
+    { idx = 3, label = "Eau", r = 0.20, g = 0.55, b = 1.00 },
+    { idx = 4, label = "Feu", r = 1.00, g = 0.35, b = 0.10 },
+  },
+}
+
 local function getResProfile(classKey)
   -- Returns an array of { idx=1..4, label=string, r/g/b }
-  if classKey == "WARRIOR" then
-    return {}
-  end
-  if classKey == "MEDIC" then
-    return {
-      { idx = 1, label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 },
-    }
-  end
-  if classKey == "WARLOCK" then
-    return {
-      { idx = 1, label = "Energie gangrénée", r = 0.20, g = 0.85, b = 0.25 },
-      { idx = 2, label = "Corruption", r = 0.55, g = 0.20, b = 0.85 },
-    }
-  elseif classKey == "SHADOWPRIEST" then
-    return {
-      { idx = 1, label = "Points de foi", r = 1.0, g = 1.0, b = 1.0 },
-      { idx = 2, label = "Insanité", r = 0.60, g = 0.20, b = 0.85 },
-    }
-  elseif classKey == "SHAMAN" then
-    return {
-      { idx = 1, label = "Terre", r = 0.55, g = 0.35, b = 0.15 },
-      { idx = 2, label = "Air", r = 0.60, g = 0.95, b = 0.95 },
-      { idx = 3, label = "Eau", r = 0.20, g = 0.55, b = 1.00 },
-      { idx = 4, label = "Feu", r = 1.00, g = 0.35, b = 0.10 },
-    }
-  end
-
+  local p = (type(classKey) == "string") and RES_PROFILES_BY_CLASS[classKey] or nil
+  if p then return p end
   local s = (type(classKey) == "string" and CLASS_STYLES[classKey]) or nil
   if s then
     return { { idx = 1, label = s.label or "Ressource", r = s.r or 0.2, g = s.g or 0.55, b = s.b or 1.0 } }
   end
   return { { idx = 1, label = "Ressource", r = 0.20, g = 0.55, b = 1.00 } }
+end
+
+local function getKeysForIdx(i)
+  if i == 1 then return "res", "maxRes" end
+  if i == 2 then return "res2", "maxRes2" end
+  if i == 3 then return "res3", "maxRes3" end
+  if i == 4 then return "res4", "maxRes4" end
+  return nil, nil
+end
+
+local function applyResTextColor(txt)
+  if not txt or not txt.SetTextColor then return end
+  txt:SetTextColor(1, 1, 1, 1)
+end
+
+local function setEditBoxEnabled(eb, enabled)
+  if not eb then return end
+  if enabled then
+    if eb.Enable then eb:Enable()
+    elseif eb.EnableMouse then eb:EnableMouse(true) end
+    if eb.SetAlpha then eb:SetAlpha(1) end
+  else
+    if eb.Disable then eb:Disable()
+    elseif eb.EnableMouse then eb:EnableMouse(false) end
+    if eb.SetAlpha then eb:SetAlpha(0.55) end
+  end
+end
+
+local function hideMarkers(markers)
+  if not markers then return end
+  for j = 1, #markers do
+    local m = markers[j]
+    if m then m:Hide() end
+  end
+end
+
+local function positionMarkers(markers, bar)
+  if not markers or not bar or not bar.GetWidth then return end
+  local wBar = bar:GetWidth() or 0
+  if wBar <= 0 then return end
+  for j = 1, #markers do
+    local m = markers[j]
+    if m then
+      m:Show()
+      local x = wBar * (m.pct or 0)
+      if x < 0 then x = 0 elseif x > wBar then x = wBar end
+      m:ClearAllPoints()
+      m:SetPoint("LEFT", bar, "LEFT", x, 0)
+    end
+  end
 end
 
 local function setClassIconTexCoords(tex, classKey)
@@ -157,12 +203,6 @@ function ns.UI_Init()
   local db = GrosOrteilDB
   db.ui = db.ui or { point = "CENTER", x = 0, y = 0, shown = true }
 
-  -- One-time UI migration: after widening the frame, recenter once.
-  if not db.ui._migrated_20260214 then
-    db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
-    db.ui._migrated_20260214 = true
-  end
-
   if not db.ui._migrated_20260214_wide then
     db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
     db.ui._migrated_20260214_wide = true
@@ -180,6 +220,33 @@ function ns.UI_Init()
   local frame = CreateFrame("Frame", "GrosOrteilFrame", UIParent, "BackdropTemplate")
   UI.frame = frame
   frame:SetSize(FRAME_W, FRAME_H)
+
+  -- QoL: allow ESC to close the window.
+  -- WoW closes frames listed in UISpecialFrames when pressing Escape.
+  do
+    if type(UISpecialFrames) ~= "table" then
+      UISpecialFrames = {}
+    end
+    local found = false
+    for i = 1, #UISpecialFrames do
+      if UISpecialFrames[i] == "GrosOrteilFrame" then
+        found = true
+        break
+      end
+    end
+    if not found then
+      UISpecialFrames[#UISpecialFrames + 1] = "GrosOrteilFrame"
+    end
+  end
+
+  -- Keep SavedVariables in sync even when the frame is closed by ESC.
+  frame:SetScript("OnShow", function()
+    if db and db.ui then db.ui.shown = true end
+  end)
+  frame:SetScript("OnHide", function()
+    if db and db.ui then db.ui.shown = false end
+  end)
+
   frame:SetClampedToScreen(true)
   frame:SetMovable(true)
   frame:EnableMouse(true)
@@ -341,25 +408,25 @@ function ns.UI_Init()
     mkResBar(i)
   end
 
+  local function makeThresholdMarker(bar, val, denom, r, g, b, a, w)
+    local t = bar:CreateTexture(nil, "OVERLAY")
+    t:SetTexture("Interface/Buttons/WHITE8x8")
+    t:SetWidth(w or 2)
+    t:SetHeight(bar:GetHeight() or 14)
+    t:SetColorTexture(r or 1, g or 1, b or 1, a or 0.45)
+    t.pct = (val or 0) / (denom or 1)
+    t:Hide()
+    return t
+  end
+
   -- Warlock Corruption thresholds (max always 60)
   UI.corruptionMarkers = {}
   do
     local bar = UI.resBars[2]
     if bar then
-      local function makeCorruptionMarker(val, r, g, b, a, w)
-        local t = bar:CreateTexture(nil, "OVERLAY")
-        t:SetTexture("Interface/Buttons/WHITE8x8")
-        t:SetWidth(w or 2)
-        t:SetHeight(bar:GetHeight() or 14)
-        t:SetColorTexture(r or 1, g or 1, b or 1, a or 0.45)
-        t.pct = (val or 0) / 60
-        t:Hide()
-        return t
-      end
-
-      UI.corruptionMarkers[1] = makeCorruptionMarker(10, 0.65, 0.95, 0.65, 0.55, 2) -- passive
-      UI.corruptionMarkers[2] = makeCorruptionMarker(25, 1.00, 0.82, 0.22, 0.55, 2) -- moyenne
-      UI.corruptionMarkers[3] = makeCorruptionMarker(45, 1.00, 0.25, 0.25, 0.65, 3) -- strong
+      UI.corruptionMarkers[1] = makeThresholdMarker(bar, 10, 60, 0.65, 0.95, 0.65, 0.55, 2) -- passive
+      UI.corruptionMarkers[2] = makeThresholdMarker(bar, 25, 60, 1.00, 0.82, 0.22, 0.55, 2) -- moyenne
+      UI.corruptionMarkers[3] = makeThresholdMarker(bar, 45, 60, 1.00, 0.25, 0.25, 0.65, 3) -- strong
     end
   end
 
@@ -368,21 +435,10 @@ function ns.UI_Init()
   do
     local bar = UI.resBars[2]
     if bar then
-      local function makeInsanityMarker(val, r, g, b, a, w)
-        local t = bar:CreateTexture(nil, "OVERLAY")
-        t:SetTexture("Interface/Buttons/WHITE8x8")
-        t:SetWidth(w or 2)
-        t:SetHeight(bar:GetHeight() or 14)
-        t:SetColorTexture(r or 1, g or 1, b or 1, a or 0.45)
-        t.pct = (val or 0) / 25
-        t:Hide()
-        return t
-      end
-
-      UI.insanityMarkers[1] = makeInsanityMarker(4, 0.65, 0.95, 0.65, 0.45, 2)   -- start légère
-      UI.insanityMarkers[2] = makeInsanityMarker(12, 1.00, 0.82, 0.22, 0.55, 2)  -- start forte
-      UI.insanityMarkers[3] = makeInsanityMarker(20, 1.00, 0.55, 0.10, 0.60, 2)  -- start intense
-      UI.insanityMarkers[4] = makeInsanityMarker(25, 1.00, 0.25, 0.25, 0.70, 3)  -- cap / folie latente
+      UI.insanityMarkers[1] = makeThresholdMarker(bar, 4, 25, 0.65, 0.95, 0.65, 0.45, 2)   -- start légère
+      UI.insanityMarkers[2] = makeThresholdMarker(bar, 12, 25, 1.00, 0.82, 0.22, 0.55, 2)  -- start forte
+      UI.insanityMarkers[3] = makeThresholdMarker(bar, 20, 25, 1.00, 0.55, 0.10, 0.60, 2)  -- start intense
+      UI.insanityMarkers[4] = makeThresholdMarker(bar, 25, 25, 1.00, 0.25, 0.25, 0.70, 3)  -- cap / folie latente
     end
   end
 
@@ -524,11 +580,6 @@ function ns.UI_Init()
     local function apply()
       if Core and Core.SetResIndex then
         Core.SetResIndex(idx, getNumber(curEB), getNumber(maxEB))
-      else
-        -- Backward compatibility (should not happen in this build)
-        if idx == 1 and Core and Core.SetRes then
-          Core.SetRes(getNumber(curEB), getNumber(maxEB))
-        end
       end
     end
 
@@ -541,15 +592,11 @@ function ns.UI_Init()
     mkButton(row, "+", 28, 20, 368, 2, function()
       if Core and Core.AddResIndex then
         Core.AddResIndex(idx, getNumber(resDeltaEB) or 0)
-      elseif idx == 1 and Core and Core.AddRes then
-        Core.AddRes(getNumber(resDeltaEB) or 0)
       end
     end)
     mkButton(row, "-", 28, 20, 400, 2, function()
       if Core and Core.AddResIndex then
         Core.AddResIndex(idx, -(getNumber(resDeltaEB) or 0))
-      elseif idx == 1 and Core and Core.AddRes then
-        Core.AddRes(-(getNumber(resDeltaEB) or 0))
       end
     end)
 
@@ -639,7 +686,6 @@ function ns.UI_Init()
   UI.inputs = {
     hpCur = hpCur, hpMax = hpMax,
     tempHp = tempHpEB,
-    resCur = UI.resRowCur[1], resMax = UI.resRowMax[1],
     armor = armorEB, trueArmor = trueArmorEB,
     dodge = dodgeEB,
     block = blockEB,
@@ -859,18 +905,8 @@ function ns.UI_Init()
     end
 
     -- Default: hide resource threshold markers; they'll be re-shown when applicable.
-    if UI.corruptionMarkers then
-      for j = 1, #UI.corruptionMarkers do
-        local m = UI.corruptionMarkers[j]
-        if m then m:Hide() end
-      end
-    end
-    if UI.insanityMarkers then
-      for j = 1, #UI.insanityMarkers do
-        local m = UI.insanityMarkers[j]
-        if m then m:Hide() end
-      end
-    end
+    hideMarkers(UI.corruptionMarkers)
+    hideMarkers(UI.insanityMarkers)
 
     -- Move tabs under the last active resource bar.
     do
@@ -900,22 +936,6 @@ function ns.UI_Init()
         UI.tabStrip:ClearAllPoints()
         UI.tabStrip:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
         UI.tabStrip:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -10)
-      end
-    end
-
-    local function getKeysForIdx(i)
-      if i == 1 then return "res", "maxRes" end
-      if i == 2 then return "res2", "maxRes2" end
-      if i == 3 then return "res3", "maxRes3" end
-      if i == 4 then return "res4", "maxRes4" end
-      return nil, nil
-    end
-
-    -- Default: hide warlock corruption markers; they'll be re-shown when applicable.
-    if UI.corruptionMarkers then
-      for j = 1, #UI.corruptionMarkers do
-        local m = UI.corruptionMarkers[j]
-        if m then m:Hide() end
       end
     end
 
@@ -949,11 +969,7 @@ function ns.UI_Init()
           if maxEB then setNumber(maxEB, maxv) end
 
           -- Ensure max boxes are editable for Shaman (avoid staying disabled after WARLOCK/SHADOWPRIEST).
-          if maxEB then
-            if maxEB.Enable then maxEB:Enable()
-            elseif maxEB.EnableMouse then maxEB:EnableMouse(true) end
-            if maxEB.SetAlpha then maxEB:SetAlpha(1) end
-          end
+          setEditBoxEnabled(maxEB, true)
         end
 
         -- After the loop's first iteration, update the stacked bar visuals.
@@ -1009,6 +1025,7 @@ function ns.UI_Init()
           end
 
           if txt then
+            applyResTextColor(txt)
             txt:SetText(string.format(
               "Points élémentaires : %d / %d (%d%%)",
               totalCur,
@@ -1058,6 +1075,7 @@ function ns.UI_Init()
             bar:SetValue(math.max(0, math.min(1, pct)))
           end
           if txt then
+            applyResTextColor(txt)
             if isWarlockCorruption then
               local tier
               if cur < 10 then
@@ -1102,43 +1120,11 @@ function ns.UI_Init()
             end
           end
 
-          -- Corruption threshold markers (10/25/45 out of 60)
-          if UI.corruptionMarkers then
-            if isWarlockCorruption and bar and (bar.GetWidth and (bar:GetWidth() or 0) > 0) then
-              local wBar = bar:GetWidth() or 0
-              for j = 1, #UI.corruptionMarkers do
-                local m = UI.corruptionMarkers[j]
-                if m then
-                  m:Show()
-                  local x = wBar * (m.pct or 0)
-                  if x < 0 then x = 0 elseif x > wBar then x = wBar end
-                  m:ClearAllPoints()
-                  m:SetPoint("LEFT", bar, "LEFT", x, 0)
-                end
-              end
-            else
-              for j = 1, #UI.corruptionMarkers do
-                local m = UI.corruptionMarkers[j]
-                if m then m:Hide() end
-              end
-            end
-          end
-
-          -- Insanity threshold markers (4/12/20/25 out of displayMax=25)
-          if UI.insanityMarkers then
-            if isShadowInsanity and bar and (bar.GetWidth and (bar:GetWidth() or 0) > 0) then
-              local wBar = bar:GetWidth() or 0
-              for j = 1, #UI.insanityMarkers do
-                local m = UI.insanityMarkers[j]
-                if m then
-                  m:Show()
-                  local x = wBar * (m.pct or 0)
-                  if x < 0 then x = 0 elseif x > wBar then x = wBar end
-                  m:ClearAllPoints()
-                  m:SetPoint("LEFT", bar, "LEFT", x, 0)
-                end
-              end
-            end
+          -- Threshold markers
+          if isWarlockCorruption then
+            positionMarkers(UI.corruptionMarkers, bar)
+          elseif isShadowInsanity then
+            positionMarkers(UI.insanityMarkers, bar)
           end
 
           if row then row:Show() end
@@ -1153,17 +1139,7 @@ function ns.UI_Init()
           end
 
           -- Fixed/scaled max boxes.
-          if maxEB then
-            if isWarlockCorruption or isShadowInsanity then
-              if maxEB.Disable then maxEB:Disable()
-              elseif maxEB.EnableMouse then maxEB:EnableMouse(false) end
-              if maxEB.SetAlpha then maxEB:SetAlpha(0.55) end
-            else
-              if maxEB.Enable then maxEB:Enable()
-              elseif maxEB.EnableMouse then maxEB:EnableMouse(true) end
-              if maxEB.SetAlpha then maxEB:SetAlpha(1) end
-            end
-          end
+          setEditBoxEnabled(maxEB, not (isWarlockCorruption or isShadowInsanity))
         end
       end
     end
