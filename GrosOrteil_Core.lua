@@ -195,8 +195,12 @@ function ns.Core_Init()
   db.state = db.state or {
     hp = 50, maxHp = 50,
     bonusHp = 0,
+    classKey = nil,
     resEnabled = true,
     res = 20, maxRes = 20,
+    res2 = 0, maxRes2 = 20,
+    res3 = 0, maxRes3 = 20,
+    res4 = 0, maxRes4 = 20,
     armor = 0, trueArmor = 0,
     dodge = 0,
     tempBlock = 0,
@@ -206,6 +210,18 @@ function ns.Core_Init()
 
     rev = 0,
   }
+
+  -- Default class selection (used by UI to label/color the resource bar).
+  if type(db.state.classKey) ~= "string" or db.state.classKey == "" then
+    local fallback = "MAGE"
+    if type(UnitClass) == "function" then
+      local _, classFile = UnitClass("player")
+      if type(classFile) == "string" and classFile ~= "" then
+        fallback = classFile
+      end
+    end
+    db.state.classKey = fallback
+  end
 
   -- Migration depuis l'ancien champ woundCap si présent
   if db.state.wounds == nil then
@@ -224,6 +240,15 @@ function ns.Core_Init()
 
   if db.state.dodge == nil then db.state.dodge = 0 end
   if db.state.tempMagicBlock == nil then db.state.tempMagicBlock = 0 end
+  if db.state.resEnabled == nil then db.state.resEnabled = true end
+
+  -- Ensure multi-resource fields exist (Warlock/Shadow Priest/Shaman).
+  if db.state.res2 == nil then db.state.res2 = 0 end
+  if db.state.maxRes2 == nil then db.state.maxRes2 = db.state.maxRes or 20 end
+  if db.state.res3 == nil then db.state.res3 = 0 end
+  if db.state.maxRes3 == nil then db.state.maxRes3 = db.state.maxRes or 20 end
+  if db.state.res4 == nil then db.state.res4 = 0 end
+  if db.state.maxRes4 == nil then db.state.maxRes4 = db.state.maxRes or 20 end
   -- Migration: tempHp -> bonusHp
   if db.state.bonusHp == nil then
     db.state.bonusHp = db.state.tempHp or 0
@@ -234,6 +259,15 @@ function ns.Core_Init()
   Core.state = db.state
   updateWoundsSticky(Core.state)
   notify()
+end
+
+function Core.SetClassKey(classKey)
+  local s = Core.state
+  if not s then return end
+  if type(classKey) ~= "string" or classKey == "" then return end
+  if s.classKey == classKey then return end
+  s.classKey = classKey
+  bump(); notify()
 end
 
 -- Setters
@@ -278,6 +312,40 @@ function Core.SetRes(res, maxRes)
 
   clampToMax(s, "res", "maxRes")
 
+  bump(); notify()
+end
+
+local function resKeysForIndex(i)
+  if i == 1 then return "res", "maxRes" end
+  if i == 2 then return "res2", "maxRes2" end
+  if i == 3 then return "res3", "maxRes3" end
+  if i == 4 then return "res4", "maxRes4" end
+  return nil, nil
+end
+
+function Core.SetResIndex(i, res, maxRes)
+  local s = Core.state
+  if not s then return end
+  local resKey, maxKey = resKeysForIndex(i)
+  if not resKey then return end
+  if not maxKey then return end
+
+  res = clampNumber(res, -1e9, 1e9)
+  maxRes = clampNumber(maxRes, 1, 1e9)
+  if maxRes then s[maxKey] = maxRes end
+  if res then s[resKey] = res end
+  clampToMax(s, resKey, maxKey)
+  bump(); notify()
+end
+
+function Core.AddResIndex(i, amount)
+  local s = Core.state
+  if not s then return end
+  local resKey, maxKey = resKeysForIndex(i)
+  if not resKey then return end
+  amount = clampNumber(amount, -1e9, 1e9) or 0
+  s[resKey] = (s[resKey] or 0) + amount
+  clampToMax(s, resKey, maxKey)
   bump(); notify()
 end
 
@@ -471,12 +539,5 @@ function Core.DivineHeal()
 end
 
 function Core.AddRes(amount)
-  local s = Core.state
-  if not s then return end
-  amount = clampNumber(amount, -1e9, 1e9) or 0
-  s.res = (s.res or 0) + amount
-
-  clampToMax(s, "res", "maxRes")
-
-  bump(); notify()
+  Core.AddResIndex(1, amount)
 end

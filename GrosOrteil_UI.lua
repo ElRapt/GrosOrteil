@@ -4,6 +4,84 @@ local Core = ns.Core
 local UI = {}
 ns.UI = UI
 
+local CLASS_STYLES = {
+  MEDIC = { label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 }, -- red
+  PALADIN = { label = "Puissance sacrée", r = 1.0, g = 0.82, b = 0.22 }, -- gold
+  PRIEST = { label = "Points de foi", r = 1.0, g = 1.0, b = 1.0 }, -- white
+  SHADOWPRIEST = { label = "Points de foi et insanité", r = 0.60, g = 0.20, b = 0.85 }, -- violet
+  MAGE = { label = "Mana", r = 0.20, g = 0.55, b = 1.00 }, -- blue
+  ROGUE = { label = "Énergie", r = 1.00, g = 0.90, b = 0.10 }, -- yellow
+  WARLOCK = { label = "Energie gangrénée et Corruption", r = 0.20, g = 0.85, b = 0.25 },
+  DRUID = { label = "Esprit", r = 1.00, g = 0.55, b = 0.10 }, -- orange
+  MONK = { label = "Chi", r = 0.55, g = 1.00, b = 0.55 }, -- light green
+  SHAMAN = { label = "Points élémentaires", r = 0.00, g = 0.44, b = 0.87 },
+}
+
+local function getResProfile(classKey)
+  -- Returns an array of { idx=1..4, label=string, r/g/b }
+  if classKey == "WARRIOR" then
+    return {}
+  end
+  if classKey == "MEDIC" then
+    return {
+      { idx = 1, label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 },
+    }
+  end
+  if classKey == "WARLOCK" then
+    return {
+      { idx = 1, label = "Energie gangrénée", r = 0.20, g = 0.85, b = 0.25 },
+      { idx = 2, label = "Corruption", r = 0.55, g = 0.20, b = 0.85 },
+    }
+  elseif classKey == "SHADOWPRIEST" then
+    return {
+      { idx = 1, label = "Points de foi", r = 1.0, g = 1.0, b = 1.0 },
+      { idx = 2, label = "Insanité", r = 0.60, g = 0.20, b = 0.85 },
+    }
+  elseif classKey == "SHAMAN" then
+    return {
+      { idx = 1, label = "Terre", r = 0.55, g = 0.35, b = 0.15 },
+      { idx = 2, label = "Air", r = 0.60, g = 0.95, b = 0.95 },
+      { idx = 3, label = "Eau", r = 0.20, g = 0.55, b = 1.00 },
+      { idx = 4, label = "Feu", r = 1.00, g = 0.35, b = 0.10 },
+    }
+  end
+
+  local s = (type(classKey) == "string" and CLASS_STYLES[classKey]) or nil
+  if s then
+    return { { idx = 1, label = s.label or "Ressource", r = s.r or 0.2, g = s.g or 0.55, b = s.b or 1.0 } }
+  end
+  return { { idx = 1, label = "Ressource", r = 0.20, g = 0.55, b = 1.00 } }
+end
+
+local function setClassIconTexCoords(tex, classKey)
+  if not tex or not tex.SetTexCoord then return end
+
+  -- Standard class icon sheet.
+  -- https://wowpedia.fandom.com/wiki/CLASS_BUTTONS
+  local coords = {
+    WARRIOR = { 0, 0.25, 0, 0.25 },
+    MAGE = { 0.25, 0.50, 0, 0.25 },
+    ROGUE = { 0.50, 0.75, 0, 0.25 },
+    DRUID = { 0.75, 1.00, 0, 0.25 },
+    HUNTER = { 0, 0.25, 0.25, 0.50 },
+    SHAMAN = { 0.25, 0.50, 0.25, 0.50 },
+    PRIEST = { 0.50, 0.75, 0.25, 0.50 },
+    WARLOCK = { 0.75, 1.00, 0.25, 0.50 },
+    PALADIN = { 0, 0.25, 0.50, 0.75 },
+    DEATHKNIGHT = { 0.25, 0.50, 0.50, 0.75 },
+    MONK = { 0.50, 0.75, 0.50, 0.75 },
+    DEMONHUNTER = { 0.75, 1.00, 0.50, 0.75 },
+    EVOKER = { 0, 0.25, 0.75, 1.00 },
+  }
+
+  local c = coords[classKey]
+  if not c then
+    tex:SetTexCoord(0, 1, 0, 1)
+    return
+  end
+  tex:SetTexCoord(c[1], c[2], c[3], c[4])
+end
+
 local function roundPct(x)
   return math.floor(x * 100 + 0.5)
 end
@@ -44,14 +122,6 @@ local function mkButton(parent, text, w, h, x, y, onClick)
   b:SetText(text)
   b:SetScript("OnClick", onClick)
   return b
-end
-
-local function mkCheck(parent, text, x, y, onClick)
-  local cb = CreateFrame("CheckButton", nil, parent, "ChatConfigCheckButtonTemplate")
-  cb:SetPoint("TOPLEFT", x, y)
-  cb.Text:SetText(text)
-  cb:SetScript("OnClick", function(self) onClick(self:GetChecked()) end)
-  return cb
 end
 
 local function getNumber(eb)
@@ -99,6 +169,7 @@ function ns.UI_Init()
   end
 
   local FRAME_W, FRAME_H = 600, 340
+  local BASE_FRAME_H = FRAME_H
   local PAD_X = 14
   local CONTENT_W = FRAME_W - (PAD_X * 2)
 
@@ -227,27 +298,57 @@ function ns.UI_Init()
   capText:SetPoint("TOPLEFT", hpBar, "BOTTOMLEFT", 0, -6)
   capText:SetText("")
 
-  local resBar = CreateFrame("StatusBar", nil, frame)
-  UI.resBar = resBar
-  resBar:SetSize(CONTENT_W, 16)
-  resBar:SetPoint("TOPLEFT", capText, "BOTTOMLEFT", 0, -8)
-  resBar:SetMinMaxValues(0, 1)
-  resBar:SetValue(1)
-  skinBar(resBar, 0.2, 0.55, 1.0) -- bleu
+  -- Ressource bars (up to 4, depending on selected class)
+  UI.resBars = {}
+  UI.resTexts = {}
+  local RES_BAR_H = 14
+  local RES_GAP = 4
+  local RES_EXTRA_H = (RES_BAR_H + RES_GAP)
 
-  local resText = resBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  UI.resText = resText
-  resText:SetPoint("CENTER")
+  local function mkResBar(idx)
+    local bar = CreateFrame("StatusBar", nil, frame)
+    UI.resBars[idx] = bar
+    bar:SetSize(CONTENT_W, RES_BAR_H)
+    if idx == 1 then
+      bar:SetPoint("TOPLEFT", capText, "BOTTOMLEFT", 0, -8)
+    else
+      bar:SetPoint("TOPLEFT", UI.resBars[idx - 1], "BOTTOMLEFT", 0, -RES_GAP)
+    end
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(0)
+    skinBar(bar, 0.2, 0.55, 1.0)
+    bar:Hide()
+
+    local txt = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    UI.resTexts[idx] = txt
+    txt:SetPoint("CENTER")
+    return bar
+  end
+
+  for i = 1, 4 do
+    mkResBar(i)
+  end
+
+  -- Bars are driven by Core.OnChange; keep them hidden until then.
 
   -- Onglets
   local tabStrip = CreateFrame("Frame", nil, frame)
-  tabStrip:SetPoint("TOPLEFT", resBar, "BOTTOMLEFT", 0, -10)
-  tabStrip:SetPoint("TOPRIGHT", resBar, "BOTTOMRIGHT", 0, -10)
+  tabStrip:SetPoint("TOPLEFT", UI.resBars[1], "BOTTOMLEFT", 0, -10)
+  tabStrip:SetPoint("TOPRIGHT", UI.resBars[1], "BOTTOMRIGHT", 0, -10)
   tabStrip:SetHeight(24)
+  UI.tabStrip = tabStrip
 
   local contentHost = CreateFrame("Frame", nil, frame)
   contentHost:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -10)
-  contentHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 14)
+
+  -- Class selector strip at bottom
+  local classStrip = CreateFrame("Frame", nil, frame)
+  classStrip:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD_X, 12)
+  classStrip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD_X, 12)
+  classStrip:SetHeight(30)
+  UI.classStrip = classStrip
+
+  contentHost:SetPoint("BOTTOMRIGHT", classStrip, "TOPRIGHT", 0, 8)
 
   UI.tabs = {}
   UI.pages = {}
@@ -269,7 +370,17 @@ function ns.UI_Init()
   end
 
   local TAB_GAP = 6
-  local TAB_W = math.floor((CONTENT_W - (TAB_GAP * 3)) / 4)
+
+  local TAB_TEXTS = {
+    "PV",
+    "Ressource",
+    "Armure/Bloc.",
+    "Dégâts",
+    "Soins",
+  }
+
+  local TAB_COUNT = #TAB_TEXTS
+  local TAB_W = math.floor((CONTENT_W - (TAB_GAP * (TAB_COUNT - 1))) / TAB_COUNT)
 
   local function mkTab(text, idx)
     local tab = CreateFrame("Button", nil, tabStrip, "UIPanelButtonTemplate")
@@ -296,17 +407,17 @@ function ns.UI_Init()
     return p
   end
 
-  mkTab("PV & Ress.", 1)
-  mkTab("Armure/Bloc.", 2)
-  mkTab("Dégâts", 3)
-  mkTab("Soins", 4)
+  for i = 1, TAB_COUNT do
+    mkTab(TAB_TEXTS[i], i)
+  end
 
   local pageHP = mkPage()
+  local pageRes = mkPage()
   local pageArmor = mkPage()
   local pageDmg = mkPage()
   local pageHeal = mkPage()
 
-  -- Onglet 1 : PV & Ressource
+  -- Onglet 1 : PV
   local xHP = centerX(360)
   mkLabel(pageHP, "PV", xHP + 0, -6)
   local hpCur, hpMax
@@ -327,31 +438,77 @@ function ns.UI_Init()
   tempHpEB = mkEdit(pageHP, 70, 20, xTempHP + 120, -36, applyTempHP)
   mkButton(pageHP, "Appliquer", 90, 20, xTempHP + 206, -36, applyTempHP)
 
+  -- Onglet 2 : Ressource
   local xRes = centerX(420)
-  mkLabel(pageHP, "Ressource", xRes + 0, -74)
-  local resCur, resMax
-  mkLabel(pageHP, "/", xRes + 172, -74)
-  local function applyRes()
-    Core.SetRes(getNumber(resCur), getNumber(resMax))
+  UI.resPageLabel = mkLabel(pageRes, "Ressource", xRes + 0, -6)
+
+  UI.resDeltaLabel = mkLabel(pageRes, "Valeur (±)", xRes + 0, -34)
+  local resDeltaEB = mkEdit(pageRes, 70, 20, xRes + 96, -32)
+  UI.resDeltaEB = resDeltaEB
+
+  UI.resRow = UI.resRow or {}
+  UI.resRowLabel = UI.resRowLabel or {}
+  UI.resRowCur = UI.resRowCur or {}
+  UI.resRowMax = UI.resRowMax or {}
+
+  local function mkResRow(idx, y)
+    local row = CreateFrame("Frame", nil, pageRes)
+    row:SetSize(540, 24)
+    row:SetPoint("TOPLEFT", xRes, y)
+    UI.resRow[idx] = row
+    row:Hide()
+
+    local label = mkLabel(row, "Ressource", 0, 0)
+    UI.resRowLabel[idx] = label
+
+    local curEB, maxEB
+    mkLabel(row, "/", 172, 0)
+
+    local function apply()
+      if Core and Core.SetResIndex then
+        Core.SetResIndex(idx, getNumber(curEB), getNumber(maxEB))
+      else
+        -- Backward compatibility (should not happen in this build)
+        if idx == 1 and Core and Core.SetRes then
+          Core.SetRes(getNumber(curEB), getNumber(maxEB))
+        end
+      end
+    end
+
+    curEB = mkEdit(row, 70, 20, 96, 2, apply)
+    maxEB = mkEdit(row, 70, 20, 186, 2, apply)
+    UI.resRowCur[idx] = curEB
+    UI.resRowMax[idx] = maxEB
+
+    mkButton(row, "Appliquer", 90, 20, 270, 2, apply)
+    mkButton(row, "+", 28, 20, 368, 2, function()
+      if Core and Core.AddResIndex then
+        Core.AddResIndex(idx, getNumber(resDeltaEB) or 0)
+      elseif idx == 1 and Core and Core.AddRes then
+        Core.AddRes(getNumber(resDeltaEB) or 0)
+      end
+    end)
+    mkButton(row, "-", 28, 20, 400, 2, function()
+      if Core and Core.AddResIndex then
+        Core.AddResIndex(idx, -(getNumber(resDeltaEB) or 0))
+      elseif idx == 1 and Core and Core.AddRes then
+        Core.AddRes(-(getNumber(resDeltaEB) or 0))
+      end
+    end)
+
+    return row
   end
-  resCur = mkEdit(pageHP, 70, 20, xRes + 96, -72, applyRes)
-  resMax = mkEdit(pageHP, 70, 20, xRes + 186, -72, applyRes)
-  mkButton(pageHP, "Appliquer", 90, 20, xRes + 270, -72, applyRes)
 
-  local resEnabled = mkCheck(pageHP, "Activer la ressource", centerX(260), -102, function(checked)
-    Core.SetResEnabled(checked)
-  end)
-  UI.resEnabled = resEnabled
+  -- Rows are shown/hidden based on selected class.
+  mkResRow(1, -60)
+  mkResRow(2, -88)
+  mkResRow(3, -116)
+  mkResRow(4, -144)
 
-  mkLabelCenter(pageHP, "Ajuster ressource", 0, -130)
-  local xAdj = centerX(252)
-  local resValEB = mkEdit(pageHP, 70, 20, xAdj + 0, -154)
-  mkButton(pageHP, "+ Ress.", 80, 20, xAdj + 86, -154, function()
-    Core.AddRes(getNumber(resValEB) or 0)
-  end)
-  mkButton(pageHP, "- Ress.", 80, 20, xAdj + 172, -154, function()
-    Core.AddRes(-(getNumber(resValEB) or 0))
-  end)
+  UI.noResHint = mkLabelCenter(pageRes, "Aucune ressource pour cette classe.", 0, -110)
+  UI.noResHint:Hide()
+
+  -- Resource is always active (no enable/disable toggle)
 
   -- Onglet 2 : Armure & Blocage
   local xArmor = centerX(554)
@@ -425,7 +582,7 @@ function ns.UI_Init()
   UI.inputs = {
     hpCur = hpCur, hpMax = hpMax,
     tempHp = tempHpEB,
-    resCur = resCur, resMax = resMax,
+    resCur = UI.resRowCur[1], resMax = UI.resRowMax[1],
     armor = armorEB, trueArmor = trueArmorEB,
     dodge = dodgeEB,
     block = blockEB,
@@ -433,6 +590,71 @@ function ns.UI_Init()
   }
 
   setTab(1)
+
+  -- Class icon selector buttons
+  UI.classButtons = {}
+  local CLASS_KEYS = {
+    "WARRIOR",
+    "MEDIC",
+    "PALADIN",
+    "PRIEST",
+    "SHADOWPRIEST",
+    "MAGE",
+    "ROGUE",
+    "WARLOCK",
+    "DRUID",
+    "MONK",
+    "SHAMAN",
+  }
+
+  local function mkClassButton(idx, classKey)
+    local b = CreateFrame("Button", nil, classStrip, "BackdropTemplate")
+    b:SetSize(26, 26)
+    b.classKey = classKey
+    b:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
+    b:SetBackdropBorderColor(0, 0, 0, 0.85)
+
+    local GAP = 6
+    local rowW = (#CLASS_KEYS * 26) + ((#CLASS_KEYS - 1) * GAP)
+    local startX = math.floor((CONTENT_W - rowW) / 2)
+    if idx == 1 then
+      b:SetPoint("LEFT", classStrip, "LEFT", startX, 0)
+    else
+      b:SetPoint("LEFT", (UI.classButtons[idx - 1] --[[@as Frame]]), "RIGHT", GAP, 0)
+    end
+
+    local tex = b:CreateTexture(nil, "ARTWORK")
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1)
+    tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
+    b.tex = tex
+
+    if classKey == "MEDIC" then
+      -- First aid / medical supplies icon
+      tex:SetTexture("Interface\\Icons\\INV_Misc_Bandage_15")
+      tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    elseif classKey == "SHADOWPRIEST" then
+      tex:SetTexture("Interface\\Icons\\Spell_Shadow_Shadowform")
+      tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    else
+      tex:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+      setClassIconTexCoords(tex, classKey)
+    end
+
+    b:SetScript("OnClick", function()
+      if Core and Core.SetClassKey then
+        Core.SetClassKey(classKey)
+      end
+      setTab(2)
+    end)
+
+    UI.classButtons[idx] = b
+    return b
+  end
+
+  for i = 1, #CLASS_KEYS do
+    mkClassButton(i, CLASS_KEYS[i])
+  end
 
   Core.OnChange(function(s)
     local baseMaxHp = (s.maxHp or 0)
@@ -550,22 +772,114 @@ function ns.UI_Init()
     end
 
     -- Ressource
-    UI.resEnabled:SetChecked(not not s.resEnabled)
-    if s.resEnabled then
-      resBar:Show()
-      local rPct = (s.maxRes and s.maxRes > 0) and (s.res / s.maxRes) or 0
-      resBar:SetValue(math.max(0, math.min(1, rPct)))
-      resText:SetText(string.format("Ressource : %d / %d (%d%%)", s.res or 0, s.maxRes or 0, roundPct(rPct)))
-    else
-      resBar:Hide()
+    local profile = getResProfile(s.classKey)
+    if UI.resPageLabel and UI.resPageLabel.SetText then
+      local headerText
+      if #profile == 0 then
+        headerText = "Aucune ressource"
+      else
+        headerText = (CLASS_STYLES[s.classKey] and CLASS_STYLES[s.classKey].label) or "Ressource"
+      end
+      UI.resPageLabel:SetText(headerText)
+    end
+
+    if UI.noResHint then
+      if #profile == 0 then UI.noResHint:Show() else UI.noResHint:Hide() end
+    end
+    if UI.resDeltaLabel then
+      if #profile == 0 then UI.resDeltaLabel:Hide() else UI.resDeltaLabel:Show() end
+    end
+    if UI.resDeltaEB then
+      if #profile == 0 then UI.resDeltaEB:Hide() else UI.resDeltaEB:Show() end
+    end
+
+    -- Move tabs under the last active resource bar.
+    do
+      local n = #profile
+      if n > 4 then n = 4 end
+
+      local anchor = capText
+      if n >= 1 then
+        anchor = UI.resBars[n]
+      end
+
+      -- Grow the window when multiple resource bars are visible (Shaman = 4).
+      if frame and frame.SetHeight then
+        local extraPad = (n >= 4) and 26 or 0
+        local targetH = BASE_FRAME_H + (math.max(0, n - 1) * RES_EXTRA_H) + extraPad
+        if targetH < BASE_FRAME_H then targetH = BASE_FRAME_H end
+        frame:SetHeight(targetH)
+      end
+
+      if UI.tabStrip and UI.tabStrip.ClearAllPoints then
+        UI.tabStrip:ClearAllPoints()
+        UI.tabStrip:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+        UI.tabStrip:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -10)
+      end
+    end
+
+    local function getKeysForIdx(i)
+      if i == 1 then return "res", "maxRes" end
+      if i == 2 then return "res2", "maxRes2" end
+      if i == 3 then return "res3", "maxRes3" end
+      if i == 4 then return "res4", "maxRes4" end
+      return nil, nil
+    end
+
+    for i = 1, 4 do
+      local bar = UI.resBars and UI.resBars[i]
+      local txt = UI.resTexts and UI.resTexts[i]
+      local row = UI.resRow and UI.resRow[i]
+      local rowLabel = UI.resRowLabel and UI.resRowLabel[i]
+      local curEB = UI.resRowCur and UI.resRowCur[i]
+      local maxEB = UI.resRowMax and UI.resRowMax[i]
+
+      local p = profile[i]
+      if not p then
+        if bar then bar:Hide() end
+        if row then row:Hide() end
+      else
+        local resKey, maxKey = getKeysForIdx(p.idx)
+        local cur = s[resKey] or 0
+        local maxv = s[maxKey] or 0
+        local pct = (maxv and maxv > 0) and (cur / maxv) or 0
+
+        if bar then
+          bar:Show()
+          bar:SetStatusBarColor(p.r, p.g, p.b, 1)
+          bar:SetValue(math.max(0, math.min(1, pct)))
+        end
+        if txt then
+          txt:SetText(string.format("%s : %d / %d (%d%%)", p.label or "Ressource", cur, maxv, roundPct(pct)))
+        end
+
+        if row then row:Show() end
+        if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
+        if curEB then setNumber(curEB, cur) end
+        if maxEB then setNumber(maxEB, maxv) end
+      end
+    end
+
+    if UI.classButtons then
+      for i = 1, #UI.classButtons do
+        local b = UI.classButtons[i]
+        if b and b.classKey then
+          if b.classKey == s.classKey then
+            b:SetAlpha(1)
+            b:SetBackdropBorderColor(1, 1, 1, 0.9)
+          else
+            b:SetAlpha(0.75)
+            b:SetBackdropBorderColor(0, 0, 0, 0.85)
+          end
+        end
+      end
     end
 
     -- Inputs : on reflète la state (pratique MVP)
     setNumber(UI.inputs.hpCur, s.hp)
     setNumber(UI.inputs.hpMax, s.maxHp)
     setNumber(UI.inputs.tempHp, s.bonusHp)
-    setNumber(UI.inputs.resCur, s.res)
-    setNumber(UI.inputs.resMax, s.maxRes)
+    -- Resource inputs are handled per-row above.
     setNumber(UI.inputs.armor, s.armor)
     setNumber(UI.inputs.trueArmor, s.trueArmor)
     setNumber(UI.inputs.dodge, s.dodge)
