@@ -1,0 +1,10 @@
+## Interface: 120001
+## Title: GrosOrteil
+## Notes: Suivi PV/Ressource pour système RPG (local MVP)
+## Author: Zinnieth
+## Version: 120001
+## SavedVariables: GrosOrteilDB
+
+GrosOrteil_Main.lua
+Core.lua
+UI.lua
