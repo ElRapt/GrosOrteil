@@ -423,11 +423,12 @@ function ns.UI_Init()
       if maxHp > 0 then blockFrac = block / maxHp end
       blockFrac = math.max(0, blockFrac)
 
-      local startX = wBar * hpFrac
-      local avail = wBar - startX
-      local blockW = math.min(avail, wBar * blockFrac)
 
-      if blockW > 0.5 and avail > 0.5 then
+      local endX = wBar * hpFrac
+      local startX = math.max(0, endX - (wBar * blockFrac))
+      local blockW = endX - startX
+
+      if blockW > 0.5 and endX > 0.5 then
         UI.hpBlockOverlay:Show()
         UI.hpBlockOverlay:ClearAllPoints()
         UI.hpBlockOverlay:SetPoint("TOPLEFT", hpBar, "TOPLEFT", startX, 0)
