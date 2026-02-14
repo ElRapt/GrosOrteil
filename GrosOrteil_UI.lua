@@ -318,9 +318,6 @@ function ns.UI_Init()
   end
   tempHpEB = mkEdit(pageHP, 70, 20, xTempHP + 120, -36, applyTempHP)
   mkButton(pageHP, "Appliquer", 90, 20, xTempHP + 206, -36, applyTempHP)
-  mkButton(pageHP, "Réinit.", 70, 20, xTempHP + 302, -36, function()
-    Core.ResetBonusHP()
-  end)
 
   local xRes = centerX(420)
   mkLabel(pageHP, "Ressource", xRes + 0, -74)
@@ -349,19 +346,25 @@ function ns.UI_Init()
   end)
 
   -- Onglet 2 : Armure & Blocage
-  local xArmor = centerX(470)
+  local xArmor = centerX(554)
   mkLabel(pageArmor, "Armure", xArmor + 0, -6)
   local armorEB, trueArmorEB, dodgeEB
   mkLabel(pageArmor, "Armure invul", xArmor + 150, -6)
   mkLabel(pageArmor, "Esquive", xArmor + 330, -6)
   local function applyArmor()
-    Core.SetArmor(getNumber(armorEB), getNumber(trueArmorEB))
-    Core.SetDodge(getNumber(dodgeEB))
+    -- IMPORTANT: on lit les valeurs AVANT d'appeler des setters,
+    -- sinon le 1er setter déclenche un refresh UI qui peut écraser les EditBox.
+    local armorVal = getNumber(armorEB)
+    local trueArmorVal = getNumber(trueArmorEB)
+    local dodgeVal = getNumber(dodgeEB)
+
+    Core.SetArmor(armorVal, trueArmorVal)
+    Core.SetDodge(dodgeVal)
   end
   armorEB = mkEdit(pageArmor, 70, 20, xArmor + 56, -4, applyArmor)
   trueArmorEB = mkEdit(pageArmor, 70, 20, xArmor + 238, -4, applyArmor)
   dodgeEB = mkEdit(pageArmor, 70, 20, xArmor + 386, -4, applyArmor)
-  mkButton(pageArmor, "Appliquer", 110, 20, centerX(110), -34, applyArmor)
+  mkButton(pageArmor, "Appliquer", 90, 20, xArmor + 464, -4, applyArmor)
 
   local xBlock = centerX(362)
   mkLabel(pageArmor, "Blocage (temp.)", xBlock + 0, -70)
