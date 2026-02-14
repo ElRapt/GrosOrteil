@@ -267,6 +267,13 @@ function Core.SetClassKey(classKey)
   if type(classKey) ~= "string" or classKey == "" then return end
   if s.classKey == classKey then return end
   s.classKey = classKey
+
+  -- Warlock: Corruption has a fixed max of 60.
+  if classKey == "WARLOCK" then
+    s.maxRes2 = 60
+    if type(s.res2) ~= "number" then s.res2 = 0 end
+    if s.res2 < 0 then s.res2 = 0 elseif s.res2 > 60 then s.res2 = 60 end
+  end
   bump(); notify()
 end
 
@@ -330,11 +337,26 @@ function Core.SetResIndex(i, res, maxRes)
   if not resKey then return end
   if not maxKey then return end
 
-  res = clampNumber(res, -1e9, 1e9)
-  maxRes = clampNumber(maxRes, 1, 1e9)
+  -- Warlock corruption (index 2) has fixed max=60.
+  local isWarlockCorruption = (i == 2 and s.classKey == "WARLOCK")
+
+  if isWarlockCorruption then
+    maxRes = 60
+    res = clampNumber(res, 0, 60)
+  else
+    res = clampNumber(res, -1e9, 1e9)
+    maxRes = clampNumber(maxRes, 1, 1e9)
+  end
+
   if maxRes then s[maxKey] = maxRes end
   if res then s[resKey] = res end
   clampToMax(s, resKey, maxKey)
+
+  if isWarlockCorruption then
+    if type(s[resKey]) ~= "number" then s[resKey] = 0 end
+    if s[resKey] < 0 then s[resKey] = 0 elseif s[resKey] > 60 then s[resKey] = 60 end
+    s[maxKey] = 60
+  end
   bump(); notify()
 end
 
@@ -343,9 +365,17 @@ function Core.AddResIndex(i, amount)
   if not s then return end
   local resKey, maxKey = resKeysForIndex(i)
   if not resKey then return end
+
+  local isWarlockCorruption = (i == 2 and s.classKey == "WARLOCK")
   amount = clampNumber(amount, -1e9, 1e9) or 0
   s[resKey] = (s[resKey] or 0) + amount
-  clampToMax(s, resKey, maxKey)
+
+  if isWarlockCorruption then
+    if maxKey then s[maxKey] = 60 end
+    if s[resKey] < 0 then s[resKey] = 0 elseif s[resKey] > 60 then s[resKey] = 60 end
+  else
+    clampToMax(s, resKey, maxKey)
+  end
   bump(); notify()
 end
 

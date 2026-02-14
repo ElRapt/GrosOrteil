@@ -341,6 +341,28 @@ function ns.UI_Init()
     mkResBar(i)
   end
 
+  -- Warlock Corruption thresholds (max always 60)
+  UI.corruptionMarkers = {}
+  do
+    local bar = UI.resBars[2]
+    if bar then
+      local function makeCorruptionMarker(val, r, g, b, a, w)
+        local t = bar:CreateTexture(nil, "OVERLAY")
+        t:SetTexture("Interface/Buttons/WHITE8x8")
+        t:SetWidth(w or 2)
+        t:SetHeight(bar:GetHeight() or 14)
+        t:SetColorTexture(r or 1, g or 1, b or 1, a or 0.45)
+        t.pct = (val or 0) / 60
+        t:Hide()
+        return t
+      end
+
+      UI.corruptionMarkers[1] = makeCorruptionMarker(10, 0.65, 0.95, 0.65, 0.55, 2) -- passive
+      UI.corruptionMarkers[2] = makeCorruptionMarker(25, 1.00, 0.82, 0.22, 0.55, 2) -- moyenne
+      UI.corruptionMarkers[3] = makeCorruptionMarker(45, 1.00, 0.25, 0.25, 0.65, 3) -- strong
+    end
+  end
+
   -- Bars are driven by Core.OnChange; keep them hidden until then.
 
   -- Onglets
@@ -852,6 +874,14 @@ function ns.UI_Init()
       return nil, nil
     end
 
+    -- Default: hide warlock corruption markers; they'll be re-shown when applicable.
+    if UI.corruptionMarkers then
+      for j = 1, #UI.corruptionMarkers do
+        local m = UI.corruptionMarkers[j]
+        if m then m:Hide() end
+      end
+    end
+
     for i = 1, 4 do
       local bar = UI.resBars and UI.resBars[i]
       local txt = UI.resTexts and UI.resTexts[i]
@@ -961,6 +991,12 @@ function ns.UI_Init()
           local resKey, maxKey = getKeysForIdx(p.idx)
           local cur = s[resKey] or 0
           local maxv = s[maxKey] or 0
+
+          local isWarlockCorruption = (s.classKey == "WARLOCK" and p.idx == 2)
+          if isWarlockCorruption then
+            maxv = 60
+            if cur < 0 then cur = 0 elseif cur > 60 then cur = 60 end
+          end
           local pct = (maxv and maxv > 0) and (cur / maxv) or 0
 
           if bar then
@@ -969,13 +1005,69 @@ function ns.UI_Init()
             bar:SetValue(math.max(0, math.min(1, pct)))
           end
           if txt then
-            txt:SetText(string.format("%s : %d / %d (%d%%)", p.label or "Ressource", cur, maxv, roundPct(pct)))
+            if isWarlockCorruption then
+              local tier
+              if cur < 10 then
+                tier = "Nulle"
+              elseif cur < 25 then
+                tier = "Passive"
+              elseif cur < 45 then
+                tier = "Moyenne"
+              else
+                tier = "Forte"
+              end
+              txt:SetText(string.format(
+                "%s : %d / %d (%d%%) — %s",
+                p.label or "Corruption",
+                cur,
+                maxv,
+                roundPct(pct),
+                tier
+              ))
+            else
+              txt:SetText(string.format("%s : %d / %d (%d%%)", p.label or "Ressource", cur, maxv, roundPct(pct)))
+            end
+          end
+
+          -- Corruption threshold markers (10/25/45 out of 60)
+          if UI.corruptionMarkers then
+            if isWarlockCorruption and bar and (bar.GetWidth and (bar:GetWidth() or 0) > 0) then
+              local wBar = bar:GetWidth() or 0
+              for j = 1, #UI.corruptionMarkers do
+                local m = UI.corruptionMarkers[j]
+                if m then
+                  m:Show()
+                  local x = wBar * (m.pct or 0)
+                  if x < 0 then x = 0 elseif x > wBar then x = wBar end
+                  m:ClearAllPoints()
+                  m:SetPoint("LEFT", bar, "LEFT", x, 0)
+                end
+              end
+            else
+              for j = 1, #UI.corruptionMarkers do
+                local m = UI.corruptionMarkers[j]
+                if m then m:Hide() end
+              end
+            end
           end
 
           if row then row:Show() end
           if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
           if curEB then setNumber(curEB, cur) end
           if maxEB then setNumber(maxEB, maxv) end
+
+          -- Warlock corruption max is fixed; prevent editing the max box.
+          if maxEB then
+            if isWarlockCorruption then
+              if maxEB.Disable then maxEB:Disable()
+              elseif maxEB.EnableMouse then maxEB:EnableMouse(false) end
+              if maxEB.SetAlpha then maxEB:SetAlpha(0.55) end
+            else
+              if maxEB.Enable then maxEB:Enable()
+              elseif maxEB.EnableMouse then maxEB:EnableMouse(true) end
+              if maxEB.SetAlpha then maxEB:SetAlpha(1) end
+            end
+          end
         end
       end
     end
