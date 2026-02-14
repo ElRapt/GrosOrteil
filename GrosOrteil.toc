@@ -1,9 +1,10 @@
 ## Interface: 120001
 ## Title: GrosOrteil
 ## Notes: Système de la Compagnie Infortune
-## Category: Roleplay
-## X-Category: Roleplay
-## X-Tags: Roleplay, RPG, UI, Tracker
+## ICONTEXTURE: Interface\\Icons\\INV_MISC_HERB_GOLDCLOVER
+## Category: Jeu de rôle
+## X-Category: Jeu de rôle
+## X-Tags: Jeu de rôle, RPG, UI, Tracker, Jeu de rôle
 ## Author: Zinnieth
 ## Version: 120001
 ## SavedVariables: GrosOrteilDB
