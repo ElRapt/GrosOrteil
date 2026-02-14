@@ -947,6 +947,13 @@ function ns.UI_Init()
           if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
           if curEB then setNumber(curEB, cur) end
           if maxEB then setNumber(maxEB, maxv) end
+
+          -- Ensure max boxes are editable for Shaman (avoid staying disabled after WARLOCK/SHADOWPRIEST).
+          if maxEB then
+            if maxEB.Enable then maxEB:Enable()
+            elseif maxEB.EnableMouse then maxEB:EnableMouse(true) end
+            if maxEB.SetAlpha then maxEB:SetAlpha(1) end
+          end
         end
 
         -- After the loop's first iteration, update the stacked bar visuals.
