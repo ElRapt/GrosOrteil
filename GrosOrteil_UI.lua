@@ -1,4 +1,4 @@
-local ADDON, ns = ...
+local _, ns = ...
 local Core = ns.Core
 
 local UI = {}
@@ -23,14 +23,17 @@ local function mkLabelCenter(parent, text, x, y)
   return fs
 end
 
-local function mkEdit(parent, w, h, x, y)
+local function mkEdit(parent, w, h, x, y, onEnter)
   local eb = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
   eb:SetSize(w, h)
   eb:SetPoint("TOPLEFT", x, y)
   eb:SetAutoFocus(false)
   eb:SetNumeric(true)
   eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-  eb:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+  eb:SetScript("OnEnterPressed", function(self)
+    self:ClearFocus()
+    if onEnter then onEnter() end
+  end)
   return eb
 end
 
@@ -58,6 +61,8 @@ local function getNumber(eb)
 end
 
 local function setNumber(eb, n)
+  if not eb or not eb.SetText then return end
+  if eb.HasFocus and eb:HasFocus() then return end
   if n == nil then eb:SetText("") else eb:SetText(tostring(math.floor(n))) end
 end
 
@@ -107,7 +112,9 @@ function ns.UI_Init()
   frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local point, _, _, x, y = self:GetPoint(1)
-    db.ui.point, db.ui.x, db.ui.y = point, x, y
+    if point then
+      db.ui.point, db.ui.x, db.ui.y = point, x or 0, y or 0
+    end
   end)
 
   frame:SetBackdrop({
@@ -220,8 +227,8 @@ function ns.UI_Init()
   contentHost:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -10)
   contentHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 14)
 
-  UI.tabs = UI.tabs or {}
-  UI.pages = UI.pages or {}
+  UI.tabs = {}
+  UI.pages = {}
 
   local function setTab(active)
     for i = 1, #UI.pages do
@@ -280,21 +287,25 @@ function ns.UI_Init()
   -- Onglet 1 : PV & Ressource
   local xHP = centerX(360)
   mkLabel(pageHP, "PV", xHP + 0, -6)
-  local hpCur = mkEdit(pageHP, 70, 20, xHP + 36, -4)
-  local hpMax = mkEdit(pageHP, 70, 20, xHP + 126, -4)
+  local hpCur, hpMax
   mkLabel(pageHP, "/", xHP + 112, -6)
-  mkButton(pageHP, "Appliquer", 90, 20, xHP + 210, -4, function()
+  local function applyHP()
     Core.SetHP(getNumber(hpCur), getNumber(hpMax))
-  end)
+  end
+  hpCur = mkEdit(pageHP, 70, 20, xHP + 36, -4, applyHP)
+  hpMax = mkEdit(pageHP, 70, 20, xHP + 126, -4, applyHP)
+  mkButton(pageHP, "Appliquer", 90, 20, xHP + 210, -4, applyHP)
 
   local xRes = centerX(420)
   mkLabel(pageHP, "Ressource", xRes + 0, -38)
-  local resCur = mkEdit(pageHP, 70, 20, xRes + 96, -36)
-  local resMax = mkEdit(pageHP, 70, 20, xRes + 186, -36)
+  local resCur, resMax
   mkLabel(pageHP, "/", xRes + 172, -38)
-  mkButton(pageHP, "Appliquer", 90, 20, xRes + 270, -36, function()
+  local function applyRes()
     Core.SetRes(getNumber(resCur), getNumber(resMax))
-  end)
+  end
+  resCur = mkEdit(pageHP, 70, 20, xRes + 96, -36, applyRes)
+  resMax = mkEdit(pageHP, 70, 20, xRes + 186, -36, applyRes)
+  mkButton(pageHP, "Appliquer", 90, 20, xRes + 270, -36, applyRes)
 
   local resEnabled = mkCheck(pageHP, "Activer la ressource", centerX(260), -66, function(checked)
     Core.SetResEnabled(checked)
@@ -314,20 +325,23 @@ function ns.UI_Init()
   -- Onglet 2 : Armure & Blocage
   local xArmor = centerX(330)
   mkLabel(pageArmor, "Armure", xArmor + 0, -6)
-  local armorEB = mkEdit(pageArmor, 70, 20, xArmor + 56, -4)
+  local armorEB, trueArmorEB
   mkLabel(pageArmor, "Armure invul", xArmor + 150, -6)
-  local trueArmorEB = mkEdit(pageArmor, 70, 20, xArmor + 238, -4)
-
-  mkButton(pageArmor, "Appliquer", 110, 20, centerX(110), -34, function()
+  local function applyArmor()
     Core.SetArmor(getNumber(armorEB), getNumber(trueArmorEB))
-  end)
+  end
+  armorEB = mkEdit(pageArmor, 70, 20, xArmor + 56, -4, applyArmor)
+  trueArmorEB = mkEdit(pageArmor, 70, 20, xArmor + 238, -4, applyArmor)
+  mkButton(pageArmor, "Appliquer", 110, 20, centerX(110), -34, applyArmor)
 
   local xBlock = centerX(362)
   mkLabel(pageArmor, "Blocage (temp.)", xBlock + 0, -70)
-  local blockEB = mkEdit(pageArmor, 70, 20, xBlock + 120, -68)
-  mkButton(pageArmor, "Appliquer", 90, 20, xBlock + 206, -68, function()
+  local blockEB
+  local function applyBlock()
     Core.SetTempBlock(getNumber(blockEB))
-  end)
+  end
+  blockEB = mkEdit(pageArmor, 70, 20, xBlock + 120, -68, applyBlock)
+  mkButton(pageArmor, "Appliquer", 90, 20, xBlock + 206, -68, applyBlock)
   mkButton(pageArmor, "Réinit.", 70, 20, xBlock + 302, -68, function()
     Core.ResetTempBlock()
   end)
@@ -335,25 +349,30 @@ function ns.UI_Init()
   -- Onglet 3 : Dégâts
   local xValD = centerX(180)
   mkLabel(pageDmg, "Valeur", xValD + 0, -6)
-  local dmgValEB = mkEdit(pageDmg, 80, 20, xValD + 56, -4)
+  local dmgValEB
 
   local xDmgBtns = centerX(392)
-  mkButton(pageDmg, "Dégâts (armure)", 190, 22, xDmgBtns + 0, -36, function()
+  local function doDmgArmor()
     Core.DamageWithArmor(getNumber(dmgValEB) or 0)
-  end)
-  mkButton(pageDmg, "Dégâts (bruts)", 190, 22, xDmgBtns + 202, -36, function()
+  end
+  local function doDmgTrue()
     Core.DamageTrue(getNumber(dmgValEB) or 0)
-  end)
+  end
+  dmgValEB = mkEdit(pageDmg, 80, 20, xValD + 56, -4, doDmgArmor)
+  mkButton(pageDmg, "Dégâts (armure)", 190, 22, xDmgBtns + 0, -36, doDmgArmor)
+  mkButton(pageDmg, "Dégâts (bruts)", 190, 22, xDmgBtns + 202, -36, doDmgTrue)
 
   -- Onglet 4 : Soins
   local xValH = centerX(180)
   mkLabel(pageHeal, "Valeur", xValH + 0, -6)
-  local healValEB = mkEdit(pageHeal, 80, 20, xValH + 56, -4)
+  local healValEB
 
   local xHealBtns = centerX(392)
-  mkButton(pageHeal, "Soins", 190, 22, xHealBtns + 0, -36, function()
+  local function doHeal()
     Core.Heal(getNumber(healValEB) or 0)
-  end)
+  end
+  healValEB = mkEdit(pageHeal, 80, 20, xValH + 56, -4, doHeal)
+  mkButton(pageHeal, "Soins", 190, 22, xHealBtns + 0, -36, doHeal)
   mkButton(pageHeal, "Soins divins (75%)", 190, 22, xHealBtns + 202, -36, function()
     Core.DivineHeal()
   end)

@@ -11,6 +11,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
     ns.Core_Init()
     ns.UI_Init()
 
+    f:UnregisterEvent("ADDON_LOADED")
+    f:UnregisterEvent("PLAYER_LOGIN")
+
     SLASH_GROSORTEIL1 = "/grosorteil"
     SLASH_GROSORTEIL2 = "/go"
     SlashCmdList["GROSORTEIL"] = function(msg)
@@ -19,10 +22,13 @@ f:SetScript("OnEvent", function(_, event, arg1)
         ns.UI_Show(true)
       elseif msg == "hide" then
         ns.UI_Show(false)
+      elseif msg == "toggle" then
+        local shown = ns.UI and ns.UI.frame and ns.UI.frame:IsShown()
+        ns.UI_Show(not shown)
       elseif msg == "reset" then
         ns.UI_ResetPosition()
       else
-        print("|cFF00FF00GrosOrteil|r commandes : /go show | /go hide | /go reset")
+        print("|cFF00FF00GrosOrteil|r commandes : /go show | /go hide | /go toggle | /go reset")
       end
     end
   end
