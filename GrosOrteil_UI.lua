@@ -310,29 +310,41 @@ function ns.UI_Init()
   hpMax = mkEdit(pageHP, 70, 20, xHP + 126, -4, applyHP)
   mkButton(pageHP, "Appliquer", 90, 20, xHP + 210, -4, applyHP)
 
+  local xTempHP = centerX(362)
+  mkLabel(pageHP, "PV bonus", xTempHP + 0, -38)
+  local tempHpEB
+  local function applyTempHP()
+    Core.SetBonusHP(getNumber(tempHpEB))
+  end
+  tempHpEB = mkEdit(pageHP, 70, 20, xTempHP + 120, -36, applyTempHP)
+  mkButton(pageHP, "Appliquer", 90, 20, xTempHP + 206, -36, applyTempHP)
+  mkButton(pageHP, "Réinit.", 70, 20, xTempHP + 302, -36, function()
+    Core.ResetBonusHP()
+  end)
+
   local xRes = centerX(420)
-  mkLabel(pageHP, "Ressource", xRes + 0, -38)
+  mkLabel(pageHP, "Ressource", xRes + 0, -74)
   local resCur, resMax
-  mkLabel(pageHP, "/", xRes + 172, -38)
+  mkLabel(pageHP, "/", xRes + 172, -74)
   local function applyRes()
     Core.SetRes(getNumber(resCur), getNumber(resMax))
   end
-  resCur = mkEdit(pageHP, 70, 20, xRes + 96, -36, applyRes)
-  resMax = mkEdit(pageHP, 70, 20, xRes + 186, -36, applyRes)
-  mkButton(pageHP, "Appliquer", 90, 20, xRes + 270, -36, applyRes)
+  resCur = mkEdit(pageHP, 70, 20, xRes + 96, -72, applyRes)
+  resMax = mkEdit(pageHP, 70, 20, xRes + 186, -72, applyRes)
+  mkButton(pageHP, "Appliquer", 90, 20, xRes + 270, -72, applyRes)
 
-  local resEnabled = mkCheck(pageHP, "Activer la ressource", centerX(260), -66, function(checked)
+  local resEnabled = mkCheck(pageHP, "Activer la ressource", centerX(260), -102, function(checked)
     Core.SetResEnabled(checked)
   end)
   UI.resEnabled = resEnabled
 
-  mkLabelCenter(pageHP, "Ajuster ressource", 0, -94)
+  mkLabelCenter(pageHP, "Ajuster ressource", 0, -130)
   local xAdj = centerX(252)
-  local resValEB = mkEdit(pageHP, 70, 20, xAdj + 0, -118)
-  mkButton(pageHP, "+ Ress.", 80, 20, xAdj + 86, -118, function()
+  local resValEB = mkEdit(pageHP, 70, 20, xAdj + 0, -154)
+  mkButton(pageHP, "+ Ress.", 80, 20, xAdj + 86, -154, function()
     Core.AddRes(getNumber(resValEB) or 0)
   end)
-  mkButton(pageHP, "- Ress.", 80, 20, xAdj + 172, -118, function()
+  mkButton(pageHP, "- Ress.", 80, 20, xAdj + 172, -154, function()
     Core.AddRes(-(getNumber(resValEB) or 0))
   end)
 
@@ -396,6 +408,7 @@ function ns.UI_Init()
 
   UI.inputs = {
     hpCur = hpCur, hpMax = hpMax,
+    tempHp = tempHpEB,
     resCur = resCur, resMax = resMax,
     armor = armorEB, trueArmor = trueArmorEB,
     dodge = dodgeEB,
@@ -405,18 +418,28 @@ function ns.UI_Init()
   setTab(1)
 
   Core.OnChange(function(s)
-    local hpPct = (s.maxHp and s.maxHp > 0) and (s.hp / s.maxHp) or 0
+    local baseMaxHp = (s.maxHp or 0)
+    local bonusHp = math.max(0, s.bonusHp or 0)
+    local effMaxHp = baseMaxHp + bonusHp
+    local hpNow = (s.hp or 0)
+
+    local hpPct = (effMaxHp > 0) and (hpNow / effMaxHp) or 0
     hpBar:SetValue(math.max(0, math.min(1, hpPct)))
-    hpText:SetText(string.format("PV : %d / %d (%d%%)", s.hp or 0, s.maxHp or 0, roundPct(hpPct)))
+
+    if bonusHp > 0 then
+      hpText:SetText(string.format("PV : %d / %d (+%d bonus, %d%%)", hpNow, effMaxHp, bonusHp, roundPct(hpPct)))
+    else
+      hpText:SetText(string.format("PV : %d / %d (%d%%)", s.hp or 0, baseMaxHp, roundPct(hpPct)))
+    end
 
     -- Blocage overlay (gris)
     if UI.hpBlockOverlay then
-      local maxHp = (s.maxHp or 0)
+      local maxHp = effMaxHp
       local block = math.max(0, s.tempBlock or 0)
       local wBar = hpBar:GetWidth() or 0
 
       local hpFrac = 0
-      if maxHp > 0 then hpFrac = (s.hp or 0) / maxHp end
+      if maxHp > 0 then hpFrac = hpNow / maxHp end
       hpFrac = math.max(0, math.min(1, hpFrac))
 
       local blockFrac = 0
@@ -440,9 +463,10 @@ function ns.UI_Init()
     end
 
     local w = hpBar:GetWidth()
+    local baseScale = (effMaxHp > 0) and (baseMaxHp / effMaxHp) or 0
     for i = 1, #UI.hpMarkers do
       local m = UI.hpMarkers[i]
-      local x = w * (m.pct or 0)
+      local x = w * (m.pct or 0) * baseScale
       m:ClearAllPoints()
       m:SetPoint("LEFT", hpBar, "LEFT", x, 0)
     end
@@ -459,7 +483,7 @@ function ns.UI_Init()
         UI.hpCapMarker:Hide()
       else
         UI.hpCapMarker:Show()
-        local xCap = w * cap
+        local xCap = (effMaxHp > 0) and (w * ((baseMaxHp * cap) / effMaxHp)) or 0
         UI.hpCapMarker:ClearAllPoints()
         UI.hpCapMarker:SetPoint("LEFT", hpBar, "LEFT", xCap, 0)
       end
@@ -485,6 +509,7 @@ function ns.UI_Init()
     -- Inputs : on reflète la state (pratique MVP)
     setNumber(UI.inputs.hpCur, s.hp)
     setNumber(UI.inputs.hpMax, s.maxHp)
+    setNumber(UI.inputs.tempHp, s.bonusHp)
     setNumber(UI.inputs.resCur, s.res)
     setNumber(UI.inputs.resMax, s.maxRes)
     setNumber(UI.inputs.armor, s.armor)

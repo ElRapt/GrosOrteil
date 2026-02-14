@@ -85,6 +85,7 @@ local function updateWoundsSticky(s)
   end
 
   local p = (s.hp or 0) / s.maxHp
+  if p < 0 then p = 0 elseif p > 1 then p = 1 end
   local hit25, hit10 = woundsFromPct(p)
   if hit10 then
     s.wounds.hit10 = true
@@ -104,9 +105,21 @@ local function recomputeWounds(s)
   end
 
   local p = (s.hp or 0) / s.maxHp
+  if p < 0 then p = 0 elseif p > 1 then p = 1 end
   local hit25, hit10 = woundsFromPct(p)
   s.wounds.hit10 = hit10
   s.wounds.hit25 = hit25
+end
+
+local function clampHpToEffectiveMax(s)
+  if not s then return end
+  local baseMax = s.maxHp
+  if type(baseMax) ~= "number" or baseMax <= 0 then return end
+  local bonus = math.max(0, s.bonusHp or 0)
+  local effMax = baseMax + bonus
+  if type(s.hp) == "number" and s.hp > effMax then
+    s.hp = effMax
+  end
 end
 
 local function clampToMax(s, valueKey, maxKey)
@@ -130,6 +143,7 @@ function ns.Core_Init()
 
   db.state = db.state or {
     hp = 50, maxHp = 50,
+    bonusHp = 0,
     resEnabled = true,
     res = 20, maxRes = 20,
     armor = 0, trueArmor = 0,
@@ -157,6 +171,12 @@ function ns.Core_Init()
   end
 
   if db.state.dodge == nil then db.state.dodge = 0 end
+  -- Migration: tempHp -> bonusHp
+  if db.state.bonusHp == nil then
+    db.state.bonusHp = db.state.tempHp or 0
+  end
+  db.state.tempHp = nil
+  clampHpToEffectiveMax(db.state)
 
   Core.state = db.state
   updateWoundsSticky(Core.state)
@@ -172,8 +192,26 @@ function Core.SetHP(hp, maxHp)
   if maxHp then s.maxHp = maxHp end
   if hp then s.hp = hp end
 
-  clampToMax(s, "hp", "maxHp")
+  clampHpToEffectiveMax(s)
   recomputeWounds(s)
+  bump(); notify()
+end
+
+function Core.SetBonusHP(v)
+  local s = Core.state
+  if not s then return end
+  v = clampNumber(v, 0, 1e9)
+  if v then s.bonusHp = v end
+  clampHpToEffectiveMax(s)
+  recomputeWounds(s)
+  bump(); notify()
+end
+
+function Core.ResetBonusHP()
+  if not Core.state then return end
+  Core.state.bonusHp = 0
+  clampHpToEffectiveMax(Core.state)
+  recomputeWounds(Core.state)
   bump(); notify()
 end
 
@@ -255,7 +293,11 @@ function Core.DamageWithArmor(amount)
   end
 
   local mit = (s.armor or 0) + (s.trueArmor or 0)
-  s.hp = (s.hp or 0) - effDmg(amount, mit)
+
+  local dmg = effDmg(amount, mit)
+  if dmg > 0 then
+    s.hp = (s.hp or 0) - dmg
+  end
   updateWoundsSticky(s)
   bump(); notify()
 end
@@ -272,7 +314,11 @@ function Core.DamageTrue(amount)
   end
 
   local mit = (s.trueArmor or 0)
-  s.hp = (s.hp or 0) - effDmg(amount, mit)
+
+  local dmg = effDmg(amount, mit)
+  if dmg > 0 then
+    s.hp = (s.hp or 0) - dmg
+  end
   updateWoundsSticky(s)
   bump(); notify()
 end
@@ -286,10 +332,13 @@ function Core.Heal(amount)
   local proposed = current + amount
 
   -- Cap selon l'état courant (seuils dynamiques)
-  local capMax = (s.maxHp or 0) * getWoundCap(s)
+  local baseMax = (s.maxHp or 0)
+  local bonus = math.max(0, s.bonusHp or 0)
+  local capMax = (baseMax * getWoundCap(s)) + bonus
+  local effMax = baseMax + bonus
 
   -- Soins normaux : ne dépassent pas le cap (s'il existe)
-  s.hp = math.min(proposed, capMax)
+  s.hp = math.min(proposed, capMax, effMax)
 
   -- IMPORTANT: les soins normaux ne lèvent jamais un seuil
   updateWoundsSticky(s)
@@ -300,9 +349,11 @@ function Core.DivineHeal()
   local s = Core.state
   if not s then return end
   -- Bypass plafond : +75% du total (pas "fixé" à 75%)
-  local maxHp = (s.maxHp or 0)
+  local baseMax = (s.maxHp or 0)
+  local bonus = math.max(0, s.bonusHp or 0)
+  local maxHp = baseMax + bonus
   local current = (s.hp or 0)
-  s.hp = math.min(current + (maxHp * 0.75), maxHp)
+  s.hp = math.min(current + (baseMax * 0.75), maxHp)
   -- DivineHeal est un bypass : on recalcule les seuils depuis l'état actuel
   recomputeWounds(s)
   bump(); notify()
