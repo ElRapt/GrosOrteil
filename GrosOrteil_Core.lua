@@ -149,6 +149,7 @@ function ns.Core_Init()
     armor = 0, trueArmor = 0,
     dodge = 0,
     tempBlock = 0,
+    tempMagicBlock = 0,
 
     wounds = { hit25 = false, hit10 = false },
 
@@ -171,6 +172,7 @@ function ns.Core_Init()
   end
 
   if db.state.dodge == nil then db.state.dodge = 0 end
+  if db.state.tempMagicBlock == nil then db.state.tempMagicBlock = 0 end
   -- Migration: tempHp -> bonusHp
   if db.state.bonusHp == nil then
     db.state.bonusHp = db.state.tempHp or 0
@@ -253,6 +255,14 @@ function Core.SetTempBlock(v)
   bump(); notify()
 end
 
+function Core.SetTempMagicBlock(v)
+  local s = Core.state
+  if not s then return end
+  v = clampNumber(v, 0, 1e9)
+  if v then s.tempMagicBlock = v end
+  bump(); notify()
+end
+
 function Core.SetDodge(v)
   local s = Core.state
   if not s then return end
@@ -270,6 +280,12 @@ end
 function Core.ResetTempBlock()
   if not Core.state then return end
   Core.state.tempBlock = 0
+  bump(); notify()
+end
+
+function Core.ResetTempMagicBlock()
+  if not Core.state then return end
+  Core.state.tempMagicBlock = 0
   bump(); notify()
 end
 
@@ -292,6 +308,14 @@ function Core.DamageWithArmor(amount)
     amount = amount - absorbed
   end
 
+  -- Blocage magique : comme le blocage, mais fonctionne aussi sur dégâts bruts.
+  local mblock = math.max(0, s.tempMagicBlock or 0)
+  if mblock > 0 and amount > 0 then
+    local absorbed = math.min(mblock, amount)
+    s.tempMagicBlock = mblock - absorbed
+    amount = amount - absorbed
+  end
+
   local mit = (s.armor or 0) + (s.trueArmor or 0)
 
   local dmg = effDmg(amount, mit)
@@ -311,6 +335,14 @@ function Core.DamageTrue(amount)
   local dodge = math.max(0, s.dodge or 0)
   if amount > 0 and dodge > 0 and amount <= dodge then
     return
+  end
+
+  -- Blocage magique : s'applique aux dégâts bruts (contrairement au blocage normal).
+  local mblock = math.max(0, s.tempMagicBlock or 0)
+  if mblock > 0 and amount > 0 then
+    local absorbed = math.min(mblock, amount)
+    s.tempMagicBlock = mblock - absorbed
+    amount = amount - absorbed
   end
 
   local mit = (s.trueArmor or 0)

@@ -191,6 +191,14 @@ function ns.UI_Init()
   blockOverlay:SetPoint("BOTTOM", hpBar, "BOTTOM", 0, 0)
   blockOverlay:Hide()
 
+  local magicOverlay = hpBar:CreateTexture(nil, "OVERLAY")
+  UI.hpMagicBlockOverlay = magicOverlay
+  magicOverlay:SetTexture("Interface/Buttons/WHITE8x8")
+  magicOverlay:SetColorTexture(1.0, 0.82, 0.22, 0.60) -- doré
+  magicOverlay:SetPoint("TOP", hpBar, "TOP", 0, 0)
+  magicOverlay:SetPoint("BOTTOM", hpBar, "BOTTOM", 0, 0)
+  magicOverlay:Hide()
+
   -- Marqueurs 50/25/10%
   UI.hpMarkers = {}
   local function makeMarker(parent, pct)
@@ -368,15 +376,20 @@ function ns.UI_Init()
 
   local xBlock = centerX(362)
   mkLabel(pageArmor, "Blocage (temp.)", xBlock + 0, -70)
-  local blockEB
-  local function applyBlock()
-    Core.SetTempBlock(getNumber(blockEB))
+  local blockEB, magicBlockEB
+  mkLabel(pageArmor, "Blocage magique (temp.)", xBlock + 0, -102)
+  local function applyBlocks()
+    -- Même problème que l'armure : on lit avant d'appeler les setters.
+    local blockVal = getNumber(blockEB)
+    local magicVal = getNumber(magicBlockEB)
+    Core.SetTempBlock(blockVal)
+    Core.SetTempMagicBlock(magicVal)
   end
-  blockEB = mkEdit(pageArmor, 70, 20, xBlock + 120, -68, applyBlock)
-  mkButton(pageArmor, "Appliquer", 90, 20, xBlock + 206, -68, applyBlock)
-  mkButton(pageArmor, "Réinit.", 70, 20, xBlock + 302, -68, function()
-    Core.ResetTempBlock()
-  end)
+  blockEB = mkEdit(pageArmor, 70, 20, xBlock + 120, -68, applyBlocks)
+  magicBlockEB = mkEdit(pageArmor, 70, 20, xBlock + 180, -100, applyBlocks)
+  mkButton(pageArmor, "Appliquer", 90, 20, xBlock + 206, -68, applyBlocks)
+  mkButton(pageArmor, "Réinit.", 70, 20, xBlock + 302, -68, function() Core.ResetTempBlock() end)
+  mkButton(pageArmor, "Réinit.", 70, 20, xBlock + 302, -100, function() Core.ResetTempMagicBlock() end)
 
   -- Onglet 3 : Dégâts
   local xValD = centerX(180)
@@ -416,6 +429,7 @@ function ns.UI_Init()
     armor = armorEB, trueArmor = trueArmorEB,
     dodge = dodgeEB,
     block = blockEB,
+    magicBlock = magicBlockEB,
   }
 
   setTab(1)
@@ -435,33 +449,63 @@ function ns.UI_Init()
       hpText:SetText(string.format("PV : %d / %d (%d%%)", s.hp or 0, baseMaxHp, roundPct(hpPct)))
     end
 
-    -- Blocage overlay (gris)
-    if UI.hpBlockOverlay then
+    -- Overlays Blocage (gris) + Blocage magique (doré)
+    do
       local maxHp = effMaxHp
-      local block = math.max(0, s.tempBlock or 0)
       local wBar = hpBar:GetWidth() or 0
+      local hpForOverlay = math.max(0, hpNow)
 
-      local hpFrac = 0
-      if maxHp > 0 then hpFrac = hpNow / maxHp end
-      hpFrac = math.max(0, math.min(1, hpFrac))
+      local block = math.max(0, s.tempBlock or 0)
+      local magic = math.max(0, s.tempMagicBlock or 0)
+      local total = math.min(hpForOverlay, block + magic)
 
-      local blockFrac = 0
-      if maxHp > 0 then blockFrac = block / maxHp end
-      blockFrac = math.max(0, blockFrac)
+      local function hideOverlay(tex)
+        if not tex then return end
+        tex:Hide()
+        tex:SetAlpha(0)
+        tex:SetWidth(0.001)
+      end
 
-
-      local endX = wBar * hpFrac
-      local startX = math.max(0, endX - (wBar * blockFrac))
-      local blockW = endX - startX
-
-      if blockW > 0.5 and endX > 0.5 then
-        UI.hpBlockOverlay:Show()
-        UI.hpBlockOverlay:ClearAllPoints()
-        UI.hpBlockOverlay:SetPoint("TOPLEFT", hpBar, "TOPLEFT", startX, 0)
-        UI.hpBlockOverlay:SetPoint("BOTTOMLEFT", hpBar, "BOTTOMLEFT", startX, 0)
-        UI.hpBlockOverlay:SetWidth(blockW)
+      if maxHp <= 0 or wBar <= 0 or total <= 0 then
+        hideOverlay(UI.hpBlockOverlay)
+        hideOverlay(UI.hpMagicBlockOverlay)
       else
-        UI.hpBlockOverlay:Hide()
+        local hpFrac = hpForOverlay / maxHp
+        if hpFrac < 0 then hpFrac = 0 elseif hpFrac > 1 then hpFrac = 1 end
+        local endX = wBar * hpFrac
+
+        -- On met le blocage magique au plus près du "bout" des PV,
+        -- puis le blocage normal juste à gauche (pas de chevauchement).
+        local magicShown = math.min(magic, total)
+        local blockShown = math.min(block, total - magicShown)
+
+        local magicW = wBar * (magicShown / maxHp)
+        local blockW = wBar * (blockShown / maxHp)
+
+        -- Magic (doré)
+        if UI.hpMagicBlockOverlay and magicW > 0.5 and endX > 0.5 then
+          UI.hpMagicBlockOverlay:Show()
+          UI.hpMagicBlockOverlay:SetAlpha(0.75)
+          UI.hpMagicBlockOverlay:ClearAllPoints()
+          UI.hpMagicBlockOverlay:SetPoint("TOPLEFT", hpBar, "TOPLEFT", math.max(0, endX - magicW), 0)
+          UI.hpMagicBlockOverlay:SetPoint("BOTTOMLEFT", hpBar, "BOTTOMLEFT", math.max(0, endX - magicW), 0)
+          UI.hpMagicBlockOverlay:SetWidth(magicW)
+        else
+          hideOverlay(UI.hpMagicBlockOverlay)
+        end
+
+        -- Block (gris) à gauche du magic
+        if UI.hpBlockOverlay and blockW > 0.5 and endX > 0.5 then
+          local startX = math.max(0, endX - magicW - blockW)
+          UI.hpBlockOverlay:Show()
+          UI.hpBlockOverlay:SetAlpha(0.65)
+          UI.hpBlockOverlay:ClearAllPoints()
+          UI.hpBlockOverlay:SetPoint("TOPLEFT", hpBar, "TOPLEFT", startX, 0)
+          UI.hpBlockOverlay:SetPoint("BOTTOMLEFT", hpBar, "BOTTOMLEFT", startX, 0)
+          UI.hpBlockOverlay:SetWidth(blockW)
+        else
+          hideOverlay(UI.hpBlockOverlay)
+        end
       end
     end
 
@@ -519,6 +563,7 @@ function ns.UI_Init()
     setNumber(UI.inputs.trueArmor, s.trueArmor)
     setNumber(UI.inputs.dodge, s.dodge)
     setNumber(UI.inputs.block, s.tempBlock)
+    setNumber(UI.inputs.magicBlock, s.tempMagicBlock)
   end)
 end
 
