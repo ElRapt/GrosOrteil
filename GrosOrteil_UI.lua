@@ -93,7 +93,12 @@ function ns.UI_Init()
     db.ui._migrated_20260214 = true
   end
 
-  local FRAME_W, FRAME_H = 520, 340
+  if not db.ui._migrated_20260214_wide then
+    db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
+    db.ui._migrated_20260214_wide = true
+  end
+
+  local FRAME_W, FRAME_H = 600, 340
   local PAD_X = 14
   local CONTENT_W = FRAME_W - (PAD_X * 2)
 
@@ -332,15 +337,18 @@ function ns.UI_Init()
   end)
 
   -- Onglet 2 : Armure & Blocage
-  local xArmor = centerX(330)
+  local xArmor = centerX(470)
   mkLabel(pageArmor, "Armure", xArmor + 0, -6)
-  local armorEB, trueArmorEB
+  local armorEB, trueArmorEB, dodgeEB
   mkLabel(pageArmor, "Armure invul", xArmor + 150, -6)
+  mkLabel(pageArmor, "Esquive", xArmor + 330, -6)
   local function applyArmor()
     Core.SetArmor(getNumber(armorEB), getNumber(trueArmorEB))
+    Core.SetDodge(getNumber(dodgeEB))
   end
   armorEB = mkEdit(pageArmor, 70, 20, xArmor + 56, -4, applyArmor)
   trueArmorEB = mkEdit(pageArmor, 70, 20, xArmor + 238, -4, applyArmor)
+  dodgeEB = mkEdit(pageArmor, 70, 20, xArmor + 386, -4, applyArmor)
   mkButton(pageArmor, "Appliquer", 110, 20, centerX(110), -34, applyArmor)
 
   local xBlock = centerX(362)
@@ -390,6 +398,7 @@ function ns.UI_Init()
     hpCur = hpCur, hpMax = hpMax,
     resCur = resCur, resMax = resMax,
     armor = armorEB, trueArmor = trueArmorEB,
+    dodge = dodgeEB,
     block = blockEB,
   }
 
@@ -479,6 +488,7 @@ function ns.UI_Init()
     setNumber(UI.inputs.resMax, s.maxRes)
     setNumber(UI.inputs.armor, s.armor)
     setNumber(UI.inputs.trueArmor, s.trueArmor)
+    setNumber(UI.inputs.dodge, s.dodge)
     setNumber(UI.inputs.block, s.tempBlock)
   end)
 end

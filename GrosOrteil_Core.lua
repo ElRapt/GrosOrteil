@@ -133,6 +133,7 @@ function ns.Core_Init()
     resEnabled = true,
     res = 20, maxRes = 20,
     armor = 0, trueArmor = 0,
+    dodge = 0,
     tempBlock = 0,
 
     wounds = { hit25 = false, hit10 = false },
@@ -154,6 +155,8 @@ function ns.Core_Init()
     end
     db.state.woundCap = nil
   end
+
+  if db.state.dodge == nil then db.state.dodge = 0 end
 
   Core.state = db.state
   updateWoundsSticky(Core.state)
@@ -212,6 +215,20 @@ function Core.SetTempBlock(v)
   bump(); notify()
 end
 
+function Core.SetDodge(v)
+  local s = Core.state
+  if not s then return end
+  v = clampNumber(v, 0, 1e9)
+  if v then s.dodge = v end
+  bump(); notify()
+end
+
+function Core.ResetDodge()
+  if not Core.state then return end
+  Core.state.dodge = 0
+  bump(); notify()
+end
+
 function Core.ResetTempBlock()
   if not Core.state then return end
   Core.state.tempBlock = 0
@@ -223,6 +240,12 @@ function Core.DamageWithArmor(amount)
   local s = Core.state
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
+
+  -- Esquive : si les dégâts sont <= au seuil, ils sont entièrement ignorés.
+  local dodge = math.max(0, s.dodge or 0)
+  if amount > 0 and dodge > 0 and amount <= dodge then
+    return
+  end
 
   local block = math.max(0, s.tempBlock or 0)
   if block > 0 and amount > 0 then
@@ -241,6 +264,13 @@ function Core.DamageTrue(amount)
   local s = Core.state
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
+
+  -- Esquive : s'applique aussi aux dégâts bruts.
+  local dodge = math.max(0, s.dodge or 0)
+  if amount > 0 and dodge > 0 and amount <= dodge then
+    return
+  end
+
   local mit = (s.trueArmor or 0)
   s.hp = (s.hp or 0) - effDmg(amount, mit)
   updateWoundsSticky(s)
