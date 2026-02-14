@@ -363,6 +363,29 @@ function ns.UI_Init()
     end
   end
 
+  -- Shadow Priest Insanity thresholds (no max; bar display caps at 25)
+  UI.insanityMarkers = {}
+  do
+    local bar = UI.resBars[2]
+    if bar then
+      local function makeInsanityMarker(val, r, g, b, a, w)
+        local t = bar:CreateTexture(nil, "OVERLAY")
+        t:SetTexture("Interface/Buttons/WHITE8x8")
+        t:SetWidth(w or 2)
+        t:SetHeight(bar:GetHeight() or 14)
+        t:SetColorTexture(r or 1, g or 1, b or 1, a or 0.45)
+        t.pct = (val or 0) / 25
+        t:Hide()
+        return t
+      end
+
+      UI.insanityMarkers[1] = makeInsanityMarker(4, 0.65, 0.95, 0.65, 0.45, 2)   -- start légère
+      UI.insanityMarkers[2] = makeInsanityMarker(12, 1.00, 0.82, 0.22, 0.55, 2)  -- start forte
+      UI.insanityMarkers[3] = makeInsanityMarker(20, 1.00, 0.55, 0.10, 0.60, 2)  -- start intense
+      UI.insanityMarkers[4] = makeInsanityMarker(25, 1.00, 0.25, 0.25, 0.70, 3)  -- cap / folie latente
+    end
+  end
+
   -- Bars are driven by Core.OnChange; keep them hidden until then.
 
   -- Onglets
@@ -835,6 +858,20 @@ function ns.UI_Init()
       if rowCount == 0 then UI.resDeltaEB:Hide() else UI.resDeltaEB:Show() end
     end
 
+    -- Default: hide resource threshold markers; they'll be re-shown when applicable.
+    if UI.corruptionMarkers then
+      for j = 1, #UI.corruptionMarkers do
+        local m = UI.corruptionMarkers[j]
+        if m then m:Hide() end
+      end
+    end
+    if UI.insanityMarkers then
+      for j = 1, #UI.insanityMarkers do
+        local m = UI.insanityMarkers[j]
+        if m then m:Hide() end
+      end
+    end
+
     -- Move tabs under the last active resource bar.
     do
       local n = barCount
@@ -993,11 +1030,20 @@ function ns.UI_Init()
           local maxv = s[maxKey] or 0
 
           local isWarlockCorruption = (s.classKey == "WARLOCK" and p.idx == 2)
+          local isShadowInsanity = (s.classKey == "SHADOWPRIEST" and p.idx == 2)
+
+          local displayMax = maxv
           if isWarlockCorruption then
             maxv = 60
             if cur < 0 then cur = 0 elseif cur > 60 then cur = 60 end
+            displayMax = 60
+          elseif isShadowInsanity then
+            -- No real maximum, but bar display caps at 25.
+            displayMax = 25
+            if cur < 0 then cur = 0 end
           end
-          local pct = (maxv and maxv > 0) and (cur / maxv) or 0
+
+          local pct = (displayMax and displayMax > 0) and (math.min(cur, displayMax) / displayMax) or 0
 
           if bar then
             bar:Show()
@@ -1021,6 +1067,26 @@ function ns.UI_Init()
                 p.label or "Corruption",
                 cur,
                 maxv,
+                roundPct(pct),
+                tier
+              ))
+            elseif isShadowInsanity then
+              local tier
+              if cur < 4 then
+                tier = "Nulle"
+              elseif cur < 12 then
+                tier = "Légère"
+              elseif cur < 20 then
+                tier = "Forte"
+              elseif cur < 25 then
+                tier = "Intense"
+              else
+                tier = "Folie latente"
+              end
+              txt:SetText(string.format(
+                "%s : %d (%d%%) — %s",
+                p.label or "Insanité",
+                cur,
                 roundPct(pct),
                 tier
               ))
@@ -1051,14 +1117,37 @@ function ns.UI_Init()
             end
           end
 
+          -- Insanity threshold markers (4/12/20/25 out of displayMax=25)
+          if UI.insanityMarkers then
+            if isShadowInsanity and bar and (bar.GetWidth and (bar:GetWidth() or 0) > 0) then
+              local wBar = bar:GetWidth() or 0
+              for j = 1, #UI.insanityMarkers do
+                local m = UI.insanityMarkers[j]
+                if m then
+                  m:Show()
+                  local x = wBar * (m.pct or 0)
+                  if x < 0 then x = 0 elseif x > wBar then x = wBar end
+                  m:ClearAllPoints()
+                  m:SetPoint("LEFT", bar, "LEFT", x, 0)
+                end
+              end
+            end
+          end
+
           if row then row:Show() end
           if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
           if curEB then setNumber(curEB, cur) end
-          if maxEB then setNumber(maxEB, maxv) end
-
-          -- Warlock corruption max is fixed; prevent editing the max box.
           if maxEB then
-            if isWarlockCorruption then
+            if isShadowInsanity then
+              setNumber(maxEB, 25)
+            else
+              setNumber(maxEB, maxv)
+            end
+          end
+
+          -- Fixed/scaled max boxes.
+          if maxEB then
+            if isWarlockCorruption or isShadowInsanity then
               if maxEB.Disable then maxEB:Disable()
               elseif maxEB.EnableMouse then maxEB:EnableMouse(false) end
               if maxEB.SetAlpha then maxEB:SetAlpha(0.55) end

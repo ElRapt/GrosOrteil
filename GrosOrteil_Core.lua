@@ -339,6 +339,7 @@ function Core.SetResIndex(i, res, maxRes)
 
   -- Warlock corruption (index 2) has fixed max=60.
   local isWarlockCorruption = (i == 2 and s.classKey == "WARLOCK")
+  local isShadowInsanity = (i == 2 and s.classKey == "SHADOWPRIEST")
 
   if isWarlockCorruption then
     maxRes = 60
@@ -350,7 +351,9 @@ function Core.SetResIndex(i, res, maxRes)
 
   if maxRes then s[maxKey] = maxRes end
   if res then s[resKey] = res end
-  clampToMax(s, resKey, maxKey)
+  if not isShadowInsanity then
+    clampToMax(s, resKey, maxKey)
+  end
 
   if isWarlockCorruption then
     if type(s[resKey]) ~= "number" then s[resKey] = 0 end
@@ -367,13 +370,14 @@ function Core.AddResIndex(i, amount)
   if not resKey then return end
 
   local isWarlockCorruption = (i == 2 and s.classKey == "WARLOCK")
+  local isShadowInsanity = (i == 2 and s.classKey == "SHADOWPRIEST")
   amount = clampNumber(amount, -1e9, 1e9) or 0
   s[resKey] = (s[resKey] or 0) + amount
 
   if isWarlockCorruption then
     if maxKey then s[maxKey] = 60 end
     if s[resKey] < 0 then s[resKey] = 0 elseif s[resKey] > 60 then s[resKey] = 60 end
-  else
+  elseif not isShadowInsanity then
     clampToMax(s, resKey, maxKey)
   end
   bump(); notify()
