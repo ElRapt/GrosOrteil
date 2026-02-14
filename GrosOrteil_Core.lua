@@ -6,6 +6,8 @@ ns.Core = Core
 
 local listeners = {}
 
+local getWoundCap
+
 local function notify()
   for i = 1, #listeners do
     listeners[i](Core.state)
@@ -27,23 +29,50 @@ local function clampNumber(x, minv, maxv)
   return x
 end
 
-local function updateWoundCap()
+getWoundCap = function()
+  local w = Core.state.wounds
+  if w and w.hit10 then return 0.25 end
+  if w and w.hit25 then return 0.50 end
+  return 1.0
+end
+
+
+local function updateWoundsSticky()
   local s = Core.state
-  if not s.maxHp or s.maxHp <= 0 then return end
-  local p = s.hp / s.maxHp
+  s.wounds = s.wounds or { hit25 = false, hit10 = false }
+
+  if not s.maxHp or s.maxHp <= 0 then
+    s.wounds.hit25 = false
+    s.wounds.hit10 = false
+    return
+  end
+
+  local p = (s.hp or 0) / s.maxHp
+
   if p < 0.10 then
-    s.woundCap = math.min(s.woundCap or 1.0, 0.25)
+    s.wounds.hit10 = true
+    s.wounds.hit25 = true
   elseif p < 0.25 then
-    s.woundCap = math.min(s.woundCap or 1.0, 0.50)
+    s.wounds.hit25 = true
   end
 end
 
-local function applyHealClamp()
+local function recomputeWounds()
   local s = Core.state
-  local cap = (s.woundCap or 1.0)
-  local maxAllowed = (s.maxHp or 0) * cap
-  if s.hp > maxAllowed then
-    s.hp = maxAllowed
+  s.wounds = s.wounds or { hit25 = false, hit10 = false }
+  s.wounds.hit25 = false
+  s.wounds.hit10 = false
+
+  if not s.maxHp or s.maxHp <= 0 then
+    return
+  end
+
+  local p = (s.hp or 0) / s.maxHp
+  if p < 0.10 then
+    s.wounds.hit10 = true
+    s.wounds.hit25 = true
+  elseif p < 0.25 then
+    s.wounds.hit25 = true
   end
 end
 
@@ -57,16 +86,36 @@ end
 
 function ns.Core_Init()
   local db = GrosOrteilDB
+
   db.state = db.state or {
     hp = 50, maxHp = 50,
     resEnabled = true,
     res = 20, maxRes = 20,
     armor = 0, trueArmor = 0,
     tempBlock = 0,
-    woundCap = 1.0,
+
+    wounds = { hit25 = false, hit10 = false },
+
     rev = 0,
   }
+
+  -- Migration depuis l'ancien champ woundCap si présent
+  if db.state.wounds == nil then
+    db.state.wounds = { hit25 = false, hit10 = false }
+  end
+  if db.state.woundCap ~= nil then
+    local cap = db.state.woundCap
+    if cap <= 0.25 then
+      db.state.wounds.hit10 = true
+      db.state.wounds.hit25 = true
+    elseif cap <= 0.50 then
+      db.state.wounds.hit25 = true
+    end
+    db.state.woundCap = nil
+  end
+
   Core.state = db.state
+  updateWoundsSticky()
   notify()
 end
 
@@ -77,7 +126,7 @@ function Core.SetHP(hp, maxHp)
   maxHp = clampNumber(maxHp, 1, 1e9)
   if maxHp then s.maxHp = maxHp end
   if hp then s.hp = hp end
-  updateWoundCap()
+  recomputeWounds()
   bump(); notify()
 end
 
@@ -123,7 +172,7 @@ function Core.DamageWithArmor(amount)
   amount = clampNumber(amount, 0, 1e9) or 0
   local mit = (s.armor or 0) + (s.tempBlock or 0) + (s.trueArmor or 0)
   s.hp = (s.hp or 0) - effDmg(amount, mit)
-  updateWoundCap()
+  updateWoundsSticky()
   bump(); notify()
 end
 
@@ -132,22 +181,36 @@ function Core.DamageTrue(amount)
   amount = clampNumber(amount, 0, 1e9) or 0
   local mit = (s.trueArmor or 0)
   s.hp = (s.hp or 0) - effDmg(amount, mit)
-  updateWoundCap()
+  updateWoundsSticky()
   bump(); notify()
 end
 
 function Core.Heal(amount)
   local s = Core.state
   amount = clampNumber(amount, 0, 1e9) or 0
-  s.hp = (s.hp or 0) + amount
-  applyHealClamp()
+
+  local current = (s.hp or 0)
+  local proposed = current + amount
+
+  -- Cap selon l'état courant (seuils dynamiques)
+  local capMax = (s.maxHp or 0) * getWoundCap()
+
+  -- Soins normaux : ne dépassent pas le cap (s'il existe)
+  s.hp = math.min(proposed, capMax)
+
+  -- IMPORTANT: les soins normaux ne lèvent jamais un seuil
+  updateWoundsSticky()
   bump(); notify()
 end
 
 function Core.DivineHeal()
   local s = Core.state
-  -- Bypass plafond : fixe à 75% du total
-  s.hp = (s.maxHp or 0) * 0.75
+  -- Bypass plafond : +75% du total (pas "fixé" à 75%)
+  local maxHp = (s.maxHp or 0)
+  local current = (s.hp or 0)
+  s.hp = math.min(current + (maxHp * 0.75), maxHp)
+  -- DivineHeal est un bypass : on recalcule les seuils depuis l'état actuel
+  recomputeWounds()
   bump(); notify()
 end
 

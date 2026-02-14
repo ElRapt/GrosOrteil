@@ -207,7 +207,6 @@ function ns.UI_Init()
     Core.AddRes(-(getNumber(valEB) or 0))
   end)
 
-  -- Sauvegarde pour synchroniser les champs à l’état
   UI.inputs = {
     hpCur = hpCur, hpMax = hpMax,
     resCur = resCur, resMax = resMax,
@@ -215,14 +214,11 @@ function ns.UI_Init()
     block = blockEB,
   }
 
-  -- Binding état -> UI
   Core.OnChange(function(s)
-    -- Barres (bar clamp 0..1, mais PV peut être négatif)
     local hpPct = (s.maxHp and s.maxHp > 0) and (s.hp / s.maxHp) or 0
     hpBar:SetValue(math.max(0, math.min(1, hpPct)))
     hpText:SetText(string.format("PV : %d / %d (%d%%)", s.hp or 0, s.maxHp or 0, roundPct(hpPct)))
 
-    -- Marqueurs
     local w = hpBar:GetWidth()
     for i = 1, #UI.hpMarkers do
       local m = UI.hpMarkers[i]
@@ -231,8 +227,11 @@ function ns.UI_Init()
       m:SetPoint("LEFT", hpBar, "LEFT", x, 0)
     end
 
-    -- Plafond de soins
-    local cap = s.woundCap or 1.0
+    local cap
+    local w2 = s.wounds
+    if w2 and w2.hit10 then cap = 0.25
+    elseif w2 and w2.hit25 then cap = 0.50
+    else cap = 1.0 end
     if cap >= 0.999 then
       capText:SetText("")
     else
