@@ -6,6 +6,55 @@ ns.Core = Core
 
 local listeners = {}
 
+local function playFirstSoundKit(keys)
+  if type(PlaySound) ~= "function" then return end
+  if type(SOUNDKIT) ~= "table" then return end
+  if type(keys) ~= "table" then return end
+  for i = 1, #keys do
+    local k = keys[i]
+    local id = SOUNDKIT[k]
+    if type(id) == "number" then
+      pcall(PlaySound, id, "SFX")
+      return
+    end
+  end
+end
+
+local function playSoundFileId(fileId)
+  if type(fileId) ~= "number" then return false end
+  if type(PlaySoundFile) ~= "function" then return false end
+  local ok = pcall(PlaySoundFile, fileId, "SFX")
+  return ok
+end
+
+local function sfxDamage()
+  -- User-provided sound FileID
+  if playSoundFileId(1305792) then return end
+  playFirstSoundKit({ "SFX_GLUEGENERICBUTTON_PRESS", "IG_MAINMENU_OPTION_CHECKBOX_ON" })
+end
+
+local function sfxBlock()
+  if playSoundFileId(1353843) then return end
+  playFirstSoundKit({ "IG_MAINMENU_OPTION_CHECKBOX_ON" })
+end
+
+local function sfxMagicShield()
+  if playSoundFileId(1708158) then return end
+  playFirstSoundKit({ "IG_MAINMENU_OPTION_CHECKBOX_ON" })
+end
+
+local function sfxHealLight()
+  -- User-provided sound FileID
+  if playSoundFileId(1693996) then return end
+  playFirstSoundKit({ "SPELL_HOLY_HEAL", "SPELL_HOLY_FLASH_HEAL", "IG_SPELLBOOK_OPEN" })
+end
+
+local function sfxLayOnHands()
+  -- User-provided sound FileID
+  if playSoundFileId(1955776) then return end
+  playFirstSoundKit({ "SPELL_HOLY_LAY_ON_HANDS", "SPELL_HOLY_REDEMPTION", "RAID_WARNING" })
+end
+
 local function reportError(err)
   if type(geterrorhandler) == "function" then
     local h = geterrorhandler()
@@ -301,19 +350,31 @@ function Core.DamageWithArmor(amount)
     return
   end
 
+  local absorbedBlock = 0
+  local absorbedMagic = 0
+
   local block = math.max(0, s.tempBlock or 0)
   if block > 0 and amount > 0 then
-    local absorbed = math.min(block, amount)
-    s.tempBlock = block - absorbed
-    amount = amount - absorbed
+    absorbedBlock = math.min(block, amount)
+    s.tempBlock = block - absorbedBlock
+    amount = amount - absorbedBlock
   end
 
   -- Blocage magique : comme le blocage, mais fonctionne aussi sur dégâts bruts.
   local mblock = math.max(0, s.tempMagicBlock or 0)
   if mblock > 0 and amount > 0 then
-    local absorbed = math.min(mblock, amount)
-    s.tempMagicBlock = mblock - absorbed
-    amount = amount - absorbed
+    absorbedMagic = math.min(mblock, amount)
+    s.tempMagicBlock = mblock - absorbedMagic
+    amount = amount - absorbedMagic
+  end
+
+  -- SFX (une seule par "coup") : magic > block > damage
+  if absorbedMagic > 0 then
+    sfxMagicShield()
+  elseif absorbedBlock > 0 then
+    sfxBlock()
+  elseif amount > 0 then
+    sfxDamage()
   end
 
   local mit = (s.armor or 0) + (s.trueArmor or 0)
@@ -337,12 +398,20 @@ function Core.DamageTrue(amount)
     return
   end
 
+  local absorbedMagic = 0
+
   -- Blocage magique : s'applique aux dégâts bruts (contrairement au blocage normal).
   local mblock = math.max(0, s.tempMagicBlock or 0)
   if mblock > 0 and amount > 0 then
-    local absorbed = math.min(mblock, amount)
-    s.tempMagicBlock = mblock - absorbed
-    amount = amount - absorbed
+    absorbedMagic = math.min(mblock, amount)
+    s.tempMagicBlock = mblock - absorbedMagic
+    amount = amount - absorbedMagic
+  end
+
+  if absorbedMagic > 0 then
+    sfxMagicShield()
+  elseif amount > 0 then
+    sfxDamage()
   end
 
   local mit = (s.trueArmor or 0)
@@ -359,6 +428,8 @@ function Core.Heal(amount)
   local s = Core.state
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
+
+  if amount > 0 then sfxHealLight() end
 
   local current = (s.hp or 0)
   local proposed = current + amount
@@ -380,6 +451,8 @@ end
 function Core.DivineHeal()
   local s = Core.state
   if not s then return end
+
+  sfxLayOnHands()
   -- Bypass plafond : +75% du total (pas "fixé" à 75%)
   local baseMax = (s.maxHp or 0)
   local bonus = math.max(0, s.bonusHp or 0)
