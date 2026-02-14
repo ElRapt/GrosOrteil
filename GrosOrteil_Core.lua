@@ -15,7 +15,14 @@ local function notify()
 end
 
 function Core.OnChange(fn)
+  if type(fn) ~= "function" then return end
   listeners[#listeners + 1] = fn
+
+  -- Important: Core_Init() may have already fired notify() before UI registers.
+  -- Push the current cached state immediately so the UI is correct on /reload.
+  if Core.state then
+    fn(Core.state)
+  end
 end
 
 local function bump()
@@ -126,6 +133,12 @@ function Core.SetHP(hp, maxHp)
   maxHp = clampNumber(maxHp, 1, 1e9)
   if maxHp then s.maxHp = maxHp end
   if hp then s.hp = hp end
+
+  -- Clamp to max (no error; just fallback to max)
+  if s.maxHp and s.hp and s.hp > s.maxHp then
+    s.hp = s.maxHp
+  end
+
   recomputeWounds()
   bump(); notify()
 end
@@ -136,6 +149,12 @@ function Core.SetRes(res, maxRes)
   maxRes = clampNumber(maxRes, 1, 1e9)
   if maxRes then s.maxRes = maxRes end
   if res then s.res = res end
+
+  -- Clamp to max (no error; just fallback to max)
+  if s.maxRes and s.res and s.res > s.maxRes then
+    s.res = s.maxRes
+  end
+
   bump(); notify()
 end
 
@@ -218,5 +237,11 @@ function Core.AddRes(amount)
   local s = Core.state
   amount = clampNumber(amount, -1e9, 1e9) or 0
   s.res = (s.res or 0) + amount
+
+  -- Clamp to max (no error; just fallback to max)
+  if s.maxRes and s.res and s.res > s.maxRes then
+    s.res = s.maxRes
+  end
+
   bump(); notify()
 end
