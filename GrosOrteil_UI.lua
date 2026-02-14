@@ -319,6 +319,18 @@ function ns.UI_Init()
     skinBar(bar, 0.2, 0.55, 1.0)
     bar:Hide()
 
+    -- Optional stacked segments (used for Shaman: 4 elements in 1 bar)
+    if idx == 1 then
+      bar._stackSegs = {}
+      for j = 1, 4 do
+        local seg = bar:CreateTexture(nil, "OVERLAY")
+        seg:SetTexture("Interface\\Buttons\\WHITE8x8")
+        seg:SetVertexColor(1, 1, 1, 1)
+        seg:Hide()
+        bar._stackSegs[j] = seg
+      end
+    end
+
     local txt = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     UI.resTexts[idx] = txt
     txt:SetPoint("CENTER")
@@ -773,9 +785,17 @@ function ns.UI_Init()
 
     -- Ressource
     local profile = getResProfile(s.classKey)
+    local rowCount = #profile
+    local barCount
+    if s.classKey == "SHAMAN" then
+      barCount = (rowCount > 0) and 1 or 0
+    else
+      barCount = rowCount
+    end
+
     if UI.resPageLabel and UI.resPageLabel.SetText then
       local headerText
-      if #profile == 0 then
+      if rowCount == 0 then
         headerText = "Aucune ressource"
       else
         headerText = (CLASS_STYLES[s.classKey] and CLASS_STYLES[s.classKey].label) or "Ressource"
@@ -784,28 +804,34 @@ function ns.UI_Init()
     end
 
     if UI.noResHint then
-      if #profile == 0 then UI.noResHint:Show() else UI.noResHint:Hide() end
+      if rowCount == 0 then UI.noResHint:Show() else UI.noResHint:Hide() end
     end
     if UI.resDeltaLabel then
-      if #profile == 0 then UI.resDeltaLabel:Hide() else UI.resDeltaLabel:Show() end
+      if rowCount == 0 then UI.resDeltaLabel:Hide() else UI.resDeltaLabel:Show() end
     end
     if UI.resDeltaEB then
-      if #profile == 0 then UI.resDeltaEB:Hide() else UI.resDeltaEB:Show() end
+      if rowCount == 0 then UI.resDeltaEB:Hide() else UI.resDeltaEB:Show() end
     end
 
     -- Move tabs under the last active resource bar.
     do
-      local n = #profile
+      local n = barCount
+      if n < 0 then n = 0 end
       if n > 4 then n = 4 end
 
       local anchor = capText
-      if n >= 1 then
+      if n >= 1 and UI.resBars and UI.resBars[n] then
         anchor = UI.resBars[n]
       end
 
       -- Grow the window when multiple resource bars are visible (Shaman = 4).
       if frame and frame.SetHeight then
-        local extraPad = (n >= 4) and 26 or 0
+        local extraPad = 0
+        if s.classKey == "SHAMAN" then
+          extraPad = 70
+        elseif n >= 4 then
+          extraPad = 26
+        end
         local targetH = BASE_FRAME_H + (math.max(0, n - 1) * RES_EXTRA_H) + extraPad
         if targetH < BASE_FRAME_H then targetH = BASE_FRAME_H end
         frame:SetHeight(targetH)
@@ -834,29 +860,123 @@ function ns.UI_Init()
       local curEB = UI.resRowCur and UI.resRowCur[i]
       local maxEB = UI.resRowMax and UI.resRowMax[i]
 
-      local p = profile[i]
-      if not p then
-        if bar then bar:Hide() end
-        if row then row:Hide() end
-      else
-        local resKey, maxKey = getKeysForIdx(p.idx)
-        local cur = s[resKey] or 0
-        local maxv = s[maxKey] or 0
-        local pct = (maxv and maxv > 0) and (cur / maxv) or 0
+      -- Shaman: display 4 resources in 1 stacked bar, but keep 4 edit rows.
+      if s.classKey == "SHAMAN" then
+        local p = profile[i]
+        -- Bars: only use bar #1.
+        if i ~= 1 then
+          if bar then bar:Hide() end
+          if txt then txt:SetText("") end
+        end
 
-        if bar then
+        -- Rows: show/hide and bind each element.
+        if not p then
+          if row then row:Hide() end
+        else
+          local resKey, maxKey = getKeysForIdx(p.idx)
+          local cur = s[resKey] or 0
+          local maxv = s[maxKey] or 0
+          if row then row:Show() end
+          if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
+          if curEB then setNumber(curEB, cur) end
+          if maxEB then setNumber(maxEB, maxv) end
+        end
+
+        -- After the loop's first iteration, update the stacked bar visuals.
+        if i == 1 and bar and bar._stackSegs then
           bar:Show()
-          bar:SetStatusBarColor(p.r, p.g, p.b, 1)
+
+          local totalMax = 0
+          local totalCur = 0
+          for j = 1, 4 do
+            local pj = profile[j]
+            if pj then
+              local rk, mk = getKeysForIdx(pj.idx)
+              local curJ = s[rk] or 0
+              local maxJ = s[mk] or 0
+              if maxJ > 0 and curJ > maxJ then curJ = maxJ end
+              if curJ < 0 then curJ = 0 end
+              totalCur = totalCur + curJ
+              totalMax = totalMax + maxJ
+            end
+          end
+
+          local pct = (totalMax > 0) and (totalCur / totalMax) or 0
           bar:SetValue(math.max(0, math.min(1, pct)))
-        end
-        if txt then
-          txt:SetText(string.format("%s : %d / %d (%d%%)", p.label or "Ressource", cur, maxv, roundPct(pct)))
+          -- Hide base fill; segments provide the color.
+          bar:SetStatusBarColor(0, 0, 0, 0)
+
+          local wBar = bar:GetWidth() or 0
+          local x = 0
+          for j = 1, 4 do
+            local seg = bar._stackSegs[j]
+            local pj = profile[j]
+            if seg and pj and totalMax > 0 and wBar > 0 then
+              local rk, mk = getKeysForIdx(pj.idx)
+              local curJ = s[rk] or 0
+              local maxJ = s[mk] or 0
+              if maxJ > 0 and curJ > maxJ then curJ = maxJ end
+              if curJ < 0 then curJ = 0 end
+              local segW = wBar * (curJ / totalMax)
+              if segW > 0.5 then
+                seg:Show()
+                seg:SetVertexColor(pj.r, pj.g, pj.b, 0.95)
+                seg:ClearAllPoints()
+                seg:SetPoint("TOPLEFT", bar, "TOPLEFT", x, 0)
+                seg:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x, 0)
+                seg:SetWidth(segW)
+                x = x + segW
+              else
+                seg:Hide()
+              end
+            elseif seg then
+              seg:Hide()
+            end
+          end
+
+          if txt then
+            txt:SetText(string.format(
+              "Points élémentaires : %d / %d (%d%%)",
+              totalCur,
+              totalMax,
+              roundPct(pct)
+            ))
+          end
         end
 
-        if row then row:Show() end
-        if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
-        if curEB then setNumber(curEB, cur) end
-        if maxEB then setNumber(maxEB, maxv) end
+      else
+        -- Default behavior: 1 bar per resource.
+        local p = profile[i]
+        if not p then
+          if bar then bar:Hide() end
+          if row then row:Hide() end
+        else
+          -- Hide stacked segments if any
+          if bar and bar._stackSegs then
+            for j = 1, #bar._stackSegs do
+              bar._stackSegs[j]:Hide()
+            end
+          end
+
+          local resKey, maxKey = getKeysForIdx(p.idx)
+          local cur = s[resKey] or 0
+          local maxv = s[maxKey] or 0
+          local pct = (maxv and maxv > 0) and (cur / maxv) or 0
+
+          if bar then
+            bar:Show()
+            bar:SetStatusBarColor(p.r, p.g, p.b, 1)
+            bar:SetValue(math.max(0, math.min(1, pct)))
+          end
+          if txt then
+            txt:SetText(string.format("%s : %d / %d (%d%%)", p.label or "Ressource", cur, maxv, roundPct(pct)))
+          end
+
+          if row then row:Show() end
+          if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
+          if curEB then setNumber(curEB, cur) end
+          if maxEB then setNumber(maxEB, maxv) end
+        end
       end
     end
 
