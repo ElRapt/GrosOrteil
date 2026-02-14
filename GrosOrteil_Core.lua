@@ -133,6 +133,8 @@ local function updateWoundsSticky(s)
     return
   end
 
+  -- IMPORTANT: wounds thresholds are based on base max HP only.
+  -- Bonus HP must not change the threshold values.
   local p = (s.hp or 0) / s.maxHp
   if p < 0 then p = 0 elseif p > 1 then p = 1 end
   local hit25, hit10 = woundsFromPct(p)
@@ -437,11 +439,15 @@ function Core.Heal(amount)
   -- Cap selon l'état courant (seuils dynamiques)
   local baseMax = (s.maxHp or 0)
   local bonus = math.max(0, s.bonusHp or 0)
-  local capMax = (baseMax * getWoundCap(s)) + bonus
+  -- IMPORTANT: the cap threshold is based on base max HP only.
+  -- Bonus HP must not increase the cap.
+  local capMax = (baseMax * getWoundCap(s))
   local effMax = baseMax + bonus
 
   -- Soins normaux : ne dépassent pas le cap (s'il existe)
-  s.hp = math.min(proposed, capMax, effMax)
+  -- Never reduce HP if current HP is already above the cap.
+  local healed = math.min(proposed, capMax, effMax)
+  s.hp = math.max(current, healed)
 
   -- IMPORTANT: les soins normaux ne lèvent jamais un seuil
   updateWoundsSticky(s)

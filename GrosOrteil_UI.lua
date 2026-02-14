@@ -509,11 +509,15 @@ function ns.UI_Init()
       end
     end
 
-    local w = hpBar:GetWidth()
-    local baseScale = (effMaxHp > 0) and (baseMaxHp / effMaxHp) or 0
+    local w = hpBar:GetWidth() or 0
     for i = 1, #UI.hpMarkers do
       local m = UI.hpMarkers[i]
-      local x = w * (m.pct or 0) * baseScale
+      local pct = (m.pct or 0)
+      -- Threshold value is based on base max HP only.
+      -- The bar range may include bonus HP, so convert base-threshold to a fraction of effMax.
+      local thresholdHp = baseMaxHp * pct
+      local x = (effMaxHp > 0) and (w * (thresholdHp / effMaxHp)) or 0
+      if x < 0 then x = 0 elseif x > w then x = w end
       m:ClearAllPoints()
       m:SetPoint("LEFT", hpBar, "LEFT", x, 0)
     end
@@ -530,7 +534,10 @@ function ns.UI_Init()
         UI.hpCapMarker:Hide()
       else
         UI.hpCapMarker:Show()
-        local xCap = (effMaxHp > 0) and (w * ((baseMaxHp * cap) / effMaxHp)) or 0
+        -- Core.Heal() caps at (baseMax*cap). Bonus HP does not extend the cap.
+        local capHp = (baseMaxHp * cap)
+        local xCap = (effMaxHp > 0) and (w * (capHp / effMaxHp)) or 0
+        if xCap < 0 then xCap = 0 elseif xCap > w then xCap = w end
         UI.hpCapMarker:ClearAllPoints()
         UI.hpCapMarker:SetPoint("LEFT", hpBar, "LEFT", xCap, 0)
       end
