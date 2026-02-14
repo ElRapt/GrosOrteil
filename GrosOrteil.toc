@@ -6,5 +6,5 @@
 ## SavedVariables: GrosOrteilDB
 
 GrosOrteil_Main.lua
-Core.lua
-UI.lua
+GrosOrteil_Core.lua
+GrosOrteil_UI.lua
