@@ -164,6 +164,9 @@ end
 
 local function clampHpToEffectiveMax(s)
   if not s then return end
+  if type(s.hp) == "number" and s.hp < 0 then
+    s.hp = 0
+  end
   local baseMax = s.maxHp
   if type(baseMax) ~= "number" or baseMax <= 0 then return end
   local bonus = math.max(0, s.bonusHp or 0)
@@ -286,7 +289,7 @@ end
 function Core.SetHP(hp, maxHp)
   local s = Core.state
   if not s then return end
-  hp = clampNumber(hp, -1e9, 1e9)
+  hp = clampNumber(hp, 0, 1e9)
   maxHp = clampNumber(maxHp, 1, 1e9)
   if maxHp then s.maxHp = maxHp end
   if hp then s.hp = hp end
@@ -482,6 +485,7 @@ function Core.DamageWithArmor(amount)
   if dmg > 0 then
     s.hp = (s.hp or 0) - dmg
   end
+  clampHpToEffectiveMax(s)
   updateWoundsSticky(s)
   bump(); notify()
 end
@@ -519,6 +523,7 @@ function Core.DamageTrue(amount)
   if dmg > 0 then
     s.hp = (s.hp or 0) - dmg
   end
+  clampHpToEffectiveMax(s)
   updateWoundsSticky(s)
   bump(); notify()
 end
@@ -546,6 +551,8 @@ function Core.Heal(amount)
   local healed = math.min(proposed, capMax, effMax)
   s.hp = math.max(current, healed)
 
+  clampHpToEffectiveMax(s)
+
   -- IMPORTANT: les soins normaux ne lèvent jamais un seuil
   updateWoundsSticky(s)
   bump(); notify()
@@ -562,6 +569,7 @@ function Core.DivineHeal()
   local maxHp = baseMax + bonus
   local current = (s.hp or 0)
   s.hp = math.min(current + (baseMax * 0.75), maxHp)
+  clampHpToEffectiveMax(s)
   -- DivineHeal est un bypass : on recalcule les seuils depuis l'état actuel
   recomputeWounds(s)
   bump(); notify()
