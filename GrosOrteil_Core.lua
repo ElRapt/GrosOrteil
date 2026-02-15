@@ -4,6 +4,8 @@ local _, ns = ...
 local Core = {}
 ns.Core = Core
 
+local History = ns.History
+
 local listeners = {}
 
 local function playFirstSoundKit(keys)
@@ -103,6 +105,28 @@ local function clampNumber(x, minv, maxv)
   if minv and x < minv then x = minv end
   if maxv and x > maxv then x = maxv end
   return x
+end
+
+local function ensureHistory(s)
+  if History and History.EnsureState then
+    History.EnsureState(s)
+  else
+    if not s then return end
+    if type(s.history) ~= "table" then s.history = {} end
+  end
+end
+
+local function pushHistory(entry)
+  local s = Core.state
+  if not s then return end
+  if type(entry) ~= "table" then return end
+  if History and History.Push then
+    History.Push(s, entry)
+  else
+    ensureHistory(s)
+    table.insert(s.history, 1, entry)
+    while #s.history > 60 do table.remove(s.history) end
+  end
 end
 
 local function ensureWounds(s)
@@ -219,6 +243,8 @@ function ns.Core_Init()
 
     wounds = { hit25 = false, hit10 = false },
 
+    history = {},
+
     rev = 0,
   }
 
@@ -251,6 +277,7 @@ function ns.Core_Init()
 
   if db.state.dodge == nil then db.state.dodge = 0 end
   if db.state.tempMagicBlock == nil then db.state.tempMagicBlock = 0 end
+  ensureHistory(db.state)
 
   -- Ensure multi-resource fields exist (Warlock/Shadow Priest/Shaman).
   if db.state.res2 == nil then db.state.res2 = 0 end
@@ -269,6 +296,24 @@ function ns.Core_Init()
   Core.state = db.state
   updateWoundsSticky(Core.state)
   notify()
+end
+
+function Core.GetHistory()
+  local s = Core.state
+  if not s then return {} end
+  ensureHistory(s)
+  return s.history
+end
+
+function Core.ClearHistory()
+  local s = Core.state
+  if not s then return end
+  if History and History.Clear then
+    History.Clear(s)
+  else
+    s.history = {}
+  end
+  bump(); notify()
 end
 
 function Core.SetClassKey(classKey)
@@ -446,9 +491,28 @@ function Core.DamageWithArmor(amount)
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
 
+  local hpBefore = (s.hp or 0)
+  local baseMaxBefore = (s.maxHp or 0)
+  local bonusBefore = math.max(0, s.bonusHp or 0)
+  local armorBefore = (s.armor or 0)
+  local trueArmorBefore = (s.trueArmor or 0)
+  local dodgeBefore = math.max(0, s.dodge or 0)
+
   -- Esquive : si les dégâts sont <= au seuil, ils sont entièrement ignorés.
-  local dodge = math.max(0, s.dodge or 0)
-  if amount > 0 and dodge > 0 and amount <= dodge then
+  if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
+    pushHistory({
+      kind = "DAMAGE_ARMOR",
+      input = amount,
+      dodged = true,
+      dodge = dodgeBefore,
+      armor = armorBefore,
+      trueArmor = trueArmorBefore,
+      hpBefore = hpBefore,
+      hpAfter = hpBefore,
+      maxHp = baseMaxBefore,
+      bonusHp = bonusBefore,
+    })
+    bump(); notify()
     return
   end
 
@@ -479,13 +543,34 @@ function Core.DamageWithArmor(amount)
     sfxDamage()
   end
 
-  local mit = (s.armor or 0) + (s.trueArmor or 0)
+  local mit = armorBefore + trueArmorBefore
+
+  local afterAbsorb = amount
 
   local dmg = effDmg(amount, mit)
   if dmg > 0 then
     s.hp = (s.hp or 0) - dmg
   end
   clampHpToEffectiveMax(s)
+
+  pushHistory({
+    kind = "DAMAGE_ARMOR",
+    input = amount + absorbedBlock + absorbedMagic,
+    afterAbsorb = afterAbsorb,
+    absorbedBlock = absorbedBlock,
+    absorbedMagic = absorbedMagic,
+    dodge = dodgeBefore,
+    dodged = false,
+    armor = armorBefore,
+    trueArmor = trueArmorBefore,
+    mitigation = mit,
+    damage = dmg,
+    hpBefore = hpBefore,
+    hpAfter = (s.hp or 0),
+    maxHp = baseMaxBefore,
+    bonusHp = bonusBefore,
+  })
+
   updateWoundsSticky(s)
   bump(); notify()
 end
@@ -495,9 +580,26 @@ function Core.DamageTrue(amount)
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
 
+  local hpBefore = (s.hp or 0)
+  local baseMaxBefore = (s.maxHp or 0)
+  local bonusBefore = math.max(0, s.bonusHp or 0)
+  local trueArmorBefore = (s.trueArmor or 0)
+  local dodgeBefore = math.max(0, s.dodge or 0)
+
   -- Esquive : s'applique aussi aux dégâts bruts.
-  local dodge = math.max(0, s.dodge or 0)
-  if amount > 0 and dodge > 0 and amount <= dodge then
+  if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
+    pushHistory({
+      kind = "DAMAGE_TRUE",
+      input = amount,
+      dodged = true,
+      dodge = dodgeBefore,
+      trueArmor = trueArmorBefore,
+      hpBefore = hpBefore,
+      hpAfter = hpBefore,
+      maxHp = baseMaxBefore,
+      bonusHp = bonusBefore,
+    })
+    bump(); notify()
     return
   end
 
@@ -517,13 +619,32 @@ function Core.DamageTrue(amount)
     sfxDamage()
   end
 
-  local mit = (s.trueArmor or 0)
+  local mit = trueArmorBefore
+
+  local afterAbsorb = amount
 
   local dmg = effDmg(amount, mit)
   if dmg > 0 then
     s.hp = (s.hp or 0) - dmg
   end
   clampHpToEffectiveMax(s)
+
+  pushHistory({
+    kind = "DAMAGE_TRUE",
+    input = amount + absorbedMagic,
+    afterAbsorb = afterAbsorb,
+    absorbedMagic = absorbedMagic,
+    dodge = dodgeBefore,
+    dodged = false,
+    trueArmor = trueArmorBefore,
+    mitigation = mit,
+    damage = dmg,
+    hpBefore = hpBefore,
+    hpAfter = (s.hp or 0),
+    maxHp = baseMaxBefore,
+    bonusHp = bonusBefore,
+  })
+
   updateWoundsSticky(s)
   bump(); notify()
 end
@@ -532,6 +653,10 @@ function Core.Heal(amount)
   local s = Core.state
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
+
+  local hpBefore = (s.hp or 0)
+  local baseMaxBefore = (s.maxHp or 0)
+  local bonusBefore = math.max(0, s.bonusHp or 0)
 
   if amount > 0 then sfxHealLight() end
 
@@ -553,6 +678,21 @@ function Core.Heal(amount)
 
   clampHpToEffectiveMax(s)
 
+  pushHistory({
+    kind = "HEAL",
+    input = amount,
+    current = current,
+    proposed = proposed,
+    capMax = capMax,
+    effMax = effMax,
+    applied = (s.hp or 0) - hpBefore,
+    hpBefore = hpBefore,
+    hpAfter = (s.hp or 0),
+    maxHp = baseMaxBefore,
+    bonusHp = bonusBefore,
+    woundCap = getWoundCap(s),
+  })
+
   -- IMPORTANT: les soins normaux ne lèvent jamais un seuil
   updateWoundsSticky(s)
   bump(); notify()
@@ -562,14 +702,29 @@ function Core.DivineHeal()
   local s = Core.state
   if not s then return end
 
+  local hpBefore = (s.hp or 0)
+  local baseMaxBefore = (s.maxHp or 0)
+  local bonusBefore = math.max(0, s.bonusHp or 0)
+
   sfxLayOnHands()
   -- Bypass plafond : +75% du total (pas "fixé" à 75%)
   local baseMax = (s.maxHp or 0)
   local bonus = math.max(0, s.bonusHp or 0)
   local maxHp = baseMax + bonus
   local current = (s.hp or 0)
-  s.hp = math.min(current + (baseMax * 0.75), maxHp)
+  local gain = (baseMax * 0.75)
+  s.hp = math.min(current + gain, maxHp)
   clampHpToEffectiveMax(s)
+
+  pushHistory({
+    kind = "DIVINE_HEAL",
+    gain = gain,
+    hpBefore = hpBefore,
+    hpAfter = (s.hp or 0),
+    maxHp = baseMaxBefore,
+    bonusHp = bonusBefore,
+  })
+
   -- DivineHeal est un bypass : on recalcule les seuils depuis l'état actuel
   recomputeWounds(s)
   bump(); notify()

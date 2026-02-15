@@ -10,5 +10,6 @@
 ## SavedVariables: GrosOrteilDB
 
 GrosOrteil_Main.lua
+GrosOrteil_History.lua
 GrosOrteil_Core.lua
 GrosOrteil_UI.lua

@@ -1,5 +1,6 @@
 local _, ns = ...
 local Core = ns.Core
+local History = ns.History
 
 local UI = {}
 ns.UI = UI
@@ -233,6 +234,13 @@ local function mkButton(parent, text, w, h, x, y, onClick)
   b:SetText(text)
   b:SetScript("OnClick", onClick)
   return b
+end
+
+local function formatHistoryText(history)
+  if History and History.FormatHistoryText then
+    return History.FormatHistoryText(history)
+  end
+  return nil
 end
 
 local function getNumber(eb)
@@ -570,6 +578,7 @@ function ns.UI_Init()
     "Armure/Bloc.",
     "Dégâts",
     "Soins",
+    "Historique",
   }
 
   local TAB_COUNT = #TAB_TEXTS
@@ -609,6 +618,8 @@ function ns.UI_Init()
   local pageArmor = mkPage()
   local pageDmg = mkPage()
   local pageHeal = mkPage()
+  local pageHistory = mkPage()
+  UI.pageHistory = pageHistory
 
   -- Onglet 1 : PV
   local xHP = centerX(360)
@@ -762,6 +773,35 @@ function ns.UI_Init()
   mkButton(pageHeal, "Soins divins (75%)", 190, 22, xHealBtns + 202, -36, function()
     Core.DivineHeal()
   end)
+
+  -- Onglet 6 : Historique
+  do
+    local sf = CreateFrame("ScrollFrame", nil, pageHistory, "UIPanelScrollFrameTemplate")
+    sf:SetPoint("TOPLEFT", pageHistory, "TOPLEFT", 14, -10)
+    sf:SetPoint("BOTTOMRIGHT", pageHistory, "BOTTOMRIGHT", -34, 44)
+    UI.historyScroll = sf
+
+    local child = CreateFrame("Frame", nil, sf)
+    child:SetSize(CONTENT_W - 64, 10)
+    sf:SetScrollChild(child)
+    UI.historyChild = child
+
+    local txt = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    txt:SetPoint("TOPLEFT", 0, 0)
+    txt:SetJustifyH("LEFT")
+    txt:SetJustifyV("TOP")
+    txt:SetWidth(CONTENT_W - 72)
+    txt:SetText("")
+    UI.historyText = txt
+
+    local clearBtn = mkButton(pageHistory, "Effacer", 90, 20, centerX(200) + 0, -258)
+    clearBtn:ClearAllPoints()
+    clearBtn:SetPoint("BOTTOMLEFT", pageHistory, "BOTTOMLEFT", 14, 12)
+    clearBtn:SetScript("OnClick", function()
+      if Core and Core.ClearHistory then Core.ClearHistory() end
+    end)
+    UI.historyClear = clearBtn
+  end
 
   UI.inputs = {
     hpCur = hpCur, hpMax = hpMax,
@@ -1249,6 +1289,20 @@ function ns.UI_Init()
     setNumber(UI.inputs.dodge, s.dodge)
     setNumber(UI.inputs.block, s.tempBlock)
     setNumber(UI.inputs.magicBlock, s.tempMagicBlock)
+
+    -- Historique
+    if UI.historyText and UI.historyChild then
+      local hist = s.history
+      local text = formatHistoryText(hist)
+      if not text then
+        UI.historyText:SetText("Aucun évènement récent.")
+        UI.historyChild:SetHeight(20)
+      else
+        UI.historyText:SetText(text)
+        local h = (UI.historyText.GetStringHeight and UI.historyText:GetStringHeight()) or 0
+        UI.historyChild:SetHeight(math.max(20, h + 10))
+      end
+    end
   end)
 end
 
