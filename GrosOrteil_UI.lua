@@ -132,6 +132,71 @@ local function roundPct(x)
   return math.floor(x * 100 + 0.5)
 end
 
+local function getTRP3ProfileName()
+  local api = rawget(_G, "TRP3_API")
+  if type(api) ~= "table" then return nil end
+  local profile = api.profile
+  if type(profile) ~= "table" then return nil end
+  if type(profile.getPlayerCurrentProfile) ~= "function" then return nil end
+
+  local ok, current = pcall(profile.getPlayerCurrentProfile)
+  if not ok or type(current) ~= "table" then return nil end
+
+  -- Prefer the character display name (First + optional Last) when available.
+  do
+    local player = current.player
+    local char = (type(player) == "table") and player.characteristics or nil
+    if type(char) == "table" then
+      local first = char.FN
+      local last = char.LN
+      if type(first) == "string" then first = first:gsub("^%s+", ""):gsub("%s+$", "") end
+      if type(last) == "string" then last = last:gsub("^%s+", ""):gsub("%s+$", "") end
+
+      if type(first) == "string" and first ~= "" then
+        local full
+        if type(last) == "string" and last ~= "" then
+          full = (first .. " " .. last)
+        else
+          full = first
+        end
+        full = full:gsub("%s+", " ")
+        if full ~= "" then return full end
+      end
+    end
+  end
+
+  -- Fallback to the TRP3 profile name.
+  local name = current.profileName
+  if type(name) ~= "string" or name == "" then return nil end
+  name = name:gsub("^%s+", ""):gsub("%s+$", "")
+  if name == "" then return nil end
+  return name
+end
+
+local function updateWindowTitle()
+  if not UI or not UI.title or not UI.title.SetText then return end
+  local profileName = getTRP3ProfileName()
+  if profileName then
+    UI.title:SetText(profileName)
+  else
+    UI.title:SetText("GrosOrteil")
+  end
+end
+
+local function hookTRP3Callbacks()
+  if UI and UI._trp3Hooked then return end
+  local api = rawget(_G, "TRP3_API")
+  local addon = rawget(_G, "TRP3_Addon")
+  if type(api) ~= "table" then return end
+  if type(api.RegisterCallback) ~= "function" then return end
+  if type(addon) ~= "table" then return end
+
+  UI._trp3Hooked = true
+  pcall(api.RegisterCallback, addon, "REGISTER_PROFILES_LOADED", updateWindowTitle)
+  pcall(api.RegisterCallback, addon, "REGISTER_DATA_UPDATED", updateWindowTitle)
+  updateWindowTitle()
+end
+
 local function mkLabel(parent, text, x, y)
   local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   fs:SetPoint("TOPLEFT", x, y)
@@ -242,6 +307,8 @@ function ns.UI_Init()
   -- Keep SavedVariables in sync even when the frame is closed by ESC.
   frame:SetScript("OnShow", function()
     if db and db.ui then db.ui.shown = true end
+    hookTRP3Callbacks()
+    updateWindowTitle()
   end)
   frame:SetScript("OnHide", function()
     if db and db.ui then db.ui.shown = false end
@@ -301,8 +368,21 @@ function ns.UI_Init()
 
   -- Titre
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  UI.title = title
   title:SetPoint("TOP", 0, -12)
-  title:SetText("GrosOrteil — Treize du Treize")
+  updateWindowTitle()
+
+  -- Try again after a short delay in case TRP3 initializes after us.
+  if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+    C_Timer.After(0.5, function()
+      hookTRP3Callbacks()
+      updateWindowTitle()
+    end)
+    C_Timer.After(2.0, function()
+      hookTRP3Callbacks()
+      updateWindowTitle()
+    end)
+  end
 
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -2, -2)
