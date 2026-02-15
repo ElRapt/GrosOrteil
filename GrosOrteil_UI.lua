@@ -7,7 +7,7 @@ ns.UI = UI
 local CLASS_STYLES = {
   MEDIC = { label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 }, -- red
   PALADIN = { label = "Puissance sacrée", r = 1.0, g = 0.82, b = 0.22 }, -- gold
-  PRIEST = { label = "Points de foi", r = 1.0, g = 1.0, b = 1.0 }, -- white
+  PRIEST = { label = "Puissance sacrée", r = 1.0, g = 0.82, b = 0.22 }, -- gold
   SHADOWPRIEST = { label = "Points de foi et insanité", r = 0.60, g = 0.20, b = 0.85 }, -- violet
   MAGE = { label = "Mana", r = 0.20, g = 0.55, b = 1.00 }, -- blue
   ROGUE = { label = "Énergie", r = 1.00, g = 0.90, b = 0.10 }, -- yellow
