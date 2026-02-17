@@ -281,10 +281,20 @@ function ns.UI_Init()
     db.ui._migrated_20260214_wide = true
   end
 
-  local FRAME_W, FRAME_H = 600, 340
+  -- UI layout migration: new sidebar layout is significantly larger.
+  if not db.ui._migrated_20260217_sidebar then
+    db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
+    db.ui._migrated_20260217_sidebar = true
+  end
+
+  local FRAME_W, FRAME_H = 820, 520
   local BASE_FRAME_H = FRAME_H
   local PAD_X = 14
-  local CONTENT_W = FRAME_W - (PAD_X * 2)
+
+  -- Left sidebar navigation (vertical tabs) + right content area.
+  local SIDEBAR_W = 160
+  local GUTTER = 12
+  local CONTENT_W = FRAME_W - (PAD_X * 2) - SIDEBAR_W - GUTTER
 
   local function centerX(rowWidth)
     return math.floor((CONTENT_W - rowWidth) / 2)
@@ -395,11 +405,31 @@ function ns.UI_Init()
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -2, -2)
 
+  -- Main body: sidebar (left) + content (right)
+  local body = CreateFrame("Frame", nil, frame)
+  body:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD_X, -34)
+  body:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD_X, PAD_X)
+  UI.body = body
+
+  local sidebar = CreateFrame("Frame", nil, body, "BackdropTemplate")
+  sidebar:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+  sidebar:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
+  sidebar:SetWidth(SIDEBAR_W)
+  sidebar:SetBackdrop({ bgFile = "Interface/Buttons/WHITE8x8", edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
+  sidebar:SetBackdropColor(0.06, 0.06, 0.07, 0.55)
+  sidebar:SetBackdropBorderColor(0, 0, 0, 0.65)
+  UI.sidebar = sidebar
+
+  local content = CreateFrame("Frame", nil, body)
+  content:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", GUTTER, 0)
+  content:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
+  UI.content = content
+
   -- Barres
-  local hpBar = CreateFrame("StatusBar", nil, frame)
+  local hpBar = CreateFrame("StatusBar", nil, content)
   UI.hpBar = hpBar
   hpBar:SetSize(CONTENT_W, 20)
-  hpBar:SetPoint("TOPLEFT", PAD_X, -34)
+  hpBar:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
   hpBar:SetMinMaxValues(0, 1)
   hpBar:SetValue(1)
   skinBar(hpBar, 0.85, 0.12, 0.12) -- rouge
@@ -448,7 +478,7 @@ function ns.UI_Init()
   capMarker:Hide()
   UI.hpCapMarker = capMarker
 
-  local capText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  local capText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   UI.capText = capText
   capText:SetPoint("TOPLEFT", hpBar, "BOTTOMLEFT", 0, -6)
   capText:SetText("")
@@ -461,7 +491,7 @@ function ns.UI_Init()
   local RES_EXTRA_H = (RES_BAR_H + RES_GAP)
 
   local function mkResBar(idx)
-    local bar = CreateFrame("StatusBar", nil, frame)
+    local bar = CreateFrame("StatusBar", nil, content)
     UI.resBars[idx] = bar
     bar:SetSize(CONTENT_W, RES_BAR_H)
     if idx == 1 then
@@ -532,24 +562,21 @@ function ns.UI_Init()
 
   -- Bars are driven by Core.OnChange; keep them hidden until then.
 
-  -- Onglets
-  local tabStrip = CreateFrame("Frame", nil, frame)
-  tabStrip:SetPoint("TOPLEFT", UI.resBars[1], "BOTTOMLEFT", 0, -10)
-  tabStrip:SetPoint("TOPRIGHT", UI.resBars[1], "BOTTOMRIGHT", 0, -10)
-  tabStrip:SetHeight(24)
-  UI.tabStrip = tabStrip
+  -- Content host (pages) sits under HP/Resource bars and above class strip.
+  local contentHost = CreateFrame("Frame", nil, content)
+  contentHost:SetPoint("TOPLEFT", capText, "BOTTOMLEFT", 0, -12)
+  contentHost:SetPoint("TOPRIGHT", capText, "BOTTOMRIGHT", 0, -12)
+  UI.contentHost = contentHost
 
-  local contentHost = CreateFrame("Frame", nil, frame)
-  contentHost:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -10)
-
-  -- Class selector strip at bottom
-  local classStrip = CreateFrame("Frame", nil, frame)
-  classStrip:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD_X, 12)
-  classStrip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD_X, 12)
+  -- Class selector strip at bottom (right content only)
+  local classStrip = CreateFrame("Frame", nil, content)
+  classStrip:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
+  classStrip:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
   classStrip:SetHeight(30)
   UI.classStrip = classStrip
 
-  contentHost:SetPoint("BOTTOMRIGHT", classStrip, "TOPRIGHT", 0, 8)
+  contentHost:SetPoint("BOTTOMRIGHT", classStrip, "TOPRIGHT", 0, 10)
+  contentHost:SetPoint("BOTTOMLEFT", classStrip, "TOPLEFT", 0, 10)
 
   UI.tabs = {}
   UI.pages = {}
@@ -562,39 +589,71 @@ function ns.UI_Init()
       local b = UI.tabs[i]
       if i == active then
         b:Disable()
-        b:SetAlpha(1)
+        if b._bg then b._bg:SetColorTexture(0.20, 0.20, 0.24, 0.95) end
+        if b._accent then b._accent:Show() end
+        if b._text and b._text.SetTextColor then b._text:SetTextColor(1, 1, 1, 1) end
       else
         b:Enable()
-        b:SetAlpha(0.85)
+        if b._bg then b._bg:SetColorTexture(0.12, 0.12, 0.14, 0.75) end
+        if b._accent then b._accent:Hide() end
+        if b._text and b._text.SetTextColor then b._text:SetTextColor(0.9, 0.9, 0.9, 1) end
       end
     end
   end
 
-  local TAB_GAP = 6
-
+  -- Sidebar navigation (vertical tabs)
   local TAB_TEXTS = {
-    "PV",
-    "Ressource",
-    "Armure/Bloc.",
+    "Points de vie",
+    "Ressources",
+    "Armure & blocage",
     "Dégâts",
     "Soins",
     "Historique",
   }
 
-  local TAB_COUNT = #TAB_TEXTS
-  local TAB_W = math.floor((CONTENT_W - (TAB_GAP * (TAB_COUNT - 1))) / TAB_COUNT)
+  local NAV_PAD = 10
+  local NAV_GAP = 6
+  local NAV_BTN_H = 28
 
   local function mkTab(text, idx)
-    local tab = CreateFrame("Button", nil, tabStrip, "UIPanelButtonTemplate")
-    tab:SetText(text)
+    local tab = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
+    tab:SetSize(SIDEBAR_W - (NAV_PAD * 2), NAV_BTN_H)
+    tab:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
+    tab:SetBackdropBorderColor(0, 0, 0, 0.70)
+
+    local bg = tab:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(tab)
+    bg:SetTexture("Interface/Buttons/WHITE8x8")
+    bg:SetColorTexture(0.12, 0.12, 0.14, 0.75)
+    tab._bg = bg
+
+    local hl = tab:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints(tab)
+    hl:SetTexture("Interface/Buttons/WHITE8x8")
+    hl:SetColorTexture(1, 1, 1, 0.06)
+
+    local accent = tab:CreateTexture(nil, "ARTWORK")
+    accent:SetTexture("Interface/Buttons/WHITE8x8")
+    accent:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, 0)
+    accent:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
+    accent:SetWidth(3)
+    accent:SetColorTexture(1.0, 0.82, 0.22, 0.85)
+    accent:Hide()
+    tab._accent = accent
+
+    local fs = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    fs:SetPoint("LEFT", tab, "LEFT", 10, 0)
+    fs:SetPoint("RIGHT", tab, "RIGHT", -10, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetText(text)
+    tab._text = fs
+
     tab:SetScript("OnClick", function() setTab(idx) end)
-    tab:SetHeight(22)
-    tab:SetWidth(TAB_W)
 
     if idx == 1 then
-      tab:SetPoint("TOPLEFT", tabStrip, "TOPLEFT", 0, 0)
+      tab:SetPoint("TOPLEFT", sidebar, "TOPLEFT", NAV_PAD, -NAV_PAD)
     else
-      tab:SetPoint("LEFT", UI.tabs[idx - 1], "RIGHT", TAB_GAP, 0)
+      tab:SetPoint("TOPLEFT", UI.tabs[idx - 1], "BOTTOMLEFT", 0, -NAV_GAP)
     end
 
     UI.tabs[idx] = tab
@@ -609,7 +668,7 @@ function ns.UI_Init()
     return p
   end
 
-  for i = 1, TAB_COUNT do
+  for i = 1, #TAB_TEXTS do
     mkTab(TAB_TEXTS[i], i)
   end
 
@@ -1028,7 +1087,7 @@ function ns.UI_Init()
     hideMarkers(UI.corruptionMarkers)
     hideMarkers(UI.insanityMarkers)
 
-    -- Move tabs under the last active resource bar.
+    -- Re-anchor the page container under the last active resource bar.
     do
       local n = barCount
       if n < 0 then n = 0 end
@@ -1052,10 +1111,12 @@ function ns.UI_Init()
         frame:SetHeight(targetH)
       end
 
-      if UI.tabStrip and UI.tabStrip.ClearAllPoints then
-        UI.tabStrip:ClearAllPoints()
-        UI.tabStrip:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
-        UI.tabStrip:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -10)
+      if UI.contentHost and UI.classStrip and UI.contentHost.ClearAllPoints then
+        UI.contentHost:ClearAllPoints()
+        UI.contentHost:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -12)
+        UI.contentHost:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -12)
+        UI.contentHost:SetPoint("BOTTOMLEFT", UI.classStrip, "TOPLEFT", 0, 10)
+        UI.contentHost:SetPoint("BOTTOMRIGHT", UI.classStrip, "TOPRIGHT", 0, 10)
       end
     end
 
