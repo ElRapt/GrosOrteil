@@ -287,7 +287,7 @@ function ns.UI_Init()
     db.ui._migrated_20260217_sidebar = true
   end
 
-  local FRAME_W, FRAME_H = 820, 520
+  local FRAME_W, FRAME_H = 820, 440
   local BASE_FRAME_H = FRAME_H
   local PAD_X = 14
 
@@ -568,15 +568,9 @@ function ns.UI_Init()
   contentHost:SetPoint("TOPRIGHT", capText, "BOTTOMRIGHT", 0, -12)
   UI.contentHost = contentHost
 
-  -- Class selector strip at bottom (right content only)
-  local classStrip = CreateFrame("Frame", nil, content)
-  classStrip:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
-  classStrip:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
-  classStrip:SetHeight(30)
-  UI.classStrip = classStrip
-
-  contentHost:SetPoint("BOTTOMRIGHT", classStrip, "TOPRIGHT", 0, 10)
-  contentHost:SetPoint("BOTTOMLEFT", classStrip, "TOPLEFT", 0, 10)
+  -- Pages can use the full content height; we no longer reserve space for the class selector.
+  contentHost:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
+  contentHost:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
 
   UI.tabs = {}
   UI.pages = {}
@@ -605,6 +599,7 @@ function ns.UI_Init()
   local TAB_TEXTS = {
     "Points de vie",
     "Ressources",
+    "Classes",
     "Armure & blocage",
     "Dégâts",
     "Soins",
@@ -674,6 +669,7 @@ function ns.UI_Init()
 
   local pageHP = mkPage()
   local pageRes = mkPage()
+  local pageClasses = mkPage()
   local pageArmor = mkPage()
   local pageDmg = mkPage()
   local pageHeal = mkPage()
@@ -833,7 +829,7 @@ function ns.UI_Init()
     Core.DivineHeal()
   end)
 
-  -- Onglet 6 : Historique
+  -- Onglet 7 : Historique
   do
     local sf = CreateFrame("ScrollFrame", nil, pageHistory, "UIPanelScrollFrameTemplate")
     sf:SetPoint("TOPLEFT", pageHistory, "TOPLEFT", 14, -10)
@@ -873,6 +869,17 @@ function ns.UI_Init()
 
   setTab(1)
 
+  local CLASS_BTN_SIZE = 60
+  local CLASS_BTN_GAP_X = 8
+  local CLASS_BTN_GAP_Y = 8
+
+  -- Onglet 3 : Classes (sélection de classe)
+  local classStrip = CreateFrame("Frame", nil, pageClasses)
+  classStrip:SetPoint("TOPLEFT", pageClasses, "TOPLEFT", 0, -20)
+  classStrip:SetPoint("TOPRIGHT", pageClasses, "TOPRIGHT", 0, -20)
+  classStrip:SetHeight((CLASS_BTN_SIZE * 2) + CLASS_BTN_GAP_Y)
+  UI.classStrip = classStrip
+
   -- Class icon selector buttons
   UI.classButtons = {}
   local CLASS_KEYS = {
@@ -891,19 +898,21 @@ function ns.UI_Init()
 
   local function mkClassButton(idx, classKey)
     local b = CreateFrame("Button", nil, classStrip, "BackdropTemplate")
-    b:SetSize(26, 26)
+    b:SetSize(CLASS_BTN_SIZE, CLASS_BTN_SIZE)
     b.classKey = classKey
     b:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
     b:SetBackdropBorderColor(0, 0, 0, 0.85)
 
-    local GAP = 6
-    local rowW = (#CLASS_KEYS * 26) + ((#CLASS_KEYS - 1) * GAP)
+    local perRow = math.ceil(#CLASS_KEYS / 2)
+    local row = (idx <= perRow) and 1 or 2
+    local idxInRow = (row == 1) and idx or (idx - perRow)
+    local countInRow = (row == 1) and perRow or (#CLASS_KEYS - perRow)
+
+    local rowW = (countInRow * CLASS_BTN_SIZE) + ((countInRow - 1) * CLASS_BTN_GAP_X)
     local startX = math.floor((CONTENT_W - rowW) / 2)
-    if idx == 1 then
-      b:SetPoint("LEFT", classStrip, "LEFT", startX, 0)
-    else
-      b:SetPoint("LEFT", (UI.classButtons[idx - 1] --[[@as Frame]]), "RIGHT", GAP, 0)
-    end
+    local x = startX + ((idxInRow - 1) * (CLASS_BTN_SIZE + CLASS_BTN_GAP_X))
+    local y = -((row - 1) * (CLASS_BTN_SIZE + CLASS_BTN_GAP_Y))
+    b:SetPoint("TOPLEFT", classStrip, "TOPLEFT", x, y)
 
     local tex = b:CreateTexture(nil, "ARTWORK")
     tex:ClearAllPoints()
@@ -927,7 +936,6 @@ function ns.UI_Init()
       if Core and Core.SetClassKey then
         Core.SetClassKey(classKey)
       end
-      setTab(2)
     end)
 
     UI.classButtons[idx] = b
@@ -1111,12 +1119,12 @@ function ns.UI_Init()
         frame:SetHeight(targetH)
       end
 
-      if UI.contentHost and UI.classStrip and UI.contentHost.ClearAllPoints then
+      if UI.contentHost and UI.contentHost.ClearAllPoints then
         UI.contentHost:ClearAllPoints()
         UI.contentHost:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -12)
         UI.contentHost:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -12)
-        UI.contentHost:SetPoint("BOTTOMLEFT", UI.classStrip, "TOPLEFT", 0, 10)
-        UI.contentHost:SetPoint("BOTTOMRIGHT", UI.classStrip, "TOPRIGHT", 0, 10)
+        UI.contentHost:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
+        UI.contentHost:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
       end
     end
 
