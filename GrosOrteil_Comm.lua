@@ -13,6 +13,7 @@ local tonumber = tonumber
 local strsplit = rawget(_G, "strsplit")
 local GetTime = rawget(_G, "GetTime")
 local CreateFrame = rawget(_G, "CreateFrame")
+local UnitClass = rawget(_G, "UnitClass")
 local C_ChatInfo = rawget(_G, "C_ChatInfo")
 local ChatThrottleLib = rawget(_G, "ChatThrottleLib")
 local LibStub = rawget(_G, "LibStub")
@@ -52,11 +53,30 @@ end
 
 local function packStatePayload(s)
   s = s or {}
+  local classKey = s.classKey
+  if (type(classKey) ~= "string" or classKey == "") and UnitClass then
+    local _, unitClass = UnitClass("player")
+    if type(unitClass) == "string" and unitClass ~= "" then
+      classKey = unitClass
+    end
+  end
   return {
     hp = s.hp or 0,
     maxHp = s.maxHp or 0,
+    bonusHp = s.bonusHp or 0,
     res = s.res or 0,
     maxRes = s.maxRes or 0,
+    res2 = s.res2 or 0,
+    maxRes2 = s.maxRes2 or 0,
+    res3 = s.res3 or 0,
+    maxRes3 = s.maxRes3 or 0,
+    res4 = s.res4 or 0,
+    maxRes4 = s.maxRes4 or 0,
+    wounds = {
+      hit25 = s.wounds and not not s.wounds.hit25 or false,
+      hit10 = s.wounds and not not s.wounds.hit10 or false,
+    },
+    classKey = classKey,
   }
 end
 
@@ -111,8 +131,20 @@ function Comm:DeserializeState(cmd, payload, sender)
     return {
       hp = tonumber(decoded.hp) or 0,
       maxHp = tonumber(decoded.maxHp) or 0,
+      bonusHp = tonumber(decoded.bonusHp) or 0,
       res = tonumber(decoded.res) or 0,
       maxRes = tonumber(decoded.maxRes) or 0,
+      res2 = tonumber(decoded.res2) or 0,
+      maxRes2 = tonumber(decoded.maxRes2) or 0,
+      res3 = tonumber(decoded.res3) or 0,
+      maxRes3 = tonumber(decoded.maxRes3) or 0,
+      res4 = tonumber(decoded.res4) or 0,
+      maxRes4 = tonumber(decoded.maxRes4) or 0,
+      wounds = {
+        hit25 = decoded.wounds and not not decoded.wounds.hit25 or false,
+        hit10 = decoded.wounds and not not decoded.wounds.hit10 or false,
+      },
+      classKey = type(decoded.classKey) == "string" and decoded.classKey or nil,
     }
   end
 
