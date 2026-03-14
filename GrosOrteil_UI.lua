@@ -564,8 +564,8 @@ function ns.UI_Init()
 
   -- Content host (pages) sits under HP/Resource bars and above class strip.
   local contentHost = CreateFrame("Frame", nil, content)
-  contentHost:SetPoint("TOPLEFT", capText, "BOTTOMLEFT", 0, -12)
-  contentHost:SetPoint("TOPRIGHT", capText, "BOTTOMRIGHT", 0, -12)
+  contentHost:SetPoint("TOPLEFT", hpBar, "BOTTOMLEFT", 0, -12)
+  contentHost:SetPoint("TOPRIGHT", hpBar, "BOTTOMRIGHT", 0, -12)
   UI.contentHost = contentHost
 
   -- Pages can use the full content height; we no longer reserve space for the class selector.
@@ -574,24 +574,41 @@ function ns.UI_Init()
 
   UI.tabs = {}
   UI.pages = {}
+  UI.tabDisabled = {}
+  UI.activeTab = 1
 
   local function setTab(active)
+    if UI.tabDisabled and UI.tabDisabled[active] then
+      return
+    end
+    UI.activeTab = active
+
     for i = 1, #UI.pages do
       if i == active then UI.pages[i]:Show() else UI.pages[i]:Hide() end
     end
     for i = 1, #UI.tabs do
       local b = UI.tabs[i]
+      local disabled = UI.tabDisabled and UI.tabDisabled[i]
       if i == active then
         b:Disable()
         if b._bg then b._bg:SetColorTexture(0.20, 0.20, 0.24, 0.95) end
         if b._accent then b._accent:Show() end
         if b._text and b._text.SetTextColor then b._text:SetTextColor(1, 1, 1, 1) end
+      elseif disabled then
+        b:Disable()
+        if b._bg then b._bg:SetColorTexture(0.10, 0.10, 0.11, 0.55) end
+        if b._accent then b._accent:Hide() end
+        if b._text and b._text.SetTextColor then b._text:SetTextColor(0.50, 0.50, 0.50, 1) end
       else
         b:Enable()
         if b._bg then b._bg:SetColorTexture(0.12, 0.12, 0.14, 0.75) end
         if b._accent then b._accent:Hide() end
         if b._text and b._text.SetTextColor then b._text:SetTextColor(0.9, 0.9, 0.9, 1) end
       end
+    end
+
+    if active == 7 and UI.syncHistoryWidth then
+      UI.syncHistoryWidth()
     end
   end
 
@@ -832,8 +849,8 @@ function ns.UI_Init()
   -- Onglet 7 : Historique
   do
     local sf = CreateFrame("ScrollFrame", nil, pageHistory, "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT", pageHistory, "TOPLEFT", 14, -10)
-    sf:SetPoint("BOTTOMRIGHT", pageHistory, "BOTTOMRIGHT", -34, 44)
+    sf:SetPoint("TOPLEFT", pageHistory, "TOPLEFT", 2, -4)
+    sf:SetPoint("BOTTOMRIGHT", pageHistory, "BOTTOMRIGHT", -20, 44)
     UI.historyScroll = sf
 
     local child = CreateFrame("Frame", nil, sf)
@@ -848,6 +865,20 @@ function ns.UI_Init()
     txt:SetWidth(CONTENT_W - 72)
     txt:SetText("")
     UI.historyText = txt
+
+    local function syncHistoryWidth()
+      if not UI.historyScroll or not UI.historyChild or not UI.historyText then return end
+      local w = UI.historyScroll:GetWidth() or 0
+      if w <= 0 then return end
+      -- Keep a small right gutter so text never overlaps the scrollbar lane.
+      local textW = math.max(80, w - 14)
+      local childW = textW
+      UI.historyChild:SetWidth(childW)
+      UI.historyText:SetWidth(textW)
+    end
+    UI.syncHistoryWidth = syncHistoryWidth
+    sf:SetScript("OnSizeChanged", syncHistoryWidth)
+    syncHistoryWidth()
 
     local clearBtn = mkButton(pageHistory, "Effacer", 90, 20, centerX(200) + 0, -258)
     clearBtn:ClearAllPoints()
@@ -1091,6 +1122,16 @@ function ns.UI_Init()
       if rowCount == 0 then UI.resDeltaEB:Hide() else UI.resDeltaEB:Show() end
     end
 
+    -- Warrior has no resources: disable the Resources tab entirely.
+    if UI.tabDisabled then
+      UI.tabDisabled[2] = (s.classKey == "WARRIOR")
+      if UI.tabDisabled[2] and UI.activeTab == 2 then
+        setTab(1)
+      else
+        setTab(UI.activeTab or 1)
+      end
+    end
+
     -- Default: hide resource threshold markers; they'll be re-shown when applicable.
     hideMarkers(UI.corruptionMarkers)
     hideMarkers(UI.insanityMarkers)
@@ -1101,7 +1142,7 @@ function ns.UI_Init()
       if n < 0 then n = 0 end
       if n > 4 then n = 4 end
 
-      local anchor = capText
+      local anchor = hpBar
       if n >= 1 and UI.resBars and UI.resBars[n] then
         anchor = UI.resBars[n]
       end
@@ -1126,6 +1167,10 @@ function ns.UI_Init()
         UI.contentHost:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
         UI.contentHost:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
       end
+    end
+
+    if UI.syncHistoryWidth then
+      UI.syncHistoryWidth()
     end
 
     for i = 1, 4 do
