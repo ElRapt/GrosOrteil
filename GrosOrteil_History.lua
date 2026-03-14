@@ -68,7 +68,8 @@ local function fmtTime(ts)
 end
 
 local function colorize(text, hex)
-	if type(text) ~= "string" then return text end
+	if text == nil then return "" end
+	if type(text) ~= "string" then text = tostring(text) end
 	if type(hex) ~= "string" or hex == "" then return text end
 	-- hex expected as "RRGGBB" or "AARRGGBB"
 	if #hex == 6 then
@@ -84,110 +85,133 @@ local COLORS = {
 	DAMAGE = "E55353", -- red
 	HEAL = "33CC66", -- green
 	DIVINE = "33B5E5", -- cyan/blue
+	BEFORE = "FFB347", -- orange
 	RESULT = "FFFF00", -- very bright yellow (stands out strongly)
 }
 
 function History.FormatEntry(e)
 	if type(e) ~= "table" then return nil end
 	local t = fmtTime(e.ts)
-	if t ~= "" then t = "[" .. t .. "] " end
+	if t ~= "" then t = "[" .. t .. "]" end
+
+	local function sep(parts)
+		return table.concat(parts, " | ")
+	end
+
+	local function block(l1, l2, l3)
+		return table.concat({ l1, l2, l3 }, "\n")
+	end
+
+	local function prefix(label, color)
+		if t ~= "" then
+			return t .. " " .. colorize(label, color)
+		end
+		return colorize(label, color)
+	end
 
 	if e.kind == "DAMAGE_ARMOR" then
 		if e.dodged then
-			return table.concat({
-				t,
-				colorize("- Dégâts (armure)", COLORS.DAMAGE),
-				" : ",
-				tostring(fmtInt(e.input)),
-				" - Esquive : ",
-				tostring(fmtInt(e.dodge)),
-				" - Résultat : ",
-				colorize("ESQUIVÉ", COLORS.RESULT),
-				" - Points de vie : avant ",
-				tostring(fmtInt(e.hpBefore)),
-				" - après ",
-				colorize(tostring(fmtInt(e.hpAfter)), COLORS.RESULT),
-			})
+			return block(
+				sep({
+					prefix("Dégâts armure", COLORS.DAMAGE),
+					"Valeur " .. fmtInt(e.input),
+					"Résultat " .. colorize("ESQUIVÉ", COLORS.RESULT),
+				}),
+				sep({
+					"Esquive " .. fmtInt(e.dodge),
+					"Blocage " .. fmtInt(e.absorbedBlock or 0),
+					"Blocage magique " .. fmtInt(e.absorbedMagic or 0),
+				}),
+				sep({
+					"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+					"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+				})
+			)
 		end
-		return table.concat({
-			t,
-			colorize("- Dégâts (armure)", COLORS.DAMAGE),
-			" : ",
-			tostring(fmtInt(e.input)),
-			" - Blocage : ",
-			tostring(fmtInt(e.absorbedBlock)),
-			" - Blocage magique : ",
-			tostring(fmtInt(e.absorbedMagic)),
-			" - Réduction : ",
-			tostring(fmtInt(e.mitigation)),
-			" - TOTAL dégâts subis : ",
-			colorize(tostring(fmtInt(e.damage)), COLORS.RESULT),
-			" - Points de vie : avant ",
-			tostring(fmtInt(e.hpBefore)),
-			" - après ",
-			colorize(tostring(fmtInt(e.hpAfter)), COLORS.RESULT),
-		})
+		return block(
+			sep({
+				prefix("Dégâts armure", COLORS.DAMAGE),
+				"Valeur " .. fmtInt(e.input),
+				"Résultat " .. colorize(fmtInt(e.damage), COLORS.RESULT),
+			}),
+			sep({
+				"Esquive " .. fmtInt(e.dodge or 0),
+				"Blocage " .. fmtInt(e.absorbedBlock),
+				"Blocage magique " .. fmtInt(e.absorbedMagic),
+				"Réduction " .. fmtInt(e.mitigation),
+			}),
+			sep({
+				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+			})
+		)
 	elseif e.kind == "DAMAGE_TRUE" then
 		if e.dodged then
-			return table.concat({
-				t,
-				colorize("- Dégâts (bruts)", COLORS.DAMAGE),
-				" : ",
-				tostring(fmtInt(e.input)),
-				" - Esquive : ",
-				tostring(fmtInt(e.dodge)),
-				" - Résultat : ",
-				colorize("ESQUIVÉ", COLORS.RESULT),
-				" - Points de vie : avant ",
-				tostring(fmtInt(e.hpBefore)),
-				" - après ",
-				colorize(tostring(fmtInt(e.hpAfter)), COLORS.RESULT),
-			})
+			return block(
+				sep({
+					prefix("Dégâts bruts", COLORS.DAMAGE),
+					"Valeur " .. fmtInt(e.input),
+					"Résultat " .. colorize("ESQUIVÉ", COLORS.RESULT),
+				}),
+				sep({
+					"Esquive " .. fmtInt(e.dodge),
+					"Blocage magique " .. fmtInt(e.absorbedMagic or 0),
+					"Réduction " .. fmtInt(e.mitigation or 0),
+				}),
+				sep({
+					"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+					"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+				})
+			)
 		end
-		return table.concat({
-			t,
-			colorize("- Dégâts (bruts)", COLORS.DAMAGE),
-			" : ",
-			tostring(fmtInt(e.input)),
-			" - Blocage magique : ",
-			tostring(fmtInt(e.absorbedMagic)),
-			" - Réduction : ",
-			tostring(fmtInt(e.mitigation)),
-			" - TOTAL dégâts subis : ",
-			colorize(tostring(fmtInt(e.damage)), COLORS.RESULT),
-			" - Points de vie : avant ",
-			tostring(fmtInt(e.hpBefore)),
-			" - après ",
-			colorize(tostring(fmtInt(e.hpAfter)), COLORS.RESULT),
-		})
+		return block(
+			sep({
+				prefix("Dégâts bruts", COLORS.DAMAGE),
+				"Valeur " .. fmtInt(e.input),
+				"Résultat " .. colorize(fmtInt(e.damage), COLORS.RESULT),
+			}),
+			sep({
+				"Esquive " .. fmtInt(e.dodge or 0),
+				"Blocage magique " .. fmtInt(e.absorbedMagic),
+				"Réduction " .. fmtInt(e.mitigation),
+			}),
+			sep({
+				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+			})
+		)
 	elseif e.kind == "HEAL" then
-		return table.concat({
-			t,
-			colorize("- Soins", COLORS.HEAL),
-			" : ",
-			tostring(fmtInt(e.input)),
-			" - Plafond : ",
-			tostring(fmtInt(e.capMax)),
-			" - Maximum effectif : ",
-			tostring(fmtInt(e.effMax)),
-			" - TOTAL soins appliqués : ",
-			colorize(tostring(fmtInt(e.applied)), COLORS.RESULT),
-			" - Points de vie : avant ",
-			tostring(fmtInt(e.hpBefore)),
-			" - après ",
-			colorize(tostring(fmtInt(e.hpAfter)), COLORS.RESULT),
-		})
+		return block(
+			sep({
+				prefix("Soins", COLORS.HEAL),
+				"Valeur " .. fmtInt(e.input),
+			}),
+			sep({
+				"Plafond " .. fmtInt(e.capMax),
+				"Max effectif " .. fmtInt(e.effMax),
+				"Résultat " .. colorize(fmtInt(e.applied), COLORS.RESULT),
+			}),
+			sep({
+				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+			})
+		)
 	elseif e.kind == "DIVINE_HEAL" then
-		return table.concat({
-			t,
-			colorize("- Soins divins", COLORS.DIVINE),
-			" : ",
-			colorize(tostring(fmtInt(e.gain)), COLORS.RESULT),
-			" - Points de vie : avant ",
-			tostring(fmtInt(e.hpBefore)),
-			" - après ",
-			colorize(tostring(fmtInt(e.hpAfter)), COLORS.RESULT),
-		})
+		return block(
+			sep({
+				prefix("Soins divins", COLORS.DIVINE),
+				"Valeur " .. fmtInt(e.gain),
+			}),
+			sep({
+				"Plafond -",
+				"Max effectif -",
+				"Résultat " .. colorize(fmtInt(e.gain), COLORS.RESULT),
+			}),
+			sep({
+				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+			})
+		)
 	end
 
 	return nil
@@ -203,6 +227,6 @@ function History.FormatHistoryText(history)
 		end
 	end
 	if #lines == 0 then return nil end
-	return table.concat(lines, "\n")
+	return table.concat(lines, "\n\n")
 end
 

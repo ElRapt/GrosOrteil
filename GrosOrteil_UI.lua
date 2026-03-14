@@ -858,7 +858,7 @@ function ns.UI_Init()
     sf:SetScrollChild(child)
     UI.historyChild = child
 
-    local txt = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local txt = child:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     txt:SetPoint("TOPLEFT", 0, 0)
     txt:SetJustifyH("LEFT")
     txt:SetJustifyV("TOP")
