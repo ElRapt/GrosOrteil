@@ -104,6 +104,12 @@ f:SetScript("OnEvent", function(_, event, arg1)
   elseif event == "PLAYER_LOGIN" then
     ns.Core_Init()
     ns.UI_Init()
+    if ns.Comm_Init then
+      ns.Comm_Init()
+    end
+    if ns.TargetPopup_Init then
+      ns.TargetPopup_Init()
+    end
     initMinimapIcon()
 
     f:UnregisterEvent("ADDON_LOADED")
