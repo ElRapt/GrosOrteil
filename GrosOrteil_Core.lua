@@ -45,6 +45,12 @@ local function sfxMagicShield()
   playFirstSoundKit({ "IG_MAINMENU_OPTION_CHECKBOX_ON" })
 end
 
+local function sfxDodge()
+  -- User-provided sound FileID (dodge/parry style)
+  if playSoundFileId(567836) then return end
+  playFirstSoundKit({ "IG_MAINMENU_OPTION_CHECKBOX_OFF", "IG_MAINMENU_OPTION_CHECKBOX_ON" })
+end
+
 local function sfxHealLight()
   -- User-provided sound FileID
   if playSoundFileId(1693996) then return end
@@ -500,6 +506,7 @@ function Core.DamageWithArmor(amount)
 
   -- Esquive : si les dégâts sont <= au seuil, ils sont entièrement ignorés.
   if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
+    sfxDodge()
     pushHistory({
       kind = "DAMAGE_ARMOR",
       input = amount,
@@ -588,6 +595,7 @@ function Core.DamageTrue(amount)
 
   -- Esquive : s'applique aussi aux dégâts bruts.
   if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
+    sfxDodge()
     pushHistory({
       kind = "DAMAGE_TRUE",
       input = amount,
