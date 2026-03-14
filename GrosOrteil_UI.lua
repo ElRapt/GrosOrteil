@@ -775,7 +775,7 @@ function ns.UI_Init()
   UI.noResHint = mkLabelCenter(pageRes, "Aucune ressource pour cette classe.", 0, -110)
   UI.noResHint:Hide()
 
-  -- Resource is always active (no enable/disable toggle)
+  -- Resources tab can be disabled for classes without resources (eg Warrior).
 
   -- Onglet 2 : Armure & Blocage
   local xArmor = centerX(554)

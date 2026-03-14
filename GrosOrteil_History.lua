@@ -119,8 +119,8 @@ function History.FormatEntry(e)
 				}),
 				sep({
 					"Esquive " .. fmtInt(e.dodge),
-					"Blocage " .. fmtInt(e.absorbedBlock or 0),
-					"Blocage magique " .. fmtInt(e.absorbedMagic or 0),
+					"Blocage -",
+					"Blocage magique -",
 				}),
 				sep({
 					"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
@@ -155,8 +155,8 @@ function History.FormatEntry(e)
 				}),
 				sep({
 					"Esquive " .. fmtInt(e.dodge),
-					"Blocage magique " .. fmtInt(e.absorbedMagic or 0),
-					"Réduction " .. fmtInt(e.mitigation or 0),
+					"Blocage magique -",
+					"Réduction -",
 				}),
 				sep({
 					"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
@@ -203,8 +203,8 @@ function History.FormatEntry(e)
 				"Valeur " .. fmtInt(e.gain),
 			}),
 			sep({
-				"Plafond -",
-				"Max effectif -",
+				"Plafond bypassé",
+				"Max effectif " .. fmtInt((e.maxHp or 0) + (e.bonusHp or 0)),
 				"Résultat " .. colorize(fmtInt(e.gain), COLORS.RESULT),
 			}),
 			sep({
