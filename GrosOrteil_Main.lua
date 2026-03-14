@@ -7,10 +7,48 @@ local LDB
 local Icon
 local minimapLauncher
 
-local function ensureMinimapShown()
+local function deepCopy(value, seen)
+  if type(value) ~= "table" then return value end
+  seen = seen or {}
+  if seen[value] then return seen[value] end
+  local out = {}
+  seen[value] = out
+  for k, v in pairs(value) do
+    out[deepCopy(k, seen)] = deepCopy(v, seen)
+  end
+  return out
+end
+
+local function ensureCharacterDB()
   GrosOrteilDB = GrosOrteilDB or {}
-  GrosOrteilDB.minimap = GrosOrteilDB.minimap or {}
-  GrosOrteilDB.minimap.hide = false
+  if type(GrosOrteilDBPC) ~= "table" then
+    GrosOrteilDBPC = {}
+  end
+
+  -- First login after introducing per-character DB: clone existing account-wide data.
+  if not GrosOrteilDBPC._pcInitialized then
+    if next(GrosOrteilDBPC) == nil and type(GrosOrteilDB) == "table" and next(GrosOrteilDB) ~= nil then
+      GrosOrteilDBPC = deepCopy(GrosOrteilDB)
+      GrosOrteilDBPC._migratedFromAccountWide = true
+    end
+    GrosOrteilDBPC._pcInitialized = true
+  end
+
+  ns.db = GrosOrteilDBPC
+  return ns.db
+end
+
+function ns.GetDB()
+  if type(ns.db) ~= "table" then
+    ensureCharacterDB()
+  end
+  return ns.db
+end
+
+local function ensureMinimapShown()
+  local db = ns.GetDB()
+  db.minimap = db.minimap or {}
+  db.minimap.hide = false
 
   if not Icon then return end
   Icon:Show(MINIMAP_ICON_NAME)
@@ -28,8 +66,8 @@ local function initMinimapIcon()
     return
   end
 
-  GrosOrteilDB = GrosOrteilDB or {}
-  GrosOrteilDB.minimap = GrosOrteilDB.minimap or { minimapPos = 225, hide = false }
+  local db = ns.GetDB()
+  db.minimap = db.minimap or { minimapPos = 225, hide = false }
 
   if minimapLauncher == nil then
     minimapLauncher = LDB:NewDataObject(MINIMAP_ICON_NAME, {
@@ -48,10 +86,10 @@ local function initMinimapIcon()
   end
 
   if not Icon:IsRegistered(MINIMAP_ICON_NAME) then
-    Icon:Register(MINIMAP_ICON_NAME, minimapLauncher, GrosOrteilDB.minimap)
+    Icon:Register(MINIMAP_ICON_NAME, minimapLauncher, db.minimap)
   end
 
-  Icon:Refresh(MINIMAP_ICON_NAME, GrosOrteilDB.minimap)
+  Icon:Refresh(MINIMAP_ICON_NAME, db.minimap)
   ensureMinimapShown()
 end
 
@@ -61,7 +99,7 @@ f:RegisterEvent("PLAYER_LOGIN")
 
 f:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == ADDON then
-    GrosOrteilDB = GrosOrteilDB or {}
+    ensureCharacterDB()
     initMinimapIcon()
   elseif event == "PLAYER_LOGIN" then
     ns.Core_Init()

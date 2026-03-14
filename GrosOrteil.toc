@@ -8,6 +8,7 @@
 ## Author: Zinnieth
 ## Version: 120001
 ## SavedVariables: GrosOrteilDB
+## SavedVariablesPerCharacter: GrosOrteilDBPC
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua

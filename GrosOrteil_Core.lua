@@ -232,7 +232,7 @@ local function effDmg(dmg, mitigation)
 end
 
 function ns.Core_Init()
-  local db = GrosOrteilDB
+  local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
 
   db.state = db.state or {
     hp = 50, maxHp = 50,

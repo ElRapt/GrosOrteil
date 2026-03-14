@@ -273,7 +273,7 @@ local function skinBar(bar, r, g, b)
 end
 
 function ns.UI_Init()
-  local db = GrosOrteilDB
+  local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
   db.ui = db.ui or { point = "CENTER", x = 0, y = 0, shown = true }
 
   if not db.ui._migrated_20260214_wide then
@@ -1427,14 +1427,14 @@ function ns.UI_Init()
 end
 
 function ns.UI_Show(show)
-  local db = GrosOrteilDB
+  local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
   db.ui = db.ui or {}
   db.ui.shown = not not show
   if show then UI.frame:Show() else UI.frame:Hide() end
 end
 
 function ns.UI_ResetPosition()
-  local db = GrosOrteilDB
+  local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
   db.ui = db.ui or {}
   db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
   UI.frame:ClearAllPoints()
