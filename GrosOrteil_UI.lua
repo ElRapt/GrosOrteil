@@ -563,14 +563,25 @@ function ns.UI_Init()
   -- Bars are driven by Core.OnChange; keep them hidden until then.
 
   -- Content host (pages) sits under HP/Resource bars and above class strip.
-  local contentHost = CreateFrame("Frame", nil, content)
-  contentHost:SetPoint("TOPLEFT", hpBar, "BOTTOMLEFT", 0, -12)
-  contentHost:SetPoint("TOPRIGHT", hpBar, "BOTTOMRIGHT", 0, -12)
-  UI.contentHost = contentHost
+  local CONTENT_VPAD_BASE = 20
 
-  -- Pages can use the full content height; we no longer reserve space for the class selector.
-  contentHost:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
-  contentHost:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
+  local function applyContentHostLayout(anchor, extraVertical)
+    if not UI.contentHost then return end
+    -- Always keep a baseline vertical inset, then split extra height to stay centered.
+    local dynamicPad = math.max(0, math.floor((extraVertical or 0) / 2))
+    local topPad = CONTENT_VPAD_BASE + dynamicPad
+    local bottomPad = CONTENT_VPAD_BASE + dynamicPad
+
+    UI.contentHost:ClearAllPoints()
+    UI.contentHost:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -topPad)
+    UI.contentHost:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -topPad)
+    UI.contentHost:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, bottomPad)
+    UI.contentHost:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, bottomPad)
+  end
+
+  local contentHost = CreateFrame("Frame", nil, content)
+  UI.contentHost = contentHost
+  applyContentHostLayout(hpBar, 0)
 
   UI.tabs = {}
   UI.pages = {}
@@ -1148,6 +1159,7 @@ function ns.UI_Init()
       end
 
       -- Grow the window when multiple resource bars are visible (Shaman = 4).
+      local targetH = BASE_FRAME_H
       if frame and frame.SetHeight then
         local extraPad = 0
         if s.classKey == "SHAMAN" then
@@ -1155,18 +1167,12 @@ function ns.UI_Init()
         elseif n >= 4 then
           extraPad = 26
         end
-        local targetH = BASE_FRAME_H + (math.max(0, n - 1) * RES_EXTRA_H) + extraPad
+        targetH = BASE_FRAME_H + (math.max(0, n - 1) * RES_EXTRA_H) + extraPad
         if targetH < BASE_FRAME_H then targetH = BASE_FRAME_H end
         frame:SetHeight(targetH)
       end
 
-      if UI.contentHost and UI.contentHost.ClearAllPoints then
-        UI.contentHost:ClearAllPoints()
-        UI.contentHost:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -12)
-        UI.contentHost:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -12)
-        UI.contentHost:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
-        UI.contentHost:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
-      end
+      applyContentHostLayout(anchor, targetH - BASE_FRAME_H)
     end
 
     if UI.syncHistoryWidth then
