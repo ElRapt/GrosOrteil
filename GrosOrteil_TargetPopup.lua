@@ -285,6 +285,62 @@ local function createStatBar(parent, yOffset)
   }
 end
 
+local function hideOverlay(tex)
+  if not tex then return end
+  tex:Hide()
+  tex:SetAlpha(0)
+  tex:SetWidth(0.001)
+end
+
+local function updateHpShieldOverlays(row, hpNow, maxHp, blockValue, magicValue)
+  if not row or not row.bar then return end
+  local bar = row.bar
+  local wBar = bar:GetWidth() or 0
+  local hpForOverlay = math.max(0, hpNow or 0)
+  local block = math.max(0, blockValue or 0)
+  local magic = math.max(0, magicValue or 0)
+  local total = math.min(hpForOverlay, block + magic)
+
+  if maxHp <= 0 or wBar <= 0 or total <= 0 then
+    hideOverlay(row.blockOverlay)
+    hideOverlay(row.magicOverlay)
+    return
+  end
+
+  local hpFrac = hpForOverlay / maxHp
+  if hpFrac < 0 then hpFrac = 0 elseif hpFrac > 1 then hpFrac = 1 end
+  local endX = wBar * hpFrac
+
+  local magicShown = math.min(magic, total)
+  local blockShown = math.min(block, total - magicShown)
+
+  local magicW = wBar * (magicShown / maxHp)
+  local blockW = wBar * (blockShown / maxHp)
+
+  if row.magicOverlay and magicW > 0.5 and endX > 0.5 then
+    row.magicOverlay:Show()
+    row.magicOverlay:SetAlpha(0.75)
+    row.magicOverlay:ClearAllPoints()
+    row.magicOverlay:SetPoint("TOPLEFT", bar, "TOPLEFT", math.max(0, endX - magicW), 0)
+    row.magicOverlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", math.max(0, endX - magicW), 0)
+    row.magicOverlay:SetWidth(magicW)
+  else
+    hideOverlay(row.magicOverlay)
+  end
+
+  if row.blockOverlay and blockW > 0.5 and endX > 0.5 then
+    local startX = math.max(0, endX - magicW - blockW)
+    row.blockOverlay:Show()
+    row.blockOverlay:SetAlpha(0.65)
+    row.blockOverlay:ClearAllPoints()
+    row.blockOverlay:SetPoint("TOPLEFT", bar, "TOPLEFT", startX, 0)
+    row.blockOverlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", startX, 0)
+    row.blockOverlay:SetWidth(blockW)
+  else
+    hideOverlay(row.blockOverlay)
+  end
+end
+
 local function setBarValue(row, label, value, maxValue, color)
   local v = tonumber(value) or 0
   local m = tonumber(maxValue) or 0
@@ -330,7 +386,7 @@ local function createPopup()
   if popupFrame then return end
 
   popupFrame = CreateFrame("Frame", "GrosOrteilTargetPopup", UIParent, "BackdropTemplate")
-  popupFrame:SetSize(340, 210)
+  popupFrame:SetSize(340, 236)
   popupFrame:SetFrameStrata("DIALOG")
   popupFrame:SetMovable(true)
   popupFrame:EnableMouse(true)
@@ -366,14 +422,49 @@ local function createPopup()
   popupFrame.classText:SetJustifyH("LEFT")
   popupFrame.classText:SetText("Classe: Inconnue")
 
+  popupFrame.armorIcon = popupFrame:CreateTexture(nil, "ARTWORK")
+  popupFrame.armorIcon:SetSize(14, 14)
+  popupFrame.armorIcon:SetTexture("Interface\\Icons\\INV_Shield_06")
+  popupFrame.armorIcon:SetPoint("TOPLEFT", popupFrame.classText, "BOTTOMLEFT", 0, -8)
+
+  popupFrame.armorText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  popupFrame.armorText:SetPoint("LEFT", popupFrame.armorIcon, "RIGHT", 4, 0)
+  popupFrame.armorText:SetJustifyH("LEFT")
+  popupFrame.armorText:SetText("Armure: 0")
+
+  popupFrame.dodgeIcon = popupFrame:CreateTexture(nil, "ARTWORK")
+  popupFrame.dodgeIcon:SetSize(14, 14)
+  popupFrame.dodgeIcon:SetTexture("Interface\\Icons\\Ability_Rogue_Sprint")
+  popupFrame.dodgeIcon:SetPoint("LEFT", popupFrame.armorText, "RIGHT", 18, 0)
+
+  popupFrame.dodgeText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  popupFrame.dodgeText:SetPoint("LEFT", popupFrame.dodgeIcon, "RIGHT", 4, 0)
+  popupFrame.dodgeText:SetJustifyH("LEFT")
+  popupFrame.dodgeText:SetText("Esquive: 0")
+
   popupFrame.classIcon = popupFrame:CreateTexture(nil, "ARTWORK")
   popupFrame.classIcon:SetSize(28, 28)
   popupFrame.classIcon:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -26, -24)
 
-  popupFrame.hpRow = createStatBar(popupFrame, -68)
+  popupFrame.hpRow = createStatBar(popupFrame, -92)
+
+  popupFrame.hpRow.blockOverlay = popupFrame.hpRow.bar:CreateTexture(nil, "OVERLAY")
+  popupFrame.hpRow.blockOverlay:SetTexture("Interface/Buttons/WHITE8x8")
+  popupFrame.hpRow.blockOverlay:SetColorTexture(0.65, 0.65, 0.65, 0.55)
+  popupFrame.hpRow.blockOverlay:SetPoint("TOP", popupFrame.hpRow.bar, "TOP", 0, 0)
+  popupFrame.hpRow.blockOverlay:SetPoint("BOTTOM", popupFrame.hpRow.bar, "BOTTOM", 0, 0)
+  popupFrame.hpRow.blockOverlay:Hide()
+
+  popupFrame.hpRow.magicOverlay = popupFrame.hpRow.bar:CreateTexture(nil, "OVERLAY")
+  popupFrame.hpRow.magicOverlay:SetTexture("Interface/Buttons/WHITE8x8")
+  popupFrame.hpRow.magicOverlay:SetColorTexture(1.0, 0.82, 0.22, 0.60)
+  popupFrame.hpRow.magicOverlay:SetPoint("TOP", popupFrame.hpRow.bar, "TOP", 0, 0)
+  popupFrame.hpRow.magicOverlay:SetPoint("BOTTOM", popupFrame.hpRow.bar, "BOTTOM", 0, 0)
+  popupFrame.hpRow.magicOverlay:Hide()
+
   popupFrame.resRows = {}
   for i = 1, 4 do
-    popupFrame.resRows[i] = createStatBar(popupFrame, -104 - ((i - 1) * 34))
+    popupFrame.resRows[i] = createStatBar(popupFrame, -128 - ((i - 1) * 34))
     popupFrame.resRows[i].holder:Hide()
   end
 
@@ -403,6 +494,12 @@ local function showForState(targetName, state)
   popupFrame.classText:SetText("Classe: " .. className)
   applyClassIcon(state.classKey)
 
+  local armor = tonumber(state.armor) or 0
+  local trueArmor = tonumber(state.trueArmor) or 0
+  local dodge = tonumber(state.dodge) or 0
+  popupFrame.armorText:SetText(string.format("Armure: %d (+%d)", roundNumber(armor), roundNumber(trueArmor)))
+  popupFrame.dodgeText:SetText(string.format("Esquive: %d", roundNumber(dodge)))
+
   local baseHp = tonumber(state.maxHp) or 0
   local bonusHp = tonumber(state.bonusHp) or 0
   if bonusHp < 0 then bonusHp = 0 end
@@ -410,6 +507,13 @@ local function showForState(targetName, state)
   if effMaxHp <= 0 then effMaxHp = 1 end
 
   setBarValue(popupFrame.hpRow, "Vie", state.hp, effMaxHp, { 0.85, 0.16, 0.18 })
+  updateHpShieldOverlays(
+    popupFrame.hpRow,
+    tonumber(state.hp) or 0,
+    effMaxHp,
+    tonumber(state.tempBlock) or 0,
+    tonumber(state.tempMagicBlock) or 0
+  )
 
   for i = 1, #popupFrame.hpMarkers do
     local m = popupFrame.hpMarkers[i]
@@ -479,7 +583,7 @@ local function showForState(targetName, state)
     end
   end
 
-  local dynamicHeight = 116 + (shownRes * 34)
+  local dynamicHeight = 140 + (shownRes * 34)
   if dynamicHeight < 180 then dynamicHeight = 180 end
   popupFrame:SetHeight(dynamicHeight)
 
