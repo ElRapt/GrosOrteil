@@ -39,15 +39,27 @@ local RES_PROFILES_BY_CLASS = {
   },
 }
 
-local function getResProfile(classKey)
-  -- Returns an array of { idx=1..4, label=string, r/g/b }
+local function getResProfile(state)
+  -- Returns an array of { idx=1..5, label=string, r/g/b }
+  local classKey = state and state.classKey
   local p = (type(classKey) == "string") and RES_PROFILES_BY_CLASS[classKey] or nil
-  if p then return p end
-  local s = (type(classKey) == "string" and CLASS_STYLES[classKey]) or nil
-  if s then
-    return { { idx = 1, label = s.label or "Ressource", r = s.r or 0.2, g = s.g or 0.55, b = s.b or 1.0 } }
+  local out = {}
+  if p then
+    for i = 1, #p do out[#out + 1] = p[i] end
+  else
+    local s = (type(classKey) == "string" and CLASS_STYLES[classKey]) or nil
+    if s then
+      out[1] = { idx = 1, label = s.label or "Ressource", r = s.r or 0.2, g = s.g or 0.55, b = s.b or 1.0 }
+    else
+      out[1] = { idx = 1, label = "Ressource", r = 0.20, g = 0.55, b = 1.00 }
+    end
   end
-  return { { idx = 1, label = "Ressource", r = 0.20, g = 0.55, b = 1.00 } }
+
+  if state and state.pet and state.pet.enabled then
+    out[#out + 1] = { idx = 5, label = "Points d'autorité", r = 1.00, g = 0.45, b = 0.10 }
+  end
+
+  return out
 end
 
 local function getKeysForIdx(i)
@@ -55,6 +67,7 @@ local function getKeysForIdx(i)
   if i == 2 then return "res2", "maxRes2" end
   if i == 3 then return "res3", "maxRes3" end
   if i == 4 then return "res4", "maxRes4" end
+  if i == 5 then return "auth", "maxAuth" end
   return nil, nil
 end
 
@@ -73,6 +86,17 @@ local function setEditBoxEnabled(eb, enabled)
     if eb.Disable then eb:Disable()
     elseif eb.EnableMouse then eb:EnableMouse(false) end
     if eb.SetAlpha then eb:SetAlpha(0.55) end
+  end
+end
+
+local function setButtonEnabled(btn, enabled)
+  if not btn then return end
+  if enabled then
+    if btn.Enable then btn:Enable() end
+    if btn.SetAlpha then btn:SetAlpha(1) end
+  else
+    if btn.Disable then btn:Disable() end
+    if btn.SetAlpha then btn:SetAlpha(0.55) end
   end
 end
 
@@ -522,7 +546,7 @@ function ns.UI_Init()
     return bar
   end
 
-  for i = 1, 4 do
+  for i = 1, 5 do
     mkResBar(i)
   end
 
@@ -632,6 +656,7 @@ function ns.UI_Init()
     "Dégâts",
     "Soins",
     "Historique",
+    "Familier",
   }
 
   local NAV_PAD = 10
@@ -702,7 +727,9 @@ function ns.UI_Init()
   local pageDmg = mkPage()
   local pageHeal = mkPage()
   local pageHistory = mkPage()
+  local pagePet = mkPage()
   UI.pageHistory = pageHistory
+  UI.pagePet = pagePet
 
   -- Onglet 1 : PV
   local xHP = centerX(360)
@@ -742,6 +769,7 @@ function ns.UI_Init()
     local row = CreateFrame("Frame", nil, pageRes)
     row:SetSize(540, 24)
     row:SetPoint("TOPLEFT", xRes, y)
+    row.resIdx = idx
     UI.resRow[idx] = row
     row:Hide()
 
@@ -753,7 +781,8 @@ function ns.UI_Init()
 
     local function apply()
       if Core and Core.SetResIndex then
-        Core.SetResIndex(idx, getNumber(curEB), getNumber(maxEB))
+        local targetIdx = row.resIdx or idx
+        Core.SetResIndex(targetIdx, getNumber(curEB), getNumber(maxEB))
       end
     end
 
@@ -765,12 +794,14 @@ function ns.UI_Init()
     mkButton(row, "Appliquer", 90, 20, 270, 2, apply)
     mkButton(row, "+", 28, 20, 368, 2, function()
       if Core and Core.AddResIndex then
-        Core.AddResIndex(idx, getNumber(resDeltaEB) or 0)
+        local targetIdx = row.resIdx or idx
+        Core.AddResIndex(targetIdx, getNumber(resDeltaEB) or 0)
       end
     end)
     mkButton(row, "-", 28, 20, 400, 2, function()
       if Core and Core.AddResIndex then
-        Core.AddResIndex(idx, -(getNumber(resDeltaEB) or 0))
+        local targetIdx = row.resIdx or idx
+        Core.AddResIndex(targetIdx, -(getNumber(resDeltaEB) or 0))
       end
     end)
 
@@ -782,6 +813,7 @@ function ns.UI_Init()
   mkResRow(2, -88)
   mkResRow(3, -116)
   mkResRow(4, -144)
+  mkResRow(5, -172)
 
   UI.noResHint = mkLabelCenter(pageRes, "Aucune ressource pour cette classe.", 0, -110)
   UI.noResHint:Hide()
@@ -900,6 +932,99 @@ function ns.UI_Init()
     UI.historyClear = clearBtn
   end
 
+  -- Onglet 8 : Familier
+  local xPetTop = centerX(560)
+  local petToggleBtn
+  local petNameEB
+  local petHpCurEB, petHpMaxEB
+  local petArmorEB, petTrueArmorEB, petDodgeEB, petMagicBlockEB
+  local petActionValEB
+
+  petToggleBtn = mkButton(pagePet, "Activer le familier", 170, 22, xPetTop + 0, -6, function()
+    if not Core or not Core.SetPetEnabled then return end
+    local p = Core.GetPet and Core.GetPet() or nil
+    local enabled = p and p.enabled
+    Core.SetPetEnabled(not enabled)
+  end)
+
+  mkLabel(pagePet, "Nom", xPetTop + 0, -40)
+  local function applyPetName()
+    if Core and Core.SetPetName and petNameEB then
+      Core.SetPetName(petNameEB:GetText())
+    end
+  end
+  petNameEB = mkEdit(pagePet, 170, 20, xPetTop + 36, -38, applyPetName)
+  petNameEB:SetNumeric(false)
+  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 214, -38, applyPetName)
+
+  mkLabel(pagePet, "PV", xPetTop + 0, -72)
+  mkLabel(pagePet, "/", xPetTop + 112, -72)
+  local function applyPetHP()
+    if Core and Core.SetPetHP then
+      Core.SetPetHP(getNumber(petHpCurEB), getNumber(petHpMaxEB))
+    end
+  end
+  petHpCurEB = mkEdit(pagePet, 70, 20, xPetTop + 36, -70, applyPetHP)
+  petHpMaxEB = mkEdit(pagePet, 70, 20, xPetTop + 126, -70, applyPetHP)
+  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 210, -70, applyPetHP)
+
+  mkLabel(pagePet, "Armure", xPetTop + 0, -104)
+  mkLabel(pagePet, "Armure invul", xPetTop + 150, -104)
+  mkLabel(pagePet, "Esquive", xPetTop + 330, -104)
+  local function applyPetArmor()
+    if not Core then return end
+    local armorVal = getNumber(petArmorEB)
+    local trueArmorVal = getNumber(petTrueArmorEB)
+    local dodgeVal = getNumber(petDodgeEB)
+    if Core.SetPetArmor then Core.SetPetArmor(armorVal, trueArmorVal) end
+    if Core.SetPetDodge then Core.SetPetDodge(dodgeVal) end
+  end
+  petArmorEB = mkEdit(pagePet, 70, 20, xPetTop + 56, -102, applyPetArmor)
+  petTrueArmorEB = mkEdit(pagePet, 70, 20, xPetTop + 238, -102, applyPetArmor)
+  petDodgeEB = mkEdit(pagePet, 70, 20, xPetTop + 386, -102, applyPetArmor)
+  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 464, -102, applyPetArmor)
+
+  mkLabel(pagePet, "Bouclier magique", xPetTop + 0, -136)
+  local function applyPetMagicBlock()
+    if Core and Core.SetPetTempMagicBlock then
+      Core.SetPetTempMagicBlock(getNumber(petMagicBlockEB))
+    end
+  end
+  petMagicBlockEB = mkEdit(pagePet, 90, 20, xPetTop + 108, -134, applyPetMagicBlock)
+  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 206, -134, applyPetMagicBlock)
+  mkButton(pagePet, "Reset", 70, 20, xPetTop + 304, -134, function()
+    if Core and Core.ResetPetTempMagicBlock then
+      Core.ResetPetTempMagicBlock()
+    elseif Core and Core.SetPetTempMagicBlock then
+      Core.SetPetTempMagicBlock(0)
+    end
+  end)
+
+  local xPetAct = centerX(420)
+  mkLabel(pagePet, "Valeur", xPetAct + 0, -170)
+  petActionValEB = mkEdit(pagePet, 80, 20, xPetAct + 56, -168)
+
+  local petDmgArmorBtn = mkButton(pagePet, "Dégâts (armure)", 190, 22, xPetAct + 0, -200, function()
+    if Core and Core.PetDamageWithArmor then
+      Core.PetDamageWithArmor(getNumber(petActionValEB) or 0)
+    end
+  end)
+  local petDmgTrueBtn = mkButton(pagePet, "Dégâts (bruts)", 190, 22, xPetAct + 202, -200, function()
+    if Core and Core.PetDamageTrue then
+      Core.PetDamageTrue(getNumber(petActionValEB) or 0)
+    end
+  end)
+  local petHealBtn = mkButton(pagePet, "Soins", 190, 22, xPetAct + 0, -228, function()
+    if Core and Core.PetHeal then
+      Core.PetHeal(getNumber(petActionValEB) or 0)
+    end
+  end)
+  local petDivineBtn = mkButton(pagePet, "Soins divins (75%)", 190, 22, xPetAct + 202, -228, function()
+    if Core and Core.PetDivineHeal then
+      Core.PetDivineHeal()
+    end
+  end)
+
   UI.inputs = {
     hpCur = hpCur, hpMax = hpMax,
     tempHp = tempHpEB,
@@ -907,7 +1032,23 @@ function ns.UI_Init()
     dodge = dodgeEB,
     block = blockEB,
     magicBlock = magicBlockEB,
+    petName = petNameEB,
+    petHpCur = petHpCurEB,
+    petHpMax = petHpMaxEB,
+    petArmor = petArmorEB,
+    petTrueArmor = petTrueArmorEB,
+    petDodge = petDodgeEB,
+    petMagicBlock = petMagicBlockEB,
+    petActionVal = petActionValEB,
   }
+
+  UI.petToggleBtn = petToggleBtn
+  UI.petControls = {
+    petNameEB, petHpCurEB, petHpMaxEB,
+    petArmorEB, petTrueArmorEB, petDodgeEB,
+    petMagicBlockEB, petActionValEB,
+  }
+  UI.petButtons = { petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn }
 
   setTab(1)
 
@@ -1104,11 +1245,18 @@ function ns.UI_Init()
     end
 
     -- Ressource
-    local profile = getResProfile(s.classKey)
+    local profile = getResProfile(s)
     local rowCount = #profile
     local barCount
     if s.classKey == "SHAMAN" then
-      barCount = (rowCount > 0) and 1 or 0
+      local hasAuthority = false
+      for i = 1, rowCount do
+        if profile[i] and profile[i].idx == 5 then
+          hasAuthority = true
+          break
+        end
+      end
+      barCount = (rowCount > 0) and (hasAuthority and 5 or 1) or 0
     else
       barCount = rowCount
     end
@@ -1117,6 +1265,8 @@ function ns.UI_Init()
       local headerText
       if rowCount == 0 then
         headerText = "Aucune ressource"
+      elseif rowCount == 1 and profile[1] and profile[1].idx == 5 then
+        headerText = profile[1].label or "Ressource"
       else
         headerText = (CLASS_STYLES[s.classKey] and CLASS_STYLES[s.classKey].label) or "Ressource"
       end
@@ -1133,9 +1283,9 @@ function ns.UI_Init()
       if rowCount == 0 then UI.resDeltaEB:Hide() else UI.resDeltaEB:Show() end
     end
 
-    -- Warrior has no resources: disable the Resources tab entirely.
+    -- Disable resources tab only when there are no effective resources.
     if UI.tabDisabled then
-      UI.tabDisabled[2] = (s.classKey == "WARRIOR")
+      UI.tabDisabled[2] = (rowCount == 0)
       if UI.tabDisabled[2] and UI.activeTab == 2 then
         setTab(1)
       else
@@ -1151,7 +1301,7 @@ function ns.UI_Init()
     do
       local n = barCount
       if n < 0 then n = 0 end
-      if n > 4 then n = 4 end
+      if n > 5 then n = 5 end
 
       local anchor = hpBar
       if n >= 1 and UI.resBars and UI.resBars[n] then
@@ -1179,17 +1329,17 @@ function ns.UI_Init()
       UI.syncHistoryWidth()
     end
 
-    for i = 1, 4 do
+    for i = 1, 5 do
       local bar = UI.resBars and UI.resBars[i]
       local txt = UI.resTexts and UI.resTexts[i]
       local row = UI.resRow and UI.resRow[i]
       local rowLabel = UI.resRowLabel and UI.resRowLabel[i]
       local curEB = UI.resRowCur and UI.resRowCur[i]
       local maxEB = UI.resRowMax and UI.resRowMax[i]
+      local p = profile[i]
 
       -- Shaman: display 4 resources in 1 stacked bar, but keep 4 edit rows.
-      if s.classKey == "SHAMAN" then
-        local p = profile[i]
+      if s.classKey == "SHAMAN" and (not p or p.idx <= 4) then
         -- Bars: only use bar #1.
         if i ~= 1 then
           if bar then bar:Hide() end
@@ -1198,12 +1348,18 @@ function ns.UI_Init()
 
         -- Rows: show/hide and bind each element.
         if not p then
-          if row then row:Hide() end
+          if row then
+            row.resIdx = nil
+            row:Hide()
+          end
         else
           local resKey, maxKey = getKeysForIdx(p.idx)
           local cur = s[resKey] or 0
           local maxv = s[maxKey] or 0
-          if row then row:Show() end
+          if row then
+            row.resIdx = p.idx
+            row:Show()
+          end
           if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
           if curEB then setNumber(curEB, cur) end
           if maxEB then setNumber(maxEB, maxv) end
@@ -1277,10 +1433,12 @@ function ns.UI_Init()
 
       else
         -- Default behavior: 1 bar per resource.
-        local p = profile[i]
         if not p then
           if bar then bar:Hide() end
-          if row then row:Hide() end
+          if row then
+            row.resIdx = nil
+            row:Hide()
+          end
         else
           -- Hide stacked segments if any
           if bar and bar._stackSegs then
@@ -1367,7 +1525,10 @@ function ns.UI_Init()
             positionMarkers(UI.insanityMarkers, bar)
           end
 
-          if row then row:Show() end
+          if row then
+            row.resIdx = p.idx
+            row:Show()
+          end
           if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
           if curEB then setNumber(curEB, cur) end
           if maxEB then
@@ -1409,6 +1570,40 @@ function ns.UI_Init()
     setNumber(UI.inputs.dodge, s.dodge)
     setNumber(UI.inputs.block, s.tempBlock)
     setNumber(UI.inputs.magicBlock, s.tempMagicBlock)
+
+    local p = s.pet or {}
+    local petEnabled = not not p.enabled
+    if UI.petToggleBtn and UI.petToggleBtn.SetText then
+      if petEnabled then
+        UI.petToggleBtn:SetText("Désactiver le familier")
+      else
+        UI.petToggleBtn:SetText("Activer le familier")
+      end
+    end
+
+    if UI.inputs.petName then
+      if not (UI.inputs.petName.HasFocus and UI.inputs.petName:HasFocus()) then
+        UI.inputs.petName:SetText(p.name or "Familier")
+      end
+      setEditBoxEnabled(UI.inputs.petName, true)
+    end
+    setNumber(UI.inputs.petHpCur, p.hp)
+    setNumber(UI.inputs.petHpMax, p.maxHp)
+    setNumber(UI.inputs.petArmor, p.armor)
+    setNumber(UI.inputs.petTrueArmor, p.trueArmor)
+    setNumber(UI.inputs.petDodge, p.dodge)
+    setNumber(UI.inputs.petMagicBlock, p.tempMagicBlock)
+
+    if UI.petControls then
+      for i = 1, #UI.petControls do
+        setEditBoxEnabled(UI.petControls[i], true)
+      end
+    end
+    if UI.petButtons then
+      for i = 1, #UI.petButtons do
+        setButtonEnabled(UI.petButtons[i], petEnabled)
+      end
+    end
 
     -- Historique
     if UI.historyText and UI.historyChild then

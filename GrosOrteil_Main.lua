@@ -143,11 +143,31 @@ f:SetScript("OnEvent", function(_, event, arg1)
         else
           print("|cFF00FF00GrosOrteil|r usage: /go class <CLASS>")
         end
+      elseif cmd == "pet" then
+        if rest == "" then
+          if ns.Core and ns.Core.GetPet and ns.Core.SetPetEnabled then
+            local pet = ns.Core.GetPet()
+            ns.Core.SetPetEnabled(not (pet and pet.enabled))
+          end
+        else
+          local sub, value = rest:match("^(%S+)%s*(.-)$")
+          sub = (sub or ""):lower()
+          value = value or ""
+          if sub == "on" and ns.Core and ns.Core.SetPetEnabled then
+            ns.Core.SetPetEnabled(true)
+          elseif sub == "off" and ns.Core and ns.Core.SetPetEnabled then
+            ns.Core.SetPetEnabled(false)
+          elseif sub == "name" and ns.Core and ns.Core.SetPetName and value ~= "" then
+            ns.Core.SetPetName(value)
+          else
+            print("|cFF00FF00GrosOrteil|r usage: /go pet | /go pet on | /go pet off | /go pet name <NOM>")
+          end
+        end
       elseif cmd == "minimap" then
         ensureMinimapShown()
         print("|cFF00FF00GrosOrteil|r l'icone minimap est toujours visible.")
       else
-        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go minimap")
+        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go pet | /go minimap")
       end
     end
   end

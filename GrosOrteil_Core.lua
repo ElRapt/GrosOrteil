@@ -113,6 +113,13 @@ local function clampNumber(x, minv, maxv)
   return x
 end
 
+local function trimString(v)
+  if type(v) ~= "string" then return nil end
+  v = v:gsub("^%s+", ""):gsub("%s+$", "")
+  if v == "" then return nil end
+  return v
+end
+
 local function ensureHistory(s)
   if History and History.EnsureState then
     History.EnsureState(s)
@@ -214,6 +221,80 @@ local function clampToMax(s, valueKey, maxKey)
   end
 end
 
+local function ensurePetDefaults(pet)
+  if type(pet) ~= "table" then pet = {} end
+  if type(pet.enabled) ~= "boolean" then pet.enabled = false end
+  if type(pet.name) ~= "string" or pet.name == "" then pet.name = "Familier" end
+  if type(pet.hp) ~= "number" then pet.hp = 20 end
+  if type(pet.maxHp) ~= "number" or pet.maxHp <= 0 then pet.maxHp = 20 end
+  if pet.hp < 0 then pet.hp = 0 end
+  if pet.hp > pet.maxHp then pet.hp = pet.maxHp end
+  if type(pet.armor) ~= "number" or pet.armor < 0 then pet.armor = 0 end
+  if type(pet.trueArmor) ~= "number" or pet.trueArmor < 0 then pet.trueArmor = 0 end
+  if type(pet.dodge) ~= "number" or pet.dodge < 0 then pet.dodge = 0 end
+  if type(pet.tempMagicBlock) ~= "number" or pet.tempMagicBlock < 0 then pet.tempMagicBlock = 0 end
+  if type(pet.wounds) ~= "table" then pet.wounds = {} end
+  pet.wounds.hit25 = not not pet.wounds.hit25
+  pet.wounds.hit10 = not not pet.wounds.hit10
+  return pet
+end
+
+local function ensurePet(s)
+  if not s then return nil end
+  s.pet = ensurePetDefaults(s.pet)
+  return s.pet
+end
+
+local function getPetWoundCap(p)
+  local w = p and p.wounds
+  if w and w.hit10 then return 0.25 end
+  if w and w.hit25 then return 0.50 end
+  return 1.0
+end
+
+local function updatePetWoundsSticky(p)
+  if not p then return end
+  if type(p.wounds) ~= "table" then
+    p.wounds = { hit25 = false, hit10 = false }
+  end
+
+  if not p.maxHp or p.maxHp <= 0 then
+    p.wounds.hit25 = false
+    p.wounds.hit10 = false
+    return
+  end
+
+  local pct = (p.hp or 0) / p.maxHp
+  if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
+  local hit25, hit10 = woundsFromPct(pct)
+  if hit10 then
+    p.wounds.hit10 = true
+    p.wounds.hit25 = true
+  elseif hit25 then
+    p.wounds.hit25 = true
+  end
+end
+
+local function recomputePetWounds(p)
+  if not p then return end
+  if type(p.wounds) ~= "table" then
+    p.wounds = { hit25 = false, hit10 = false }
+  else
+    p.wounds.hit25 = false
+    p.wounds.hit10 = false
+  end
+
+  if not p.maxHp or p.maxHp <= 0 then
+    return
+  end
+
+  local pct = (p.hp or 0) / p.maxHp
+  if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
+  local hit25, hit10 = woundsFromPct(pct)
+  p.wounds.hit10 = hit10
+  p.wounds.hit25 = hit25
+end
+
 local WARLOCK_CORRUPTION_MAX = 60
 
 local function clampWarlockCorruption(s)
@@ -242,12 +323,25 @@ function ns.Core_Init()
     res2 = 0, maxRes2 = 20,
     res3 = 0, maxRes3 = 20,
     res4 = 0, maxRes4 = 20,
+    auth = 0, maxAuth = 5,
     armor = 0, trueArmor = 0,
     dodge = 0,
     tempBlock = 0,
     tempMagicBlock = 0,
 
     wounds = { hit25 = false, hit10 = false },
+
+    pet = {
+      enabled = false,
+      name = "Familier",
+      hp = 20,
+      maxHp = 20,
+      armor = 0,
+      trueArmor = 0,
+      dodge = 0,
+      tempMagicBlock = 0,
+      wounds = { hit25 = false, hit10 = false },
+    },
 
     history = {},
 
@@ -284,6 +378,7 @@ function ns.Core_Init()
   if db.state.dodge == nil then db.state.dodge = 0 end
   if db.state.tempMagicBlock == nil then db.state.tempMagicBlock = 0 end
   ensureHistory(db.state)
+  ensurePet(db.state)
 
   -- Ensure multi-resource fields exist (Warlock/Shadow Priest/Shaman).
   if db.state.res2 == nil then db.state.res2 = 0 end
@@ -292,6 +387,8 @@ function ns.Core_Init()
   if db.state.maxRes3 == nil then db.state.maxRes3 = db.state.maxRes or 20 end
   if db.state.res4 == nil then db.state.res4 = 0 end
   if db.state.maxRes4 == nil then db.state.maxRes4 = db.state.maxRes or 20 end
+  if db.state.auth == nil then db.state.auth = 0 end
+  if db.state.maxAuth == nil then db.state.maxAuth = 5 end
   -- Migration: tempHp -> bonusHp
   if db.state.bonusHp == nil then
     db.state.bonusHp = db.state.tempHp or 0
@@ -333,6 +430,83 @@ function Core.SetClassKey(classKey)
   if classKey == "WARLOCK" then
     clampWarlockCorruption(s)
   end
+  bump(); notify()
+end
+
+function Core.GetPet()
+  local s = Core.state
+  if not s then return nil end
+  return ensurePet(s)
+end
+
+function Core.SetPetEnabled(enabled)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  local v = not not enabled
+  if p.enabled == v then return end
+  p.enabled = v
+  bump(); notify()
+end
+
+function Core.SetPetName(name)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  local v = trimString(name)
+  if not v then return end
+  if p.name == v then return end
+  p.name = v
+  bump(); notify()
+end
+
+function Core.SetPetHP(hp, maxHp)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  hp = clampNumber(hp, 0, 1e9)
+  maxHp = clampNumber(maxHp, 1, 1e9)
+  if maxHp then p.maxHp = maxHp end
+  if hp then p.hp = hp end
+  if p.hp > p.maxHp then p.hp = p.maxHp end
+  recomputePetWounds(p)
+  bump(); notify()
+end
+
+function Core.SetPetArmor(armor, trueArmor)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  armor = clampNumber(armor, 0, 1e9)
+  trueArmor = clampNumber(trueArmor, 0, 1e9)
+  if armor then p.armor = armor end
+  if trueArmor then p.trueArmor = trueArmor end
+  bump(); notify()
+end
+
+function Core.SetPetDodge(v)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  v = clampNumber(v, 0, 1e9)
+  if v then p.dodge = v end
+  bump(); notify()
+end
+
+function Core.SetPetTempMagicBlock(v)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  v = clampNumber(v, 0, 1e9)
+  if v then p.tempMagicBlock = v end
+  bump(); notify()
+end
+
+function Core.ResetPetTempMagicBlock()
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  p.tempMagicBlock = 0
   bump(); notify()
 end
 
@@ -386,6 +560,7 @@ local function resKeysForIndex(i)
   if i == 2 then return "res2", "maxRes2" end
   if i == 3 then return "res3", "maxRes3" end
   if i == 4 then return "res4", "maxRes4" end
+  if i == 5 then return "auth", "maxAuth" end
   return nil, nil
 end
 
@@ -740,4 +915,215 @@ end
 
 function Core.AddRes(amount)
   Core.AddResIndex(1, amount)
+end
+
+function Core.PetDamageWithArmor(amount)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+
+  amount = clampNumber(amount, 0, 1e9) or 0
+  local hpBefore = p.hp or 0
+  local maxBefore = p.maxHp or 0
+  local dodgeBefore = math.max(0, p.dodge or 0)
+
+  if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
+    sfxDodge()
+    pushHistory({
+      kind = "DAMAGE_ARMOR",
+      subject = "PET",
+      input = amount,
+      dodged = true,
+      dodge = dodgeBefore,
+      armor = p.armor or 0,
+      trueArmor = p.trueArmor or 0,
+      hpBefore = hpBefore,
+      hpAfter = hpBefore,
+      maxHp = maxBefore,
+      bonusHp = 0,
+    })
+    bump(); notify()
+    return
+  end
+
+  local absorbedMagic = 0
+  local mblock = math.max(0, p.tempMagicBlock or 0)
+  if mblock > 0 and amount > 0 then
+    absorbedMagic = math.min(mblock, amount)
+    p.tempMagicBlock = mblock - absorbedMagic
+    amount = amount - absorbedMagic
+  end
+
+  local mit = math.max(0, (p.armor or 0) + (p.trueArmor or 0))
+  local afterAbsorb = amount
+  local dmg = effDmg(amount, mit)
+  if dmg > 0 then
+    p.hp = math.max(0, (p.hp or 0) - dmg)
+  end
+
+  if absorbedMagic > 0 then
+    sfxMagicShield()
+  elseif amount > 0 then
+    sfxDamage()
+  end
+
+  pushHistory({
+    kind = "DAMAGE_ARMOR",
+    subject = "PET",
+    input = amount + absorbedMagic,
+    afterAbsorb = afterAbsorb,
+    absorbedBlock = 0,
+    absorbedMagic = absorbedMagic,
+    dodge = dodgeBefore,
+    dodged = false,
+    armor = p.armor or 0,
+    trueArmor = p.trueArmor or 0,
+    mitigation = mit,
+    damage = dmg,
+    hpBefore = hpBefore,
+    hpAfter = (p.hp or 0),
+    maxHp = maxBefore,
+    bonusHp = 0,
+  })
+
+  updatePetWoundsSticky(p)
+
+  bump(); notify()
+end
+
+function Core.PetDamageTrue(amount)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+
+  amount = clampNumber(amount, 0, 1e9) or 0
+  local hpBefore = p.hp or 0
+  local maxBefore = p.maxHp or 0
+  local dodgeBefore = math.max(0, p.dodge or 0)
+
+  if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
+    sfxDodge()
+    pushHistory({
+      kind = "DAMAGE_TRUE",
+      subject = "PET",
+      input = amount,
+      dodged = true,
+      dodge = dodgeBefore,
+      trueArmor = p.trueArmor or 0,
+      hpBefore = hpBefore,
+      hpAfter = hpBefore,
+      maxHp = maxBefore,
+      bonusHp = 0,
+    })
+    bump(); notify()
+    return
+  end
+
+  local absorbedMagic = 0
+  local mblock = math.max(0, p.tempMagicBlock or 0)
+  if mblock > 0 and amount > 0 then
+    absorbedMagic = math.min(mblock, amount)
+    p.tempMagicBlock = mblock - absorbedMagic
+    amount = amount - absorbedMagic
+  end
+
+  local mit = math.max(0, p.trueArmor or 0)
+  local afterAbsorb = amount
+  local dmg = effDmg(amount, mit)
+  if dmg > 0 then
+    p.hp = math.max(0, (p.hp or 0) - dmg)
+  end
+
+  if absorbedMagic > 0 then
+    sfxMagicShield()
+  elseif amount > 0 then
+    sfxDamage()
+  end
+
+  pushHistory({
+    kind = "DAMAGE_TRUE",
+    subject = "PET",
+    input = amount + absorbedMagic,
+    afterAbsorb = afterAbsorb,
+    absorbedMagic = absorbedMagic,
+    dodge = dodgeBefore,
+    dodged = false,
+    trueArmor = p.trueArmor or 0,
+    mitigation = mit,
+    damage = dmg,
+    hpBefore = hpBefore,
+    hpAfter = (p.hp or 0),
+    maxHp = maxBefore,
+    bonusHp = 0,
+  })
+
+  updatePetWoundsSticky(p)
+
+  bump(); notify()
+end
+
+function Core.PetHeal(amount)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+
+  amount = clampNumber(amount, 0, 1e9) or 0
+  local hpBefore = p.hp or 0
+  local maxBefore = p.maxHp or 0
+  if amount > 0 then sfxHealLight() end
+
+  local proposed = hpBefore + amount
+  local capMax = (maxBefore * getPetWoundCap(p))
+  local healed = math.min(proposed, capMax, maxBefore)
+  p.hp = math.max(hpBefore, healed)
+
+  pushHistory({
+    kind = "HEAL",
+    subject = "PET",
+    input = amount,
+    current = hpBefore,
+    proposed = proposed,
+    capMax = capMax,
+    effMax = maxBefore,
+    applied = (p.hp or 0) - hpBefore,
+    hpBefore = hpBefore,
+    hpAfter = (p.hp or 0),
+    maxHp = maxBefore,
+    bonusHp = 0,
+    woundCap = getPetWoundCap(p),
+  })
+
+  updatePetWoundsSticky(p)
+
+  bump(); notify()
+end
+
+function Core.PetDivineHeal()
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+
+  local hpBefore = p.hp or 0
+  local maxBefore = p.maxHp or 0
+  local gain = (maxBefore * 0.75)
+  sfxLayOnHands()
+  p.hp = math.min(maxBefore, hpBefore + gain)
+
+  pushHistory({
+    kind = "DIVINE_HEAL",
+    subject = "PET",
+    gain = gain,
+    hpBefore = hpBefore,
+    hpAfter = (p.hp or 0),
+    maxHp = maxBefore,
+    bonusHp = 0,
+  })
+
+  recomputePetWounds(p)
+
+  bump(); notify()
 end

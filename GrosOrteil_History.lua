@@ -103,6 +103,9 @@ function History.FormatEntry(e)
 	end
 
 	local function prefix(label, color)
+		if e.subject == "PET" then
+			label = "[Familier] " .. label
+		end
 		if t ~= "" then
 			return t .. " " .. colorize(label, color)
 		end

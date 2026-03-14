@@ -56,7 +56,7 @@ local RES_PROFILES_BY_CLASS = {
 }
 
 local CLASS_NAMES_FR = {
-  WARRIOR = "Guerrier",
+  WARRIOR = "Classique",
   MAGE = "Mage",
   ROGUE = "Voleur",
   DRUID = "Druide",
@@ -163,14 +163,27 @@ local function getClassNameFr(classKey)
   return "Inconnue"
 end
 
-local function getResProfile(classKey)
+local function getResProfile(classKey, state)
   local p = (type(classKey) == "string") and RES_PROFILES_BY_CLASS[classKey] or nil
-  if p then return p end
-  local s = (type(classKey) == "string" and CLASS_STYLES[classKey]) or nil
-  if s then
-    return { { idx = 1, label = s.label or "Ressource", r = s.r or 0.2, g = s.g or 0.55, b = s.b or 1.0 } }
+  local out = {}
+
+  if p then
+    for i = 1, #p do out[#out + 1] = p[i] end
+  else
+    local s = (type(classKey) == "string" and CLASS_STYLES[classKey]) or nil
+    if s then
+      out[1] = { idx = 1, label = s.label or "Ressource", r = s.r or 0.2, g = s.g or 0.55, b = s.b or 1.0 }
+    else
+      out[1] = { idx = 1, label = "Ressource", r = 0.20, g = 0.55, b = 1.00 }
+    end
   end
-  return { { idx = 1, label = "Ressource", r = 0.20, g = 0.55, b = 1.00 } }
+
+  local petEnabled = state and state.pet and state.pet.enabled
+  if petEnabled then
+    out[#out + 1] = { idx = 5, label = "Points d'autorite", r = 1.00, g = 0.45, b = 0.10 }
+  end
+
+  return out
 end
 
 local function getKeysForIdx(i)
@@ -178,6 +191,7 @@ local function getKeysForIdx(i)
   if i == 2 then return "res2", "maxRes2" end
   if i == 3 then return "res3", "maxRes3" end
   if i == 4 then return "res4", "maxRes4" end
+  if i == 5 then return "auth", "maxAuth" end
   return nil, nil
 end
 
@@ -463,10 +477,63 @@ local function createPopup()
   popupFrame.hpRow.magicOverlay:Hide()
 
   popupFrame.resRows = {}
-  for i = 1, 4 do
+  for i = 1, 5 do
     popupFrame.resRows[i] = createStatBar(popupFrame, -128 - ((i - 1) * 34))
     popupFrame.resRows[i].holder:Hide()
   end
+
+  popupFrame.petNameText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  popupFrame.petNameText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -264)
+  popupFrame.petNameText:SetJustifyH("LEFT")
+  popupFrame.petNameText:SetText("Familier")
+  popupFrame.petNameText:Hide()
+
+  popupFrame.petArmorIcon = popupFrame:CreateTexture(nil, "ARTWORK")
+  popupFrame.petArmorIcon:SetSize(14, 14)
+  popupFrame.petArmorIcon:SetTexture("Interface\\Icons\\INV_Shield_06")
+  popupFrame.petArmorIcon:SetPoint("TOPLEFT", popupFrame.petNameText, "BOTTOMLEFT", 0, -4)
+  popupFrame.petArmorIcon:Hide()
+
+  popupFrame.petArmorText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  popupFrame.petArmorText:SetPoint("LEFT", popupFrame.petArmorIcon, "RIGHT", 4, 0)
+  popupFrame.petArmorText:SetJustifyH("LEFT")
+  popupFrame.petArmorText:SetText("Armure: 0")
+  popupFrame.petArmorText:Hide()
+
+  popupFrame.petDodgeIcon = popupFrame:CreateTexture(nil, "ARTWORK")
+  popupFrame.petDodgeIcon:SetSize(14, 14)
+  popupFrame.petDodgeIcon:SetTexture("Interface\\Icons\\Ability_Rogue_Sprint")
+  popupFrame.petDodgeIcon:SetPoint("LEFT", popupFrame.petArmorText, "RIGHT", 18, 0)
+  popupFrame.petDodgeIcon:Hide()
+
+  popupFrame.petDodgeText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  popupFrame.petDodgeText:SetPoint("LEFT", popupFrame.petDodgeIcon, "RIGHT", 4, 0)
+  popupFrame.petDodgeText:SetJustifyH("LEFT")
+  popupFrame.petDodgeText:SetText("Esquive: 0")
+  popupFrame.petDodgeText:Hide()
+
+  popupFrame.petHpRow = createStatBar(popupFrame, -298)
+  popupFrame.petHpRow.blockOverlay = popupFrame.petHpRow.bar:CreateTexture(nil, "OVERLAY")
+  popupFrame.petHpRow.blockOverlay:SetTexture("Interface/Buttons/WHITE8x8")
+  popupFrame.petHpRow.blockOverlay:SetColorTexture(0.65, 0.65, 0.65, 0.55)
+  popupFrame.petHpRow.blockOverlay:SetPoint("TOP", popupFrame.petHpRow.bar, "TOP", 0, 0)
+  popupFrame.petHpRow.blockOverlay:SetPoint("BOTTOM", popupFrame.petHpRow.bar, "BOTTOM", 0, 0)
+  popupFrame.petHpRow.blockOverlay:Hide()
+
+  popupFrame.petHpRow.magicOverlay = popupFrame.petHpRow.bar:CreateTexture(nil, "OVERLAY")
+  popupFrame.petHpRow.magicOverlay:SetTexture("Interface/Buttons/WHITE8x8")
+  popupFrame.petHpRow.magicOverlay:SetColorTexture(1.0, 0.82, 0.22, 0.60)
+  popupFrame.petHpRow.magicOverlay:SetPoint("TOP", popupFrame.petHpRow.bar, "TOP", 0, 0)
+  popupFrame.petHpRow.magicOverlay:SetPoint("BOTTOM", popupFrame.petHpRow.bar, "BOTTOM", 0, 0)
+  popupFrame.petHpRow.magicOverlay:Hide()
+  popupFrame.petHpRow.holder:Hide()
+
+  popupFrame.petHpMarkers = {
+    makeMarker(popupFrame.petHpRow.bar, 0.50, 1.0, 1.0, 1.0, 0.35, 2),
+    makeMarker(popupFrame.petHpRow.bar, 0.25, 1.0, 0.65, 0.10, 0.45, 2),
+    makeMarker(popupFrame.petHpRow.bar, 0.10, 1.0, 0.15, 0.15, 0.55, 2),
+  }
+  popupFrame.petHpCapMarker = makeMarker(popupFrame.petHpRow.bar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
 
   popupFrame.hpMarkers = {
     makeMarker(popupFrame.hpRow.bar, 0.50, 1.0, 1.0, 1.0, 0.35, 2),
@@ -536,9 +603,9 @@ local function showForState(targetName, state)
     positionMarkers({ popupFrame.hpCapMarker }, popupFrame.hpRow.bar)
   end
 
-  local profile = getResProfile(state.classKey)
+  local profile = getResProfile(state.classKey, state)
   local shownRes = 0
-  for i = 1, 4 do
+  for i = 1, 5 do
     local row = popupFrame.resRows[i]
     local p = profile[i]
     if row and p then
@@ -584,6 +651,76 @@ local function showForState(targetName, state)
   end
 
   local dynamicHeight = 140 + (shownRes * 34)
+  local pet = state.pet
+  local hasPet = type(pet) == "table" and pet.enabled
+  if hasPet then
+    local petY = -128 - (shownRes * 34) - 10
+
+    popupFrame.petNameText:ClearAllPoints()
+    popupFrame.petNameText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, petY)
+    popupFrame.petHpRow.holder:ClearAllPoints()
+    popupFrame.petHpRow.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, petY - 38)
+
+    local petName = type(pet.name) == "string" and pet.name or "Familier"
+    local petArmor = tonumber(pet.armor) or 0
+    local petTrueArmor = tonumber(pet.trueArmor) or 0
+    local petDodge = tonumber(pet.dodge) or 0
+    local petMaxHp = tonumber(pet.maxHp) or 1
+    local petHp = tonumber(pet.hp) or 0
+    if petMaxHp <= 0 then petMaxHp = 1 end
+
+    popupFrame.petNameText:SetText("Familier: " .. petName)
+    popupFrame.petArmorText:SetText(string.format("Armure: %d (+%d)", roundNumber(petArmor), roundNumber(petTrueArmor)))
+    popupFrame.petDodgeText:SetText(string.format("Esquive: %d", roundNumber(petDodge)))
+    setBarValue(popupFrame.petHpRow, "Vie du familier", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
+    updateHpShieldOverlays(
+      popupFrame.petHpRow,
+      petHp,
+      petMaxHp,
+      0,
+      tonumber(pet.tempMagicBlock) or 0
+    )
+
+    for i = 1, #popupFrame.petHpMarkers do
+      local m = popupFrame.petHpMarkers[i]
+      m.pct = m.pct or 0
+    end
+    positionMarkers(popupFrame.petHpMarkers, popupFrame.petHpRow.bar)
+
+    local petWoundCap = 1.0
+    if pet.wounds and pet.wounds.hit10 then
+      petWoundCap = 0.25
+    elseif pet.wounds and pet.wounds.hit25 then
+      petWoundCap = 0.50
+    end
+    if petWoundCap >= 1.0 then
+      popupFrame.petHpCapMarker:Hide()
+    else
+      popupFrame.petHpCapMarker.pct = petWoundCap
+      positionMarkers({ popupFrame.petHpCapMarker }, popupFrame.petHpRow.bar)
+    end
+
+    popupFrame.petNameText:Show()
+    popupFrame.petArmorIcon:Show()
+    popupFrame.petArmorText:Show()
+    popupFrame.petDodgeIcon:Show()
+    popupFrame.petDodgeText:Show()
+    popupFrame.petHpRow.holder:Show()
+
+    dynamicHeight = dynamicHeight + 86
+  else
+    popupFrame.petNameText:Hide()
+    popupFrame.petArmorIcon:Hide()
+    popupFrame.petArmorText:Hide()
+    popupFrame.petDodgeIcon:Hide()
+    popupFrame.petDodgeText:Hide()
+    popupFrame.petHpRow.holder:Hide()
+    hideMarkers(popupFrame.petHpMarkers)
+    if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
+    hideOverlay(popupFrame.petHpRow.blockOverlay)
+    hideOverlay(popupFrame.petHpRow.magicOverlay)
+  end
+
   if dynamicHeight < 180 then dynamicHeight = 180 end
   popupFrame:SetHeight(dynamicHeight)
 

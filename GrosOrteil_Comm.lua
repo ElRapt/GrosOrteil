@@ -53,6 +53,8 @@ end
 
 local function packStatePayload(s)
   s = s or {}
+  local p = s.pet
+  if type(p) ~= "table" then p = {} end
   local classKey = s.classKey
   if (type(classKey) ~= "string" or classKey == "") and UnitClass then
     local _, unitClass = UnitClass("player")
@@ -77,11 +79,27 @@ local function packStatePayload(s)
     maxRes3 = s.maxRes3 or 0,
     res4 = s.res4 or 0,
     maxRes4 = s.maxRes4 or 0,
+    auth = s.auth or 0,
+    maxAuth = s.maxAuth or 5,
     wounds = {
       hit25 = s.wounds and not not s.wounds.hit25 or false,
       hit10 = s.wounds and not not s.wounds.hit10 or false,
     },
     classKey = classKey,
+    pet = {
+      enabled = not not p.enabled,
+      name = type(p.name) == "string" and p.name or "Familier",
+      hp = tonumber(p.hp) or 0,
+      maxHp = tonumber(p.maxHp) or 0,
+      armor = tonumber(p.armor) or 0,
+      trueArmor = tonumber(p.trueArmor) or 0,
+      dodge = tonumber(p.dodge) or 0,
+      tempMagicBlock = tonumber(p.tempMagicBlock) or 0,
+      wounds = {
+        hit25 = p.wounds and not not p.wounds.hit25 or false,
+        hit10 = p.wounds and not not p.wounds.hit10 or false,
+      },
+    },
   }
 end
 
@@ -150,11 +168,27 @@ function Comm:DeserializeState(cmd, payload, sender)
       maxRes3 = tonumber(decoded.maxRes3) or 0,
       res4 = tonumber(decoded.res4) or 0,
       maxRes4 = tonumber(decoded.maxRes4) or 0,
+      auth = tonumber(decoded.auth) or 0,
+      maxAuth = tonumber(decoded.maxAuth) or 5,
       wounds = {
         hit25 = decoded.wounds and not not decoded.wounds.hit25 or false,
         hit10 = decoded.wounds and not not decoded.wounds.hit10 or false,
       },
       classKey = type(decoded.classKey) == "string" and decoded.classKey or nil,
+      pet = {
+        enabled = decoded.pet and not not decoded.pet.enabled or false,
+        name = decoded.pet and type(decoded.pet.name) == "string" and decoded.pet.name or "Familier",
+        hp = decoded.pet and tonumber(decoded.pet.hp) or 0,
+        maxHp = decoded.pet and tonumber(decoded.pet.maxHp) or 0,
+        armor = decoded.pet and tonumber(decoded.pet.armor) or 0,
+        trueArmor = decoded.pet and tonumber(decoded.pet.trueArmor) or 0,
+        dodge = decoded.pet and tonumber(decoded.pet.dodge) or 0,
+        tempMagicBlock = decoded.pet and tonumber(decoded.pet.tempMagicBlock) or 0,
+        wounds = {
+          hit25 = decoded.pet and decoded.pet.wounds and not not decoded.pet.wounds.hit25 or false,
+          hit10 = decoded.pet and decoded.pet.wounds and not not decoded.pet.wounds.hit10 or false,
+        },
+      },
     }
   end
 
