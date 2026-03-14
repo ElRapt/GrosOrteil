@@ -1,5 +1,60 @@
 local ADDON, ns = ...
 
+local MINIMAP_ICON_NAME = "GrosOrteil"
+local MINIMAP_ICON_TEXTURE = "Interface\\Icons\\inv_misc_herb_goldclover"
+
+local LDB
+local Icon
+local minimapLauncher
+
+local function ensureMinimapShown()
+  GrosOrteilDB = GrosOrteilDB or {}
+  GrosOrteilDB.minimap = GrosOrteilDB.minimap or {}
+  GrosOrteilDB.minimap.hide = false
+
+  if not Icon then return end
+  Icon:Show(MINIMAP_ICON_NAME)
+end
+
+local function initMinimapIcon()
+  if not LDB and type(LibStub) == "table" and LibStub.GetLibrary then
+    LDB = LibStub("LibDataBroker-1.1", true)
+  end
+  if not Icon and type(LibStub) == "table" and LibStub.GetLibrary then
+    Icon = LibStub("LibDBIcon-1.0", true)
+  end
+  if not LDB or not Icon then
+    print("|cFFFF7F00GrosOrteil|r: LibDataBroker/LibDBIcon indisponibles, icone minimap desactivee.")
+    return
+  end
+
+  GrosOrteilDB = GrosOrteilDB or {}
+  GrosOrteilDB.minimap = GrosOrteilDB.minimap or { minimapPos = 225, hide = false }
+
+  if minimapLauncher == nil then
+    minimapLauncher = LDB:NewDataObject(MINIMAP_ICON_NAME, {
+      type = "launcher",
+      text = "GrosOrteil",
+      icon = MINIMAP_ICON_TEXTURE,
+      OnClick = function()
+        local shown = ns.UI and ns.UI.frame and ns.UI.frame:IsShown()
+        ns.UI_Show(not shown)
+      end,
+      OnTooltipShow = function(tt)
+        tt:AddLine("GrosOrteil")
+        tt:AddLine("Clic gauche: afficher/masquer la fenetre", 0.8, 0.8, 0.8)
+      end,
+    })
+  end
+
+  if not Icon:IsRegistered(MINIMAP_ICON_NAME) then
+    Icon:Register(MINIMAP_ICON_NAME, minimapLauncher, GrosOrteilDB.minimap)
+  end
+
+  Icon:Refresh(MINIMAP_ICON_NAME, GrosOrteilDB.minimap)
+  ensureMinimapShown()
+end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGIN")
@@ -7,9 +62,11 @@ f:RegisterEvent("PLAYER_LOGIN")
 f:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == ADDON then
     GrosOrteilDB = GrosOrteilDB or {}
+    initMinimapIcon()
   elseif event == "PLAYER_LOGIN" then
     ns.Core_Init()
     ns.UI_Init()
+    initMinimapIcon()
 
     f:UnregisterEvent("ADDON_LOADED")
     f:UnregisterEvent("PLAYER_LOGIN")
@@ -17,18 +74,36 @@ f:SetScript("OnEvent", function(_, event, arg1)
     SLASH_GROSORTEIL1 = "/grosorteil"
     SLASH_GROSORTEIL2 = "/go"
     SlashCmdList["GROSORTEIL"] = function(msg)
-      msg = (msg or ""):lower()
-      if msg == "show" then
+      local raw = (msg or "")
+      local cmd, rest = raw:match("^(%S+)%s*(.-)$")
+      cmd = (cmd or ""):lower()
+      rest = rest or ""
+
+      if cmd == "show" then
         ns.UI_Show(true)
-      elseif msg == "hide" then
+      elseif cmd == "hide" then
         ns.UI_Show(false)
-      elseif msg == "toggle" then
+      elseif cmd == "toggle" or cmd == "" then
         local shown = ns.UI and ns.UI.frame and ns.UI.frame:IsShown()
         ns.UI_Show(not shown)
-      elseif msg == "reset" then
+      elseif cmd == "reset" then
         ns.UI_ResetPosition()
+      elseif cmd == "clear" or cmd == "clearhistory" then
+        if ns.Core and ns.Core.ClearHistory then
+          ns.Core.ClearHistory()
+        end
+      elseif cmd == "class" then
+        local classKey = rest:upper()
+        if ns.Core and ns.Core.SetClassKey and classKey ~= "" then
+          ns.Core.SetClassKey(classKey)
+        else
+          print("|cFF00FF00GrosOrteil|r usage: /go class <CLASS>")
+        end
+      elseif cmd == "minimap" then
+        ensureMinimapShown()
+        print("|cFF00FF00GrosOrteil|r l'icone minimap est toujours visible.")
       else
-        print("|cFF00FF00GrosOrteil|r commandes : /go show | /go hide | /go toggle | /go reset")
+        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go minimap")
       end
     end
   end

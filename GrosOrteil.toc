@@ -9,6 +9,11 @@
 ## Version: 120001
 ## SavedVariables: GrosOrteilDB
 
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
 GrosOrteil_Main.lua
 GrosOrteil_History.lua
 GrosOrteil_Core.lua
