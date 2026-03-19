@@ -19,6 +19,7 @@ Libs\AceSerializer-3.0\AceSerializer-3.0.xml
 Libs\LibDeflate\lib.xml
 
 GrosOrteil_Main.lua
+GrosOrteil_Shared.lua
 GrosOrteil_History.lua
 GrosOrteil_Core.lua
 GrosOrteil_UI.lua

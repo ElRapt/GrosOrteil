@@ -1,75 +1,17 @@
 local _, ns = ...
 local Core = ns.Core
 local History = ns.History
+local Shared = ns.Shared
 
 local UI = {}
 ns.UI = UI
 
-local CLASS_STYLES = {
-  MEDIC = { label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 }, -- red
-  PALADIN = { label = "Puissance sacrée", r = 1.0, g = 0.82, b = 0.22 }, -- gold
-  PRIEST = { label = "Puissance sacrée", r = 1.0, g = 0.82, b = 0.22 }, -- gold
-  SHADOWPRIEST = { label = "Points de foi et insanité", r = 0.60, g = 0.20, b = 0.85 }, -- violet
-  MAGE = { label = "Mana", r = 0.20, g = 0.55, b = 1.00 }, -- blue
-  ROGUE = { label = "Énergie", r = 1.00, g = 0.90, b = 0.10 }, -- yellow
-  WARLOCK = { label = "Energie gangrénée et Corruption", r = 0.20, g = 0.85, b = 0.25 },
-  DRUID = { label = "Esprit", r = 1.00, g = 0.55, b = 0.10 }, -- orange
-  MONK = { label = "Chi", r = 0.55, g = 1.00, b = 0.55 }, -- light green
-  SHAMAN = { label = "Points élémentaires", r = 0.00, g = 0.44, b = 0.87 },
-}
-
-local RES_PROFILES_BY_CLASS = {
-  WARRIOR = {},
-  MEDIC = {
-    { idx = 1, label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 },
-  },
-  WARLOCK = {
-    { idx = 1, label = "Energie gangrénée", r = 0.20, g = 0.85, b = 0.25 },
-    { idx = 2, label = "Corruption", r = 0.55, g = 0.20, b = 0.85 },
-  },
-  SHADOWPRIEST = {
-    { idx = 1, label = "Points de foi", r = 1.0, g = 1.0, b = 1.0 },
-    { idx = 2, label = "Insanité", r = 0.60, g = 0.20, b = 0.85 },
-  },
-  SHAMAN = {
-    { idx = 1, label = "Terre", r = 0.55, g = 0.35, b = 0.15 },
-    { idx = 2, label = "Air", r = 0.60, g = 0.95, b = 0.95 },
-    { idx = 3, label = "Eau", r = 0.20, g = 0.55, b = 1.00 },
-    { idx = 4, label = "Feu", r = 1.00, g = 0.35, b = 0.10 },
-  },
-}
-
-local function getResProfile(state)
-  -- Returns an array of { idx=1..5, label=string, r/g/b }
-  local classKey = state and state.classKey
-  local p = (type(classKey) == "string") and RES_PROFILES_BY_CLASS[classKey] or nil
-  local out = {}
-  if p then
-    for i = 1, #p do out[#out + 1] = p[i] end
-  else
-    local s = (type(classKey) == "string" and CLASS_STYLES[classKey]) or nil
-    if s then
-      out[1] = { idx = 1, label = s.label or "Ressource", r = s.r or 0.2, g = s.g or 0.55, b = s.b or 1.0 }
-    else
-      out[1] = { idx = 1, label = "Ressource", r = 0.20, g = 0.55, b = 1.00 }
-    end
-  end
-
-  if state and state.pet and state.pet.enabled then
-    out[#out + 1] = { idx = 5, label = "Points d'autorité", r = 1.00, g = 0.45, b = 0.10 }
-  end
-
-  return out
-end
-
-local function getKeysForIdx(i)
-  if i == 1 then return "res", "maxRes" end
-  if i == 2 then return "res2", "maxRes2" end
-  if i == 3 then return "res3", "maxRes3" end
-  if i == 4 then return "res4", "maxRes4" end
-  if i == 5 then return "auth", "maxAuth" end
-  return nil, nil
-end
+local CLASS_STYLES         = Shared.CLASS_STYLES
+local getResProfile        = Shared.GetResProfile
+local getKeysForIdx        = Shared.GetKeysForIdx
+local hideMarkers          = Shared.HideMarkers
+local positionMarkers      = Shared.PositionMarkers
+local roundPct             = Shared.RoundPct
 
 local function applyResTextColor(txt)
   if not txt or not txt.SetTextColor then return end
@@ -100,62 +42,9 @@ local function setButtonEnabled(btn, enabled)
   end
 end
 
-local function hideMarkers(markers)
-  if not markers then return end
-  for j = 1, #markers do
-    local m = markers[j]
-    if m then m:Hide() end
-  end
-end
 
-local function positionMarkers(markers, bar)
-  if not markers or not bar or not bar.GetWidth then return end
-  local wBar = bar:GetWidth() or 0
-  if wBar <= 0 then return end
-  for j = 1, #markers do
-    local m = markers[j]
-    if m then
-      m:Show()
-      local x = wBar * (m.pct or 0)
-      if x < 0 then x = 0 elseif x > wBar then x = wBar end
-      m:ClearAllPoints()
-      m:SetPoint("LEFT", bar, "LEFT", x, 0)
-    end
-  end
-end
+local setClassIconTexCoords = Shared.SetClassIconTexCoords
 
-local function setClassIconTexCoords(tex, classKey)
-  if not tex or not tex.SetTexCoord then return end
-
-  -- Standard class icon sheet.
-  -- https://wowpedia.fandom.com/wiki/CLASS_BUTTONS
-  local coords = {
-    WARRIOR = { 0, 0.25, 0, 0.25 },
-    MAGE = { 0.25, 0.50, 0, 0.25 },
-    ROGUE = { 0.50, 0.75, 0, 0.25 },
-    DRUID = { 0.75, 1.00, 0, 0.25 },
-    HUNTER = { 0, 0.25, 0.25, 0.50 },
-    SHAMAN = { 0.25, 0.50, 0.25, 0.50 },
-    PRIEST = { 0.50, 0.75, 0.25, 0.50 },
-    WARLOCK = { 0.75, 1.00, 0.25, 0.50 },
-    PALADIN = { 0, 0.25, 0.50, 0.75 },
-    DEATHKNIGHT = { 0.25, 0.50, 0.50, 0.75 },
-    MONK = { 0.50, 0.75, 0.50, 0.75 },
-    DEMONHUNTER = { 0.75, 1.00, 0.50, 0.75 },
-    EVOKER = { 0, 0.25, 0.75, 1.00 },
-  }
-
-  local c = coords[classKey]
-  if not c then
-    tex:SetTexCoord(0, 1, 0, 1)
-    return
-  end
-  tex:SetTexCoord(c[1], c[2], c[3], c[4])
-end
-
-local function roundPct(x)
-  return math.floor(x * 100 + 0.5)
-end
 
 local function getTRP3ProfileName()
   local api = rawget(_G, "TRP3_API")
@@ -283,16 +172,23 @@ local function skinBar(bar, r, g, b)
   bar:SetStatusBarTexture("Interface/TargetingFrame/UI-StatusBar")
   bar:SetStatusBarColor(r, g, b, 1)
 
-  local bg = bar:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints(bar)
-  bg:SetTexture("Interface/Buttons/WHITE8x8")
-  bg:SetColorTexture(0.08, 0.08, 0.08, 0.85)
-  bar._bg = bg
+  local barBg = bar:CreateTexture(nil, "BACKGROUND")
+  barBg:SetAllPoints(bar)
+  barBg:SetTexture("Interface/Buttons/WHITE8x8")
+  barBg:SetColorTexture(0.05, 0.05, 0.05, 0.90)
+  bar._bg = barBg
+
+  local sheen = bar:CreateTexture(nil, "OVERLAY")
+  sheen:SetTexture("Interface/Buttons/WHITE8x8")
+  sheen:SetVertexColor(1, 1, 1, 0.08)
+  sheen:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+  sheen:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+  sheen:SetHeight(math.max(1, math.floor((bar:GetHeight() or 20) / 2)))
 
   local border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
   border:SetAllPoints(bar)
   border:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
-  border:SetBackdropBorderColor(0, 0, 0, 0.9)
+  border:SetBackdropBorderColor(0.15, 0.15, 0.15, 0.85)
   bar._border = border
 end
 
@@ -370,31 +266,19 @@ function ns.UI_Init()
   end)
 
   frame:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    bgFile = "Interface/DialogFrame/UI-DialogBox-Background-Dark",
+    edgeFile = "Interface/DialogFrame/UI-DialogBox-Gold-Border",
+    tile = true, tileSize = 24, edgeSize = 24,
+    insets = { left = 6, right = 6, top = 6, bottom = 6 },
   })
-  frame:SetBackdropColor(0, 0, 0, 0.92)
+  frame:SetBackdropColor(0.04, 0.04, 0.05, 0.95)
 
-  local bg = frame:CreateTexture(nil, "BACKGROUND")
-  bg:SetPoint("TOPLEFT", 6, -6)
-  bg:SetPoint("BOTTOMRIGHT", -6, 6)
-  bg:SetTexture("Interface/Buttons/WHITE8x8")
-  local setGrad = bg["SetGradientAlpha"]
-  if type(setGrad) == "function" then
-    setGrad(bg, "VERTICAL", 0.10, 0.10, 0.12, 0.90, 0.03, 0.03, 0.04, 0.92)
-  else
-    bg:SetColorTexture(0.05, 0.05, 0.06, 0.92)
-  end
-  frame._bg = bg
-
-  local header = frame:CreateTexture(nil, "BACKGROUND")
-  header:SetPoint("TOPLEFT", 6, -6)
-  header:SetPoint("TOPRIGHT", -6, -6)
+  local header = frame:CreateTexture(nil, "ARTWORK")
+  header:SetPoint("TOPLEFT", 8, -8)
+  header:SetPoint("TOPRIGHT", -8, -8)
   header:SetHeight(26)
   header:SetTexture("Interface/Buttons/WHITE8x8")
-  header:SetColorTexture(0.12, 0.12, 0.14, 0.70)
+  header:SetColorTexture(0.14, 0.10, 0.05, 0.50)
   frame._header = header
 
   local headerLine = frame:CreateTexture(nil, "ARTWORK")
@@ -402,7 +286,7 @@ function ns.UI_Init()
   headerLine:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 0)
   headerLine:SetHeight(1)
   headerLine:SetTexture("Interface/Buttons/WHITE8x8")
-  headerLine:SetColorTexture(0, 0, 0, 0.6)
+  headerLine:SetColorTexture(1.0, 0.675, 0.125, 0.30)
   frame._headerLine = headerLine
 
   frame:SetPoint(db.ui.point, UIParent, db.ui.point, db.ui.x, db.ui.y)
@@ -414,13 +298,9 @@ function ns.UI_Init()
   title:SetPoint("TOP", 0, -12)
   updateWindowTitle()
 
-  -- Try again after a short delay in case TRP3 initializes after us.
+  -- Retry TRP3 hook once after a delay in case TRP3 initializes after us.
   if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
-    C_Timer.After(0.5, function()
-      hookTRP3Callbacks()
-      updateWindowTitle()
-    end)
-    C_Timer.After(2.0, function()
+    C_Timer.After(1.0, function()
       hookTRP3Callbacks()
       updateWindowTitle()
     end)
@@ -440,8 +320,8 @@ function ns.UI_Init()
   sidebar:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
   sidebar:SetWidth(SIDEBAR_W)
   sidebar:SetBackdrop({ bgFile = "Interface/Buttons/WHITE8x8", edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
-  sidebar:SetBackdropColor(0.06, 0.06, 0.07, 0.55)
-  sidebar:SetBackdropBorderColor(0, 0, 0, 0.65)
+  sidebar:SetBackdropColor(0.06, 0.05, 0.04, 0.55)
+  sidebar:SetBackdropBorderColor(0.3, 0.25, 0.15, 0.45)
   UI.sidebar = sidebar
 
   local content = CreateFrame("Frame", nil, body)
@@ -480,26 +360,13 @@ function ns.UI_Init()
   magicOverlay:Hide()
 
   -- Marqueurs 50/25/10%
+  local makeMarker = Shared.MakeMarker
   UI.hpMarkers = {}
-  local function makeMarker(parent, pct)
-    local t = parent:CreateTexture(nil, "OVERLAY")
-    t:SetTexture("Interface/Buttons/WHITE8x8")
-    t:SetWidth(2)
-    t:SetHeight(parent:GetHeight() or 20)
-    t:SetColorTexture(1, 1, 1, 0.35)
-    t.pct = pct
-    return t
-  end
-  UI.hpMarkers[1] = makeMarker(hpBar, 0.50)
-  UI.hpMarkers[2] = makeMarker(hpBar, 0.25)
-  UI.hpMarkers[3] = makeMarker(hpBar, 0.10)
-  UI.hpMarkers[2]:SetColorTexture(1.0, 0.65, 0.1, 0.45) -- 25% (orange)
-  UI.hpMarkers[3]:SetColorTexture(1.0, 0.15, 0.15, 0.55) -- 10% (rouge)
+  UI.hpMarkers[1] = makeMarker(hpBar, 0.50, 1, 1, 1, 0.35, 2)
+  UI.hpMarkers[2] = makeMarker(hpBar, 0.25, 1.0, 0.65, 0.1, 0.45, 2)
+  UI.hpMarkers[3] = makeMarker(hpBar, 0.10, 1.0, 0.15, 0.15, 0.55, 2)
 
-  local capMarker = makeMarker(hpBar, 1.0)
-  capMarker:SetWidth(3)
-  capMarker:SetColorTexture(1.0, 0.9, 0.2, 0.7)
-  capMarker:Hide()
+  local capMarker = makeMarker(hpBar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
   UI.hpCapMarker = capMarker
 
   local capText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -550,25 +417,14 @@ function ns.UI_Init()
     mkResBar(i)
   end
 
-  local function makeThresholdMarker(bar, val, denom, r, g, b, a, w)
-    local t = bar:CreateTexture(nil, "OVERLAY")
-    t:SetTexture("Interface/Buttons/WHITE8x8")
-    t:SetWidth(w or 2)
-    t:SetHeight(bar:GetHeight() or 14)
-    t:SetColorTexture(r or 1, g or 1, b or 1, a or 0.45)
-    t.pct = (val or 0) / (denom or 1)
-    t:Hide()
-    return t
-  end
-
   -- Warlock Corruption thresholds (max always 60)
   UI.corruptionMarkers = {}
   do
     local bar = UI.resBars[2]
     if bar then
-      UI.corruptionMarkers[1] = makeThresholdMarker(bar, 10, 60, 0.65, 0.95, 0.65, 0.55, 2) -- passive
-      UI.corruptionMarkers[2] = makeThresholdMarker(bar, 25, 60, 1.00, 0.82, 0.22, 0.55, 2) -- moyenne
-      UI.corruptionMarkers[3] = makeThresholdMarker(bar, 45, 60, 1.00, 0.25, 0.25, 0.65, 3) -- strong
+      UI.corruptionMarkers[1] = makeMarker(bar, 10/60, 0.65, 0.95, 0.65, 0.55, 2)
+      UI.corruptionMarkers[2] = makeMarker(bar, 25/60, 1.00, 0.82, 0.22, 0.55, 2)
+      UI.corruptionMarkers[3] = makeMarker(bar, 45/60, 1.00, 0.25, 0.25, 0.65, 3)
     end
   end
 
@@ -577,10 +433,10 @@ function ns.UI_Init()
   do
     local bar = UI.resBars[2]
     if bar then
-      UI.insanityMarkers[1] = makeThresholdMarker(bar, 4, 25, 0.65, 0.95, 0.65, 0.45, 2)   -- start légère
-      UI.insanityMarkers[2] = makeThresholdMarker(bar, 12, 25, 1.00, 0.82, 0.22, 0.55, 2)  -- start forte
-      UI.insanityMarkers[3] = makeThresholdMarker(bar, 20, 25, 1.00, 0.55, 0.10, 0.60, 2)  -- start intense
-      UI.insanityMarkers[4] = makeThresholdMarker(bar, 25, 25, 1.00, 0.25, 0.25, 0.70, 3)  -- cap / folie latente
+      UI.insanityMarkers[1] = makeMarker(bar, 4/25,  0.65, 0.95, 0.65, 0.45, 2)
+      UI.insanityMarkers[2] = makeMarker(bar, 12/25, 1.00, 0.82, 0.22, 0.55, 2)
+      UI.insanityMarkers[3] = makeMarker(bar, 20/25, 1.00, 0.55, 0.10, 0.60, 2)
+      UI.insanityMarkers[4] = makeMarker(bar, 25/25, 1.00, 0.25, 0.25, 0.70, 3)
     end
   end
 
@@ -669,11 +525,11 @@ function ns.UI_Init()
     tab:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
     tab:SetBackdropBorderColor(0, 0, 0, 0.70)
 
-    local bg = tab:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(tab)
-    bg:SetTexture("Interface/Buttons/WHITE8x8")
-    bg:SetColorTexture(0.12, 0.12, 0.14, 0.75)
-    tab._bg = bg
+    local tabBg = tab:CreateTexture(nil, "BACKGROUND")
+    tabBg:SetAllPoints(tab)
+    tabBg:SetTexture("Interface/Buttons/WHITE8x8")
+    tabBg:SetColorTexture(0.12, 0.12, 0.14, 0.75)
+    tab._bg = tabBg
 
     local hl = tab:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints(tab)
@@ -1103,15 +959,7 @@ function ns.UI_Init()
     tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
     b.tex = tex
 
-    if classKey == "MEDIC" then
-      -- First aid / medical supplies icon
-      tex:SetTexture("Interface\\Icons\\INV_Misc_Bandage_15")
-      tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    elseif classKey == "SHADOWPRIEST" then
-      tex:SetTexture("Interface\\Icons\\Spell_Shadow_Shadowform")
-      tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    else
-      tex:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+    do
       setClassIconTexCoords(tex, classKey)
     end
 
@@ -1145,64 +993,11 @@ function ns.UI_Init()
     end
 
     -- Overlays Blocage (gris) + Blocage magique (doré)
-    do
-      local maxHp = effMaxHp
-      local wBar = hpBar:GetWidth() or 0
-      local hpForOverlay = math.max(0, hpNow)
-
-      local block = math.max(0, s.tempBlock or 0)
-      local magic = math.max(0, s.tempMagicBlock or 0)
-      local total = math.min(hpForOverlay, block + magic)
-
-      local function hideOverlay(tex)
-        if not tex then return end
-        tex:Hide()
-        tex:SetAlpha(0)
-        tex:SetWidth(0.001)
-      end
-
-      if maxHp <= 0 or wBar <= 0 or total <= 0 then
-        hideOverlay(UI.hpBlockOverlay)
-        hideOverlay(UI.hpMagicBlockOverlay)
-      else
-        local hpFrac = hpForOverlay / maxHp
-        if hpFrac < 0 then hpFrac = 0 elseif hpFrac > 1 then hpFrac = 1 end
-        local endX = wBar * hpFrac
-
-        -- On met le blocage magique au plus près du "bout" des PV,
-        -- puis le blocage normal juste à gauche (pas de chevauchement).
-        local magicShown = math.min(magic, total)
-        local blockShown = math.min(block, total - magicShown)
-
-        local magicW = wBar * (magicShown / maxHp)
-        local blockW = wBar * (blockShown / maxHp)
-
-        -- Magic (doré)
-        if UI.hpMagicBlockOverlay and magicW > 0.5 and endX > 0.5 then
-          UI.hpMagicBlockOverlay:Show()
-          UI.hpMagicBlockOverlay:SetAlpha(0.75)
-          UI.hpMagicBlockOverlay:ClearAllPoints()
-          UI.hpMagicBlockOverlay:SetPoint("TOPLEFT", hpBar, "TOPLEFT", math.max(0, endX - magicW), 0)
-          UI.hpMagicBlockOverlay:SetPoint("BOTTOMLEFT", hpBar, "BOTTOMLEFT", math.max(0, endX - magicW), 0)
-          UI.hpMagicBlockOverlay:SetWidth(magicW)
-        else
-          hideOverlay(UI.hpMagicBlockOverlay)
-        end
-
-        -- Block (gris) à gauche du magic
-        if UI.hpBlockOverlay and blockW > 0.5 and endX > 0.5 then
-          local startX = math.max(0, endX - magicW - blockW)
-          UI.hpBlockOverlay:Show()
-          UI.hpBlockOverlay:SetAlpha(0.65)
-          UI.hpBlockOverlay:ClearAllPoints()
-          UI.hpBlockOverlay:SetPoint("TOPLEFT", hpBar, "TOPLEFT", startX, 0)
-          UI.hpBlockOverlay:SetPoint("BOTTOMLEFT", hpBar, "BOTTOMLEFT", startX, 0)
-          UI.hpBlockOverlay:SetWidth(blockW)
-        else
-          hideOverlay(UI.hpBlockOverlay)
-        end
-      end
-    end
+    Shared.UpdateHpShieldOverlays(
+      UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
+      hpNow, effMaxHp,
+      s.tempBlock or 0, s.tempMagicBlock or 0
+    )
 
     local w = hpBar:GetWidth() or 0
     for i = 1, #UI.hpMarkers do
@@ -1213,6 +1008,7 @@ function ns.UI_Init()
       local thresholdHp = baseMaxHp * pct
       local x = (effMaxHp > 0) and (w * (thresholdHp / effMaxHp)) or 0
       if x < 0 then x = 0 elseif x > w then x = w end
+      m:Show()
       m:ClearAllPoints()
       m:SetPoint("LEFT", hpBar, "LEFT", x, 0)
     end

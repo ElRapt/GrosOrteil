@@ -24,11 +24,9 @@ local math = math
 local AceSerializer = LibStub and LibStub("AceSerializer-3.0", true)
 local LibDeflate = LibStub and LibStub("LibDeflate", true)
 
-local function dbg(fmt, ...)
-  local _ = fmt
-  select("#", ...)
-  return
-end
+-- Debug logging (no-op in release; replace body with print() for development)
+---@diagnostic disable-next-line: unused-vararg
+local function dbg(...) end
 
 local function sendAddonMessage(prefix, msg, channel, target)
   dbg(
@@ -82,8 +80,8 @@ local function packStatePayload(s)
     auth = s.auth or 0,
     maxAuth = s.maxAuth or 5,
     wounds = {
-      hit25 = s.wounds and not not s.wounds.hit25 or false,
-      hit10 = s.wounds and not not s.wounds.hit10 or false,
+      hit25 = not not (s.wounds and s.wounds.hit25),
+      hit10 = not not (s.wounds and s.wounds.hit10),
     },
     classKey = classKey,
     pet = {
@@ -96,8 +94,8 @@ local function packStatePayload(s)
       dodge = tonumber(p.dodge) or 0,
       tempMagicBlock = tonumber(p.tempMagicBlock) or 0,
       wounds = {
-        hit25 = p.wounds and not not p.wounds.hit25 or false,
-        hit10 = p.wounds and not not p.wounds.hit10 or false,
+        hit25 = not not (p.wounds and p.wounds.hit25),
+        hit10 = not not (p.wounds and p.wounds.hit10),
       },
     },
   }
@@ -171,12 +169,12 @@ function Comm:DeserializeState(cmd, payload, sender)
       auth = tonumber(decoded.auth) or 0,
       maxAuth = tonumber(decoded.maxAuth) or 5,
       wounds = {
-        hit25 = decoded.wounds and not not decoded.wounds.hit25 or false,
-        hit10 = decoded.wounds and not not decoded.wounds.hit10 or false,
+        hit25 = not not (decoded.wounds and decoded.wounds.hit25),
+        hit10 = not not (decoded.wounds and decoded.wounds.hit10),
       },
       classKey = type(decoded.classKey) == "string" and decoded.classKey or nil,
       pet = {
-        enabled = decoded.pet and not not decoded.pet.enabled or false,
+        enabled = not not (decoded.pet and decoded.pet.enabled),
         name = decoded.pet and type(decoded.pet.name) == "string" and decoded.pet.name or "Familier",
         hp = decoded.pet and tonumber(decoded.pet.hp) or 0,
         maxHp = decoded.pet and tonumber(decoded.pet.maxHp) or 0,
@@ -185,8 +183,8 @@ function Comm:DeserializeState(cmd, payload, sender)
         dodge = decoded.pet and tonumber(decoded.pet.dodge) or 0,
         tempMagicBlock = decoded.pet and tonumber(decoded.pet.tempMagicBlock) or 0,
         wounds = {
-          hit25 = decoded.pet and decoded.pet.wounds and not not decoded.pet.wounds.hit25 or false,
-          hit10 = decoded.pet and decoded.pet.wounds and not not decoded.pet.wounds.hit10 or false,
+          hit25 = not not (decoded.pet and decoded.pet.wounds and decoded.pet.wounds.hit25),
+          hit10 = not not (decoded.pet and decoded.pet.wounds and decoded.pet.wounds.hit10),
         },
       },
     }

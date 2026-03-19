@@ -4,6 +4,8 @@ local _, ns = ...
 local Popup = {}
 ns.TargetPopup = Popup
 
+local Shared = ns.Shared
+
 local _G = _G
 local type = type
 local math = math
@@ -18,76 +20,17 @@ local UIParent = rawget(_G, "UIParent")
 local C_Timer = rawget(_G, "C_Timer")
 local LibRPNames = rawget(_G, "LibRPNames")
 
+local getResProfile    = Shared.GetResProfile
+local getKeysForIdx    = Shared.GetKeysForIdx
+local makeMarker       = Shared.MakeMarker
+local hideMarkers      = Shared.HideMarkers
+local positionMarkers  = Shared.PositionMarkers
+local hideOverlay      = Shared.HideOverlay
+local roundNumber      = Shared.Round
+local getClassNameFr   = Shared.GetClassNameFr
+
 local pendingTarget
 local popupFrame
-
-local CLASS_STYLES = {
-  MEDIC = { label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 },
-  PALADIN = { label = "Puissance sacree", r = 1.0, g = 0.82, b = 0.22 },
-  PRIEST = { label = "Puissance sacree", r = 1.0, g = 0.82, b = 0.22 },
-  SHADOWPRIEST = { label = "Points de foi et insanite", r = 0.60, g = 0.20, b = 0.85 },
-  MAGE = { label = "Mana", r = 0.20, g = 0.55, b = 1.00 },
-  ROGUE = { label = "Energie", r = 1.00, g = 0.90, b = 0.10 },
-  WARLOCK = { label = "Energie gangrenee et Corruption", r = 0.20, g = 0.85, b = 0.25 },
-  DRUID = { label = "Esprit", r = 1.00, g = 0.55, b = 0.10 },
-  MONK = { label = "Chi", r = 0.55, g = 1.00, b = 0.55 },
-  SHAMAN = { label = "Points elementaires", r = 0.00, g = 0.44, b = 0.87 },
-}
-
-local RES_PROFILES_BY_CLASS = {
-  WARRIOR = {},
-  MEDIC = {
-    { idx = 1, label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 },
-  },
-  WARLOCK = {
-    { idx = 1, label = "Energie gangrenee", r = 0.20, g = 0.85, b = 0.25 },
-    { idx = 2, label = "Corruption", r = 0.55, g = 0.20, b = 0.85 },
-  },
-  SHADOWPRIEST = {
-    { idx = 1, label = "Points de foi", r = 1.0, g = 1.0, b = 1.0 },
-    { idx = 2, label = "Insanite", r = 0.60, g = 0.20, b = 0.85 },
-  },
-  SHAMAN = {
-    { idx = 1, label = "Terre", r = 0.55, g = 0.35, b = 0.15 },
-    { idx = 2, label = "Air", r = 0.60, g = 0.95, b = 0.95 },
-    { idx = 3, label = "Eau", r = 0.20, g = 0.55, b = 1.00 },
-    { idx = 4, label = "Feu", r = 1.00, g = 0.35, b = 0.10 },
-  },
-}
-
-local CLASS_NAMES_FR = {
-  WARRIOR = "Classique",
-  MAGE = "Mage",
-  ROGUE = "Voleur",
-  DRUID = "Druide",
-  HUNTER = "Chasseur",
-  SHAMAN = "Chaman",
-  PRIEST = "Pretre",
-  WARLOCK = "Demoniste",
-  PALADIN = "Paladin",
-  DEATHKNIGHT = "Chevalier de la mort",
-  MONK = "Moine",
-  DEMONHUNTER = "Chasseur de demons",
-  EVOKER = "Evocateur",
-  MEDIC = "Médecin",
-  SHADOWPRIEST = "Prêtre ombre",
-}
-
-local CLASS_ICON_COORDS = {
-  WARRIOR = { 0, 0.25, 0, 0.25 },
-  MAGE = { 0.25, 0.50, 0, 0.25 },
-  ROGUE = { 0.50, 0.75, 0, 0.25 },
-  DRUID = { 0.75, 1.00, 0, 0.25 },
-  HUNTER = { 0, 0.25, 0.25, 0.50 },
-  SHAMAN = { 0.25, 0.50, 0.25, 0.50 },
-  PRIEST = { 0.50, 0.75, 0.25, 0.50 },
-  WARLOCK = { 0.75, 1.00, 0.25, 0.50 },
-  PALADIN = { 0, 0.25, 0.50, 0.75 },
-  DEATHKNIGHT = { 0.25, 0.50, 0.50, 0.75 },
-  MONK = { 0.50, 0.75, 0.50, 0.75 },
-  DEMONHUNTER = { 0.75, 1.00, 0.50, 0.75 },
-  EVOKER = { 0, 0.25, 0.75, 1.00 },
-}
 
 local function normalizeName(name)
   if type(name) ~= "string" then return nil end
@@ -138,98 +81,15 @@ local function unitTargetName(unit)
   return nil
 end
 
-local function roundNumber(v)
-  if type(v) ~= "number" then return 0 end
-  if v >= 0 then
-    return math.floor(v + 0.5)
-  end
-  return -math.floor((-v) + 0.5)
-end
 
 local function baseCharacterName(name)
   if type(name) ~= "string" or name == "" then return "Inconnu" end
   return name:match("^[^-]+") or name
 end
 
-local function getClassNameFr(classKey)
-  local key = type(classKey) == "string" and classKey or ""
-  local name = CLASS_NAMES_FR[key]
-  if name then
-    return name
-  end
-  if key ~= "" then
-    return key
-  end
-  return "Inconnue"
-end
 
-local function getResProfile(classKey, state)
-  local p = (type(classKey) == "string") and RES_PROFILES_BY_CLASS[classKey] or nil
-  local out = {}
 
-  if p then
-    for i = 1, #p do out[#out + 1] = p[i] end
-  else
-    local s = (type(classKey) == "string" and CLASS_STYLES[classKey]) or nil
-    if s then
-      out[1] = { idx = 1, label = s.label or "Ressource", r = s.r or 0.2, g = s.g or 0.55, b = s.b or 1.0 }
-    else
-      out[1] = { idx = 1, label = "Ressource", r = 0.20, g = 0.55, b = 1.00 }
-    end
-  end
 
-  local petEnabled = state and state.pet and state.pet.enabled
-  if petEnabled then
-    out[#out + 1] = { idx = 5, label = "Points d'autorite", r = 1.00, g = 0.45, b = 0.10 }
-  end
-
-  return out
-end
-
-local function getKeysForIdx(i)
-  if i == 1 then return "res", "maxRes" end
-  if i == 2 then return "res2", "maxRes2" end
-  if i == 3 then return "res3", "maxRes3" end
-  if i == 4 then return "res4", "maxRes4" end
-  if i == 5 then return "auth", "maxAuth" end
-  return nil, nil
-end
-
-local function makeMarker(bar, pct, r, g, b, a, w)
-  local t = bar:CreateTexture(nil, "OVERLAY")
-  t:SetTexture("Interface/Buttons/WHITE8x8")
-  t:SetWidth(w or 2)
-  t:SetHeight(bar:GetHeight() or 14)
-  t:SetColorTexture(r or 1, g or 1, b or 1, a or 0.45)
-  t.pct = pct or 0
-  t:Hide()
-  return t
-end
-
-local function hideMarkers(markers)
-  if not markers then return end
-  for i = 1, #markers do
-    if markers[i] then
-      markers[i]:Hide()
-    end
-  end
-end
-
-local function positionMarkers(markers, bar)
-  if not markers or not bar or not bar.GetWidth then return end
-  local wBar = bar:GetWidth() or 0
-  if wBar <= 0 then return end
-  for i = 1, #markers do
-    local m = markers[i]
-    if m then
-      local x = wBar * (m.pct or 0)
-      if x < 0 then x = 0 elseif x > wBar then x = wBar end
-      m:Show()
-      m:ClearAllPoints()
-      m:SetPoint("LEFT", bar, "LEFT", x, 0)
-    end
-  end
-end
 
 local function getRPDisplayName(playerName)
   local guid
@@ -299,60 +159,12 @@ local function createStatBar(parent, yOffset)
   }
 end
 
-local function hideOverlay(tex)
-  if not tex then return end
-  tex:Hide()
-  tex:SetAlpha(0)
-  tex:SetWidth(0.001)
-end
-
 local function updateHpShieldOverlays(row, hpNow, maxHp, blockValue, magicValue)
   if not row or not row.bar then return end
-  local bar = row.bar
-  local wBar = bar:GetWidth() or 0
-  local hpForOverlay = math.max(0, hpNow or 0)
-  local block = math.max(0, blockValue or 0)
-  local magic = math.max(0, magicValue or 0)
-  local total = math.min(hpForOverlay, block + magic)
-
-  if maxHp <= 0 or wBar <= 0 or total <= 0 then
-    hideOverlay(row.blockOverlay)
-    hideOverlay(row.magicOverlay)
-    return
-  end
-
-  local hpFrac = hpForOverlay / maxHp
-  if hpFrac < 0 then hpFrac = 0 elseif hpFrac > 1 then hpFrac = 1 end
-  local endX = wBar * hpFrac
-
-  local magicShown = math.min(magic, total)
-  local blockShown = math.min(block, total - magicShown)
-
-  local magicW = wBar * (magicShown / maxHp)
-  local blockW = wBar * (blockShown / maxHp)
-
-  if row.magicOverlay and magicW > 0.5 and endX > 0.5 then
-    row.magicOverlay:Show()
-    row.magicOverlay:SetAlpha(0.75)
-    row.magicOverlay:ClearAllPoints()
-    row.magicOverlay:SetPoint("TOPLEFT", bar, "TOPLEFT", math.max(0, endX - magicW), 0)
-    row.magicOverlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", math.max(0, endX - magicW), 0)
-    row.magicOverlay:SetWidth(magicW)
-  else
-    hideOverlay(row.magicOverlay)
-  end
-
-  if row.blockOverlay and blockW > 0.5 and endX > 0.5 then
-    local startX = math.max(0, endX - magicW - blockW)
-    row.blockOverlay:Show()
-    row.blockOverlay:SetAlpha(0.65)
-    row.blockOverlay:ClearAllPoints()
-    row.blockOverlay:SetPoint("TOPLEFT", bar, "TOPLEFT", startX, 0)
-    row.blockOverlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", startX, 0)
-    row.blockOverlay:SetWidth(blockW)
-  else
-    hideOverlay(row.blockOverlay)
-  end
+  Shared.UpdateHpShieldOverlays(
+    row.blockOverlay, row.magicOverlay, row.bar,
+    hpNow, maxHp, blockValue, magicValue
+  )
 end
 
 local function setBarValue(row, label, value, maxValue, color)
@@ -385,15 +197,12 @@ end
 
 local function applyClassIcon(classKey)
   if not popupFrame or not popupFrame.classIcon then return end
-
-  local coords = CLASS_ICON_COORDS[classKey or ""]
-  if coords then
-    popupFrame.classIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-    popupFrame.classIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-    popupFrame.classIcon:Show()
-  else
+  if not classKey or classKey == "" then
     popupFrame.classIcon:Hide()
+    return
   end
+  Shared.SetClassIconTexCoords(popupFrame.classIcon, classKey)
+  popupFrame.classIcon:Show()
 end
 
 local function createPopup()
@@ -603,7 +412,7 @@ local function showForState(targetName, state)
     positionMarkers({ popupFrame.hpCapMarker }, popupFrame.hpRow.bar)
   end
 
-  local profile = getResProfile(state.classKey, state)
+  local profile = getResProfile(state)
   local shownRes = 0
   for i = 1, 5 do
     local row = popupFrame.resRows[i]
