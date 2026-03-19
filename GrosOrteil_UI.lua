@@ -466,10 +466,15 @@ function ns.UI_Init()
   UI.tabs = {}
   UI.pages = {}
   UI.tabDisabled = {}
+  UI.tabHidden = {}
   UI.activeTab = 1
 
   local function setTab(active)
     if UI.tabDisabled and UI.tabDisabled[active] then
+      return
+    end
+    if UI.tabHidden and UI.tabHidden[active] then
+      setTab(1)
       return
     end
     UI.activeTab = active
@@ -479,22 +484,24 @@ function ns.UI_Init()
     end
     for i = 1, #UI.tabs do
       local b = UI.tabs[i]
-      local disabled = UI.tabDisabled and UI.tabDisabled[i]
-      if i == active then
-        b:Disable()
-        if b._bg then b._bg:SetColorTexture(0.20, 0.20, 0.24, 0.95) end
-        if b._accent then b._accent:Show() end
-        if b._text and b._text.SetTextColor then b._text:SetTextColor(1, 1, 1, 1) end
-      elseif disabled then
-        b:Disable()
-        if b._bg then b._bg:SetColorTexture(0.10, 0.10, 0.11, 0.55) end
-        if b._accent then b._accent:Hide() end
-        if b._text and b._text.SetTextColor then b._text:SetTextColor(0.50, 0.50, 0.50, 1) end
-      else
-        b:Enable()
-        if b._bg then b._bg:SetColorTexture(0.12, 0.12, 0.14, 0.75) end
-        if b._accent then b._accent:Hide() end
-        if b._text and b._text.SetTextColor then b._text:SetTextColor(0.9, 0.9, 0.9, 1) end
+      if not (UI.tabHidden and UI.tabHidden[i]) then
+        local disabled = UI.tabDisabled and UI.tabDisabled[i]
+        if i == active then
+          b:Disable()
+          if b._bg then b._bg:SetColorTexture(0.20, 0.20, 0.24, 0.95) end
+          if b._accent then b._accent:Show() end
+          if b._text and b._text.SetTextColor then b._text:SetTextColor(1, 1, 1, 1) end
+        elseif disabled then
+          b:Disable()
+          if b._bg then b._bg:SetColorTexture(0.10, 0.10, 0.11, 0.55) end
+          if b._accent then b._accent:Hide() end
+          if b._text and b._text.SetTextColor then b._text:SetTextColor(0.50, 0.50, 0.50, 1) end
+        else
+          b:Enable()
+          if b._bg then b._bg:SetColorTexture(0.12, 0.12, 0.14, 0.75) end
+          if b._accent then b._accent:Hide() end
+          if b._text and b._text.SetTextColor then b._text:SetTextColor(0.9, 0.9, 0.9, 1) end
+        end
       end
     end
 
@@ -509,10 +516,9 @@ function ns.UI_Init()
     "Ressources",
     "Classes",
     "Armure & blocage",
-    "Dégâts",
-    "Soins",
-    "Historique",
+    "Actions",
     "Familier",
+    "Historique",
   }
 
   local NAV_PAD = 10
@@ -572,6 +578,26 @@ function ns.UI_Init()
     return p
   end
 
+  local function repositionSidebarTabs()
+    local prev = nil
+    for i = 1, #UI.tabs do
+      local tab = UI.tabs[i]
+      if not tab then break end
+      if UI.tabHidden and UI.tabHidden[i] then
+        tab:Hide()
+      else
+        tab:Show()
+        tab:ClearAllPoints()
+        if not prev then
+          tab:SetPoint("TOPLEFT", sidebar, "TOPLEFT", NAV_PAD, -NAV_PAD)
+        else
+          tab:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -NAV_GAP)
+        end
+        prev = tab
+      end
+    end
+  end
+
   for i = 1, #TAB_TEXTS do
     mkTab(TAB_TEXTS[i], i)
   end
@@ -580,33 +606,32 @@ function ns.UI_Init()
   local pageRes = mkPage()
   local pageClasses = mkPage()
   local pageArmor = mkPage()
-  local pageDmg = mkPage()
-  local pageHeal = mkPage()
-  local pageHistory = mkPage()
+  local pageCombat = mkPage()
   local pagePet = mkPage()
+  local pageHistory = mkPage()
   UI.pageHistory = pageHistory
   UI.pagePet = pagePet
 
   -- Onglet 1 : PV
   local xHP = centerX(360)
   mkLabel(pageHP, "PV", xHP + 0, -6)
-  local hpCur, hpMax
+  local hpCur, hpMax, tempHpEB
   mkLabel(pageHP, "/", xHP + 112, -6)
-  local function applyHP()
-    Core.SetHP(getNumber(hpCur), getNumber(hpMax))
-  end
-  hpCur = mkEdit(pageHP, 70, 20, xHP + 36, -4, applyHP)
-  hpMax = mkEdit(pageHP, 70, 20, xHP + 126, -4, applyHP)
-  mkButton(pageHP, "Appliquer", 90, 20, xHP + 210, -4, applyHP)
 
   local xTempHP = centerX(362)
   mkLabel(pageHP, "PV bonus", xTempHP + 0, -38)
-  local tempHpEB
-  local function applyTempHP()
-    Core.SetBonusHP(getNumber(tempHpEB))
+
+  local function applyAllHP()
+    local hpCurVal = getNumber(hpCur)
+    local hpMaxVal = getNumber(hpMax)
+    local tempHpVal = getNumber(tempHpEB)
+    Core.SetHP(hpCurVal, hpMaxVal)
+    Core.SetBonusHP(tempHpVal)
   end
-  tempHpEB = mkEdit(pageHP, 70, 20, xTempHP + 120, -36, applyTempHP)
-  mkButton(pageHP, "Appliquer", 90, 20, xTempHP + 206, -36, applyTempHP)
+  hpCur = mkEdit(pageHP, 70, 20, xHP + 36, -4, applyAllHP)
+  hpMax = mkEdit(pageHP, 70, 20, xHP + 126, -4, applyAllHP)
+  tempHpEB = mkEdit(pageHP, 70, 20, xTempHP + 120, -36, applyAllHP)
+  mkButton(pageHP, "Appliquer", 90, 20, xTempHP + 206, -36, applyAllHP)
 
   -- Onglet 2 : Ressource
   local xRes = centerX(420)
@@ -620,6 +645,25 @@ function ns.UI_Init()
   UI.resRowLabel = UI.resRowLabel or {}
   UI.resRowCur = UI.resRowCur or {}
   UI.resRowMax = UI.resRowMax or {}
+
+  local function applyAllRes()
+    local snapshots = {}
+    for i = 1, 5 do
+      local row = UI.resRow[i]
+      if row and row:IsShown() then
+        snapshots[#snapshots + 1] = {
+          idx = row.resIdx or i,
+          cur = getNumber(UI.resRowCur[i]),
+          max = getNumber(UI.resRowMax[i]),
+        }
+      end
+    end
+    for _, v in ipairs(snapshots) do
+      if Core and Core.SetResIndex then
+        Core.SetResIndex(v.idx, v.cur, v.max)
+      end
+    end
+  end
 
   local function mkResRow(idx, y)
     local row = CreateFrame("Frame", nil, pageRes)
@@ -635,26 +679,18 @@ function ns.UI_Init()
     local curEB, maxEB
     mkLabel(row, "/", 172, 0)
 
-    local function apply()
-      if Core and Core.SetResIndex then
-        local targetIdx = row.resIdx or idx
-        Core.SetResIndex(targetIdx, getNumber(curEB), getNumber(maxEB))
-      end
-    end
-
-    curEB = mkEdit(row, 70, 20, 96, 2, apply)
-    maxEB = mkEdit(row, 70, 20, 186, 2, apply)
+    curEB = mkEdit(row, 70, 20, 96, 2, applyAllRes)
+    maxEB = mkEdit(row, 70, 20, 186, 2, applyAllRes)
     UI.resRowCur[idx] = curEB
     UI.resRowMax[idx] = maxEB
 
-    mkButton(row, "Appliquer", 90, 20, 270, 2, apply)
-    mkButton(row, "+", 28, 20, 368, 2, function()
+    mkButton(row, "+", 28, 20, 270, 2, function()
       if Core and Core.AddResIndex then
         local targetIdx = row.resIdx or idx
         Core.AddResIndex(targetIdx, getNumber(resDeltaEB) or 0)
       end
     end)
-    mkButton(row, "-", 28, 20, 400, 2, function()
+    mkButton(row, "-", 28, 20, 302, 2, function()
       if Core and Core.AddResIndex then
         local targetIdx = row.resIdx or idx
         Core.AddResIndex(targetIdx, -(getNumber(resDeltaEB) or 0))
@@ -673,75 +709,63 @@ function ns.UI_Init()
 
   UI.noResHint = mkLabelCenter(pageRes, "Aucune ressource pour cette classe.", 0, -110)
   UI.noResHint:Hide()
+  mkButton(pageRes, "Appliquer", 90, 20, xRes + 176, -32, applyAllRes)
 
   -- Resources tab can be disabled for classes without resources (eg Warrior).
 
   -- Onglet 2 : Armure & Blocage
   local xArmor = centerX(554)
   mkLabel(pageArmor, "Armure", xArmor + 0, -6)
-  local armorEB, trueArmorEB, dodgeEB
+  local armorEB, trueArmorEB, dodgeEB, blockEB, magicBlockEB
   mkLabel(pageArmor, "Armure invul", xArmor + 150, -6)
   mkLabel(pageArmor, "Esquive", xArmor + 330, -6)
-  local function applyArmor()
-    -- IMPORTANT: on lit les valeurs AVANT d'appeler des setters,
-    -- sinon le 1er setter déclenche un refresh UI qui peut écraser les EditBox.
-    local armorVal = getNumber(armorEB)
-    local trueArmorVal = getNumber(trueArmorEB)
-    local dodgeVal = getNumber(dodgeEB)
-
-    Core.SetArmor(armorVal, trueArmorVal)
-    Core.SetDodge(dodgeVal)
-  end
-  armorEB = mkEdit(pageArmor, 70, 20, xArmor + 56, -4, applyArmor)
-  trueArmorEB = mkEdit(pageArmor, 70, 20, xArmor + 238, -4, applyArmor)
-  dodgeEB = mkEdit(pageArmor, 70, 20, xArmor + 386, -4, applyArmor)
-  mkButton(pageArmor, "Appliquer", 90, 20, xArmor + 464, -4, applyArmor)
 
   local xBlock = centerX(362)
   mkLabel(pageArmor, "Blocage (temp.)", xBlock + 0, -70)
-  local blockEB, magicBlockEB
   mkLabel(pageArmor, "Blocage magique (temp.)", xBlock + 0, -102)
-  local function applyBlocks()
-    -- Même problème que l'armure : on lit avant d'appeler les setters.
+
+  local function applyAllArmor()
+    -- Read all values before calling setters to avoid UI refresh overwriting EditBoxes.
+    local armorVal = getNumber(armorEB)
+    local trueArmorVal = getNumber(trueArmorEB)
+    local dodgeVal = getNumber(dodgeEB)
     local blockVal = getNumber(blockEB)
     local magicVal = getNumber(magicBlockEB)
+    Core.SetArmor(armorVal, trueArmorVal)
+    Core.SetDodge(dodgeVal)
     Core.SetTempBlock(blockVal)
     Core.SetTempMagicBlock(magicVal)
   end
-  blockEB = mkEdit(pageArmor, 70, 20, xBlock + 120, -68, applyBlocks)
-  magicBlockEB = mkEdit(pageArmor, 70, 20, xBlock + 180, -100, applyBlocks)
-  mkButton(pageArmor, "Appliquer", 90, 20, xBlock + 206, -68, applyBlocks)
+  armorEB = mkEdit(pageArmor, 70, 20, xArmor + 56, -4, applyAllArmor)
+  trueArmorEB = mkEdit(pageArmor, 70, 20, xArmor + 238, -4, applyAllArmor)
+  dodgeEB = mkEdit(pageArmor, 70, 20, xArmor + 386, -4, applyAllArmor)
+  mkButton(pageArmor, "Appliquer", 90, 20, xArmor + 464, -4, applyAllArmor)
+
+  blockEB = mkEdit(pageArmor, 70, 20, xBlock + 120, -68, applyAllArmor)
+  magicBlockEB = mkEdit(pageArmor, 70, 20, xBlock + 180, -100, applyAllArmor)
   mkButton(pageArmor, "Réinit.", 70, 20, xBlock + 302, -68, function() Core.ResetTempBlock() end)
   mkButton(pageArmor, "Réinit.", 70, 20, xBlock + 302, -100, function() Core.ResetTempMagicBlock() end)
 
-  -- Onglet 3 : Dégâts
-  local xValD = centerX(180)
-  mkLabel(pageDmg, "Valeur", xValD + 0, -6)
-  local dmgValEB
+  -- Onglet 5 : Actions (Dégâts & Soins)
+  local xActVal = centerX(180)
+  mkLabel(pageCombat, "Valeur", xActVal + 0, -6)
+  local actValEB
 
-  local xDmgBtns = centerX(392)
+  local xActBtns = centerX(392)
   local function doDmgArmor()
-    Core.DamageWithArmor(getNumber(dmgValEB) or 0)
+    Core.DamageWithArmor(getNumber(actValEB) or 0)
   end
   local function doDmgTrue()
-    Core.DamageTrue(getNumber(dmgValEB) or 0)
+    Core.DamageTrue(getNumber(actValEB) or 0)
   end
-  dmgValEB = mkEdit(pageDmg, 80, 20, xValD + 56, -4, doDmgArmor)
-  mkButton(pageDmg, "Dégâts (armure)", 190, 22, xDmgBtns + 0, -36, doDmgArmor)
-  mkButton(pageDmg, "Dégâts (bruts)", 190, 22, xDmgBtns + 202, -36, doDmgTrue)
-
-  -- Onglet 4 : Soins
-  local xValH = centerX(180)
-  mkLabel(pageHeal, "Valeur", xValH + 0, -6)
-  local healValEB
-
-  local xHealBtns = centerX(392)
   local function doHeal()
-    Core.Heal(getNumber(healValEB) or 0)
+    Core.Heal(getNumber(actValEB) or 0)
   end
-  healValEB = mkEdit(pageHeal, 80, 20, xValH + 56, -4, doHeal)
-  mkButton(pageHeal, "Soins", 190, 22, xHealBtns + 0, -36, doHeal)
-  mkButton(pageHeal, "Soins divins (75%)", 190, 22, xHealBtns + 202, -36, function()
+  actValEB = mkEdit(pageCombat, 80, 20, xActVal + 56, -4, doDmgArmor)
+  mkButton(pageCombat, "Dégâts (armure)", 190, 22, xActBtns + 0, -36, doDmgArmor)
+  mkButton(pageCombat, "Dégâts (bruts)", 190, 22, xActBtns + 202, -36, doDmgTrue)
+  mkButton(pageCombat, "Soins", 190, 22, xActBtns + 0, -64, doHeal)
+  mkButton(pageCombat, "Soins divins (75%)", 190, 22, xActBtns + 202, -64, function()
     Core.DivineHeal()
   end)
 
@@ -804,51 +828,39 @@ function ns.UI_Init()
   end)
 
   mkLabel(pagePet, "Nom", xPetTop + 0, -40)
-  local function applyPetName()
-    if Core and Core.SetPetName and petNameEB then
-      Core.SetPetName(petNameEB:GetText())
-    end
-  end
-  petNameEB = mkEdit(pagePet, 170, 20, xPetTop + 36, -38, applyPetName)
-  petNameEB:SetNumeric(false)
-  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 214, -38, applyPetName)
-
   mkLabel(pagePet, "PV", xPetTop + 0, -72)
   mkLabel(pagePet, "/", xPetTop + 112, -72)
-  local function applyPetHP()
-    if Core and Core.SetPetHP then
-      Core.SetPetHP(getNumber(petHpCurEB), getNumber(petHpMaxEB))
-    end
-  end
-  petHpCurEB = mkEdit(pagePet, 70, 20, xPetTop + 36, -70, applyPetHP)
-  petHpMaxEB = mkEdit(pagePet, 70, 20, xPetTop + 126, -70, applyPetHP)
-  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 210, -70, applyPetHP)
-
   mkLabel(pagePet, "Armure", xPetTop + 0, -104)
   mkLabel(pagePet, "Armure invul", xPetTop + 150, -104)
   mkLabel(pagePet, "Esquive", xPetTop + 330, -104)
-  local function applyPetArmor()
+  mkLabel(pagePet, "Bouclier magique", xPetTop + 0, -136)
+
+  local function applyAllPet()
     if not Core then return end
+    local petNameVal = petNameEB and petNameEB:GetText() or nil
+    local petHpCurVal = getNumber(petHpCurEB)
+    local petHpMaxVal = getNumber(petHpMaxEB)
     local armorVal = getNumber(petArmorEB)
     local trueArmorVal = getNumber(petTrueArmorEB)
     local dodgeVal = getNumber(petDodgeEB)
+    local magicVal = getNumber(petMagicBlockEB)
+    if Core.SetPetName and petNameVal then Core.SetPetName(petNameVal) end
+    if Core.SetPetHP then Core.SetPetHP(petHpCurVal, petHpMaxVal) end
     if Core.SetPetArmor then Core.SetPetArmor(armorVal, trueArmorVal) end
     if Core.SetPetDodge then Core.SetPetDodge(dodgeVal) end
+    if Core.SetPetTempMagicBlock then Core.SetPetTempMagicBlock(magicVal) end
   end
-  petArmorEB = mkEdit(pagePet, 70, 20, xPetTop + 56, -102, applyPetArmor)
-  petTrueArmorEB = mkEdit(pagePet, 70, 20, xPetTop + 238, -102, applyPetArmor)
-  petDodgeEB = mkEdit(pagePet, 70, 20, xPetTop + 386, -102, applyPetArmor)
-  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 464, -102, applyPetArmor)
 
-  mkLabel(pagePet, "Bouclier magique", xPetTop + 0, -136)
-  local function applyPetMagicBlock()
-    if Core and Core.SetPetTempMagicBlock then
-      Core.SetPetTempMagicBlock(getNumber(petMagicBlockEB))
-    end
-  end
-  petMagicBlockEB = mkEdit(pagePet, 90, 20, xPetTop + 108, -134, applyPetMagicBlock)
-  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 206, -134, applyPetMagicBlock)
-  mkButton(pagePet, "Reset", 70, 20, xPetTop + 304, -134, function()
+  petNameEB = mkEdit(pagePet, 170, 20, xPetTop + 36, -38, applyAllPet)
+  petNameEB:SetNumeric(false)
+  petHpCurEB = mkEdit(pagePet, 70, 20, xPetTop + 36, -70, applyAllPet)
+  petHpMaxEB = mkEdit(pagePet, 70, 20, xPetTop + 126, -70, applyAllPet)
+  petArmorEB = mkEdit(pagePet, 70, 20, xPetTop + 56, -102, applyAllPet)
+  petTrueArmorEB = mkEdit(pagePet, 70, 20, xPetTop + 238, -102, applyAllPet)
+  petDodgeEB = mkEdit(pagePet, 70, 20, xPetTop + 386, -102, applyAllPet)
+  petMagicBlockEB = mkEdit(pagePet, 90, 20, xPetTop + 108, -134, applyAllPet)
+  mkButton(pagePet, "Appliquer", 90, 20, xPetTop + 464, -102, applyAllPet)
+  mkButton(pagePet, "Réinit.", 70, 20, xPetTop + 304, -134, function()
     if Core and Core.ResetPetTempMagicBlock then
       Core.ResetPetTempMagicBlock()
     elseif Core and Core.SetPetTempMagicBlock then
@@ -1079,10 +1091,18 @@ function ns.UI_Init()
       if rowCount == 0 then UI.resDeltaEB:Hide() else UI.resDeltaEB:Show() end
     end
 
-    -- Disable resources tab only when there are no effective resources.
+    -- Hide resources tab for Classique (WARRIOR) with no pet; disable for other no-resource classes.
+    local hideRes = (s.classKey == "WARRIOR" and rowCount == 0)
+    if UI.tabHidden then
+      local wasHidden = UI.tabHidden[2]
+      UI.tabHidden[2] = hideRes
+      if wasHidden ~= hideRes then
+        repositionSidebarTabs()
+      end
+    end
     if UI.tabDisabled then
       UI.tabDisabled[2] = (rowCount == 0)
-      if UI.tabDisabled[2] and UI.activeTab == 2 then
+      if (hideRes or UI.tabDisabled[2]) and UI.activeTab == 2 then
         setTab(1)
       else
         setTab(UI.activeTab or 1)

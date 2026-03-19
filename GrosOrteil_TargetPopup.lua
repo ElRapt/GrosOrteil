@@ -18,7 +18,7 @@ local UnitGUID = rawget(_G, "UnitGUID")
 local CreateFrame = rawget(_G, "CreateFrame")
 local UIParent = rawget(_G, "UIParent")
 local C_Timer = rawget(_G, "C_Timer")
-local LibRPNames = rawget(_G, "LibRPNames")
+-- LibRPNames is looked up lazily at call time (may not be ready at load time).
 
 local getResProfile    = Shared.GetResProfile
 local getKeysForIdx    = Shared.GetKeysForIdx
@@ -98,10 +98,36 @@ local function getRPDisplayName(playerName)
     guid = UnitGUID("target")
   end
 
-  if LibRPNames and LibRPNames.Get then
-    local fullName, _, _, color = LibRPNames.Get(playerName, guid)
+  -- Lazy lookup: LibRPNames may not be in _G at addon load time.
+  local lrn = rawget(_G, "LibRPNames")
+  if lrn and lrn.Get then
+    local fullName, _, _, color = lrn.Get(playerName, guid)
     if type(fullName) == "string" and fullName ~= "" then
       return fullName, color
+    end
+  end
+
+  -- Fallback: query TRP3 registry directly for the sender's profile.
+  local api = rawget(_G, "TRP3_API")
+  if type(api) == "table" then
+    local reg = api.register
+    if type(reg) == "table" and type(reg.getProfile) == "function" then
+      local ok, profile = pcall(reg.getProfile, playerName)
+      if ok and type(profile) == "table" then
+        local char = profile.player and profile.player.characteristics
+        if type(char) == "table" then
+          local first = char.FN
+          local last  = char.LN
+          if type(first) == "string" then first = string.gsub(string.gsub(first, "^%s+", ""), "%s+$", "") end
+          if type(last)  == "string" then last  = string.gsub(string.gsub(last,  "^%s+", ""), "%s+$", "") end
+          if type(first) == "string" and first ~= "" then
+            if type(last) == "string" and last ~= "" then
+              return first .. " " .. last, nil
+            end
+            return first, nil
+          end
+        end
+      end
     end
   end
 
