@@ -1113,7 +1113,7 @@ function ns.UI_Init()
     hideMarkers(UI.corruptionMarkers)
     hideMarkers(UI.insanityMarkers)
 
-    -- Re-anchor the page container under the last active resource bar.
+    -- Resize the frame to fit the current resource bar layout.
     do
       local n = barCount
       if n < 0 then n = 0 end
@@ -1124,20 +1124,10 @@ function ns.UI_Init()
         anchor = UI.resBars[n]
       end
 
-      -- Grow the window when multiple resource bars are visible (Shaman = 4).
-      local targetH = BASE_FRAME_H
-      if frame and frame.SetHeight then
-        local extraPad = 0
-        if s.classKey == "SHAMAN" then
-          extraPad = 70
-        elseif n >= 4 then
-          extraPad = 26
-        end
-        targetH = BASE_FRAME_H + (math.max(0, n - 1) * RES_EXTRA_H) + extraPad
-        if targetH < BASE_FRAME_H then targetH = BASE_FRAME_H end
-        frame:SetHeight(targetH)
-      end
-
+      local extraPad = (n >= 4) and 26 or 0
+      local targetH = BASE_FRAME_H + (math.max(0, n - 1) * RES_EXTRA_H) + extraPad
+      if targetH < BASE_FRAME_H then targetH = BASE_FRAME_H end
+      frame:SetHeight(targetH)
       applyContentHostLayout(anchor, targetH - BASE_FRAME_H)
     end
 
