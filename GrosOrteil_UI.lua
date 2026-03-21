@@ -307,19 +307,23 @@ function ns.UI_Init()
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -2, -2)
 
-  -- Make the main frame directly resizable.
-  frame:SetResizable(true)
-  frame:SetResizeBounds(MIN_W, MIN_H, MAX_W, MAX_H)
-
   -- Size label shown in the centre during resize.
   local sizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
   sizeLabel:SetPoint("CENTER", frame, "CENTER")
   sizeLabel:Hide()
 
+  -- Manual delta-based resize state (declared before OnSizeChanged so the closure can read it).
+  local resizing = false
+  local resizeOriginX, resizeOriginY = 0, 0
+  local resizeBaseW, resizeBaseH = 0, 0
+
   frame:SetScript("OnSizeChanged", function(_, w, h)
     w, h = math.floor(w), math.floor(h)
     sizeLabel:SetText(w .. " × " .. h)
-    db.ui.w, db.ui.h = w, h
+    -- Only persist to db on mouseup; avoid thousands of writes during drag.
+    if not resizing then
+      db.ui.w, db.ui.h = w, h
+    end
     if UI.resAnchor then applyContentHostLayout(UI.resAnchor, 0) end
     if UI.syncHistoryWidth then UI.syncHistoryWidth() end
   end)
@@ -332,11 +336,6 @@ function ns.UI_Init()
   grip:SetHighlightTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Highlight")
   grip:SetPushedTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Down")
   grip:SetFrameLevel(frame:GetFrameLevel() + 10)
-
-  -- Manual delta-based resize: avoids StartSizing()'s immediate snap to cursor.
-  local resizing = false
-  local resizeOriginX, resizeOriginY = 0, 0
-  local resizeBaseW, resizeBaseH = 0, 0
 
   grip:SetScript("OnMouseDown", function(_, button)
     if button == "LeftButton" then
@@ -443,8 +442,42 @@ function ns.UI_Init()
   local capMarker = makeMarker(hpBar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
   UI.hpCapMarker = capMarker
 
+  -- HP marker cache and reposition function — defined once here, called from OnChange and OnSizeChanged.
+  UI.hpMarkerCache = { baseMaxHp = 0, effMaxHp = 0, cap = 1.0 }
+
+  local function repositionHpMarkers()
+    local cache = UI.hpMarkerCache
+    local bMaxHp = cache.baseMaxHp
+    local eMaxHp = cache.effMaxHp
+    local barW   = hpBar:GetWidth() or 0
+
+    for i = 1, #UI.hpMarkers do
+      local m = UI.hpMarkers[i]
+      local thresholdHp = bMaxHp * (m.pct or 0)
+      local x = (eMaxHp > 0) and (barW * (thresholdHp / eMaxHp)) or 0
+      if x < 0 then x = 0 elseif x > barW then x = barW end
+      m:Show()
+      m:ClearAllPoints()
+      m:SetPoint("LEFT", hpBar, "LEFT", x, 0)
+    end
+
+    if UI.hpCapMarker then
+      if cache.cap >= 0.999 then
+        UI.hpCapMarker:Hide()
+      else
+        UI.hpCapMarker:Show()
+        local capHp = bMaxHp * cache.cap
+        local xCap = (eMaxHp > 0) and (barW * (capHp / eMaxHp)) or 0
+        if xCap < 0 then xCap = 0 elseif xCap > barW then xCap = barW end
+        UI.hpCapMarker:ClearAllPoints()
+        UI.hpCapMarker:SetPoint("LEFT", hpBar, "LEFT", xCap, 0)
+      end
+    end
+  end
+  UI.repositionHpMarkers = repositionHpMarkers
+
   hpBar:SetScript("OnSizeChanged", function()
-    if UI.repositionHpMarkers then UI.repositionHpMarkers() end
+    repositionHpMarkers()
   end)
 
   local capText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -910,8 +943,7 @@ function ns.UI_Init()
       if w <= 0 then return end
       -- Keep a small right gutter so text never overlaps the scrollbar lane.
       local textW = math.max(80, w - 14)
-      local childW = textW
-      UI.historyChild:SetWidth(childW)
+      UI.historyChild:SetWidth(textW)
       UI.historyText:SetWidth(textW)
     end
     UI.syncHistoryWidth = syncHistoryWidth
@@ -1136,43 +1168,11 @@ function ns.UI_Init()
     elseif w2 and w2.hit25 then cap = 0.50
     else cap = 1.0 end
 
-    -- Cache HP state for repositioning on resize.
-    UI.hpMarkerCache = { baseMaxHp = baseMaxHp, effMaxHp = effMaxHp, cap = cap }
-
-    -- Reposition threshold markers and cap marker relative to current bar width.
-    local function repositionHpMarkers()
-      local cache = UI.hpMarkerCache
-      if not cache then return end
-      local bMaxHp = cache.baseMaxHp
-      local eMaxHp = cache.effMaxHp
-      local barW = hpBar:GetWidth() or 0
-
-      for i = 1, #UI.hpMarkers do
-        local m = UI.hpMarkers[i]
-        local pct = (m.pct or 0)
-        local thresholdHp = bMaxHp * pct
-        local x = (eMaxHp > 0) and (barW * (thresholdHp / eMaxHp)) or 0
-        if x < 0 then x = 0 elseif x > barW then x = barW end
-        m:Show()
-        m:ClearAllPoints()
-        m:SetPoint("LEFT", hpBar, "LEFT", x, 0)
-      end
-
-      if UI.hpCapMarker then
-        if cache.cap >= 0.999 then
-          UI.hpCapMarker:Hide()
-        else
-          UI.hpCapMarker:Show()
-          local capHp = bMaxHp * cache.cap
-          local xCap = (eMaxHp > 0) and (barW * (capHp / eMaxHp)) or 0
-          if xCap < 0 then xCap = 0 elseif xCap > barW then xCap = barW end
-          UI.hpCapMarker:ClearAllPoints()
-          UI.hpCapMarker:SetPoint("LEFT", hpBar, "LEFT", xCap, 0)
-        end
-      end
-    end
-    UI.repositionHpMarkers = repositionHpMarkers
-    repositionHpMarkers()
+    -- Update HP marker cache then reposition.
+    UI.hpMarkerCache.baseMaxHp = baseMaxHp
+    UI.hpMarkerCache.effMaxHp  = effMaxHp
+    UI.hpMarkerCache.cap       = cap
+    UI.repositionHpMarkers()
 
     if cap >= 0.999 then
       capText:SetText("")
