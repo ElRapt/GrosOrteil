@@ -819,24 +819,30 @@ function ns.UI_Init()
     Core.SetTempMagicBlock(magicVal)
   end
 
-  local aArmor1 = mkRowAnchor(pageArmor, 554, -4)
+  -- ── Armure & Esquive (2 colonnes, ~320 px) ──────────
+  local aArmor1 = mkRowAnchor(pageArmor, 320, -4)
   mkLabel(aArmor1, "Armure", 0, -2)
-  mkLabel(aArmor1, "Armure invul", 150, -2)
-  mkLabel(aArmor1, "Esquive", 330, -2)
-  armorEB      = mkEdit(aArmor1, 70, 20, 56,  0, applyAllArmor)
-  trueArmorEB  = mkEdit(aArmor1, 70, 20, 238, 0, applyAllArmor)
-  dodgeEB      = mkEdit(aArmor1, 70, 20, 386, 0, applyAllArmor)
-  mkButton(aArmor1, "Appliquer", 90, 20, 464, 0, applyAllArmor)
+  armorEB     = mkEdit(aArmor1, 70, 20, 64, 0, applyAllArmor)
+  mkLabel(aArmor1, "Armure invul", 154, -2)
+  trueArmorEB = mkEdit(aArmor1, 70, 20, 248, 0, applyAllArmor)
 
-  local aBlock1 = mkRowAnchor(pageArmor, 374, -68)
+  local aArmor2 = mkRowAnchor(pageArmor, 180, -34)
+  mkLabel(aArmor2, "Esquive", 0, -2)
+  dodgeEB = mkEdit(aArmor2, 70, 20, 64, 0, applyAllArmor)
+
+  local aArmorApply = mkRowAnchor(pageArmor, 90, -64)
+  mkButton(aArmorApply, "Appliquer", 90, 20, 0, 0, applyAllArmor)
+
+  -- ── Blocage temporaire ──────────────
+  local aBlock1 = mkRowAnchor(pageArmor, 280, -100)
   mkLabel(aBlock1, "Blocage (temp.)", 0, -2)
-  blockEB = mkEdit(aBlock1, 70, 20, 120, 0, applyAllArmor)
-  mkButton(aBlock1, "Réinit.", 70, 20, 302, 0, function() Core.ResetTempBlock() end)
+  blockEB = mkEdit(aBlock1, 70, 20, 130, 0, applyAllArmor)
+  mkButton(aBlock1, "Réinit.", 70, 20, 210, 0, function() Core.ResetTempBlock() end)
 
-  local aBlock2 = mkRowAnchor(pageArmor, 374, -100)
+  local aBlock2 = mkRowAnchor(pageArmor, 340, -130)
   mkLabel(aBlock2, "Blocage magique (temp.)", 0, -2)
-  magicBlockEB = mkEdit(aBlock2, 70, 20, 180, 0, applyAllArmor)
-  mkButton(aBlock2, "Réinit.", 70, 20, 302, 0, function() Core.ResetTempMagicBlock() end)
+  magicBlockEB = mkEdit(aBlock2, 70, 20, 190, 0, applyAllArmor)
+  mkButton(aBlock2, "Réinit.", 70, 20, 270, 0, function() Core.ResetTempMagicBlock() end)
 
   -- Onglet 5 : Actions (Dégâts & Soins)
   local actValEB
@@ -923,35 +929,42 @@ function ns.UI_Init()
     if Core.SetPetTempMagicBlock then Core.SetPetTempMagicBlock(magicVal) end
   end
 
-  -- All stats rows share the same 560px-wide anchor section.
-  local aPet = mkRowAnchor(pagePet, 560, -6)
-
-  petToggleBtn = mkButton(aPet, "Activer le familier", 170, 22, 0, 0, function()
+  -- ── Identité ──────────────────────
+  local aPetToggle = mkRowAnchor(pagePet, 170, -6)
+  petToggleBtn = mkButton(aPetToggle, "Activer le familier", 170, 22, 0, 0, function()
     if not Core or not Core.SetPetEnabled then return end
     local p = Core.GetPet and Core.GetPet() or nil
     Core.SetPetEnabled(not (p and p.enabled))
   end)
 
-  mkLabel(aPet, "Nom", 0, -34)
-  petNameEB = mkEdit(aPet, 170, 20, 36, -32, applyAllPet)
+  local aPetNom = mkRowAnchor(pagePet, 230, -38)
+  mkLabel(aPetNom, "Nom", 0, -2)
+  petNameEB = mkEdit(aPetNom, 180, 20, 46, 0, applyAllPet)
   petNameEB:SetNumeric(false)
 
-  mkLabel(aPet, "PV", 0, -66)
-  mkLabel(aPet, "/", 112, -66)
-  petHpCurEB = mkEdit(aPet, 70, 20, 36,  -64, applyAllPet)
-  petHpMaxEB = mkEdit(aPet, 70, 20, 126, -64, applyAllPet)
+  local aPetHP = mkRowAnchor(pagePet, 230, -68)
+  mkLabel(aPetHP, "PV", 0, -2)
+  petHpCurEB = mkEdit(aPetHP, 70, 20, 30,  0, applyAllPet)
+  mkLabel(aPetHP, "/", 106, -2)
+  petHpMaxEB = mkEdit(aPetHP, 70, 20, 120, 0, applyAllPet)
 
-  mkLabel(aPet, "Armure", 0, -98)
-  mkLabel(aPet, "Armure invul", 150, -98)
-  mkLabel(aPet, "Esquive", 330, -98)
-  petArmorEB     = mkEdit(aPet, 70, 20, 56,  -96, applyAllPet)
-  petTrueArmorEB = mkEdit(aPet, 70, 20, 238, -96, applyAllPet)
-  petDodgeEB     = mkEdit(aPet, 70, 20, 386, -96, applyAllPet)
-  mkButton(aPet, "Appliquer", 90, 20, 464, -96, applyAllPet)
+  -- ── Défense (2 colonnes, ~320 px) ────────────────────
+  -- Col1: x=0..133  Col2: x=150..313
+  local aPetDef1 = mkRowAnchor(pagePet, 320, -106)
+  mkLabel(aPetDef1, "Armure", 0, -2)
+  petArmorEB     = mkEdit(aPetDef1, 70, 20, 60, 0, applyAllPet)
+  mkLabel(aPetDef1, "Armure invul", 150, -2)
+  petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 244, 0, applyAllPet)
 
-  mkLabel(aPet, "Bouclier magique", 0, -130)
-  petMagicBlockEB = mkEdit(aPet, 90, 20, 108, -128, applyAllPet)
-  mkButton(aPet, "Réinit.", 70, 20, 304, -128, function()
+  local aPetDef2 = mkRowAnchor(pagePet, 320, -136)
+  mkLabel(aPetDef2, "Esquive", 0, -2)
+  petDodgeEB      = mkEdit(aPetDef2, 70, 20, 60, 0, applyAllPet)
+  mkLabel(aPetDef2, "Bouclier mag.", 150, -2)
+  petMagicBlockEB = mkEdit(aPetDef2, 70, 20, 244, 0, applyAllPet)
+
+  local aPetDefBtns = mkRowAnchor(pagePet, 180, -166)
+  mkButton(aPetDefBtns, "Appliquer", 86, 20, 0,  0, applyAllPet)
+  mkButton(aPetDefBtns, "Réinit.",   86, 20, 94, 0, function()
     if Core and Core.ResetPetTempMagicBlock then
       Core.ResetPetTempMagicBlock()
     elseif Core and Core.SetPetTempMagicBlock then
@@ -959,11 +972,12 @@ function ns.UI_Init()
     end
   end)
 
-  local aPetVal = mkRowAnchor(pagePet, 420, -168)
+  -- ── Actions ───────────────────────
+  local aPetVal = mkRowAnchor(pagePet, 180, -202)
   mkLabel(aPetVal, "Valeur", 0, -2)
   petActionValEB = mkEdit(aPetVal, 80, 20, 56, 0)
 
-  local aPetBtns1 = mkRowAnchor(pagePet, 392, -200)
+  local aPetBtns1 = mkRowAnchor(pagePet, 392, -232)
   local petDmgArmorBtn = mkButton(aPetBtns1, "Dégâts (armure)", 190, 22, 0,   0, function()
     if Core and Core.PetDamageWithArmor then Core.PetDamageWithArmor(getNumber(petActionValEB) or 0) end
   end)
@@ -971,7 +985,7 @@ function ns.UI_Init()
     if Core and Core.PetDamageTrue then Core.PetDamageTrue(getNumber(petActionValEB) or 0) end
   end)
 
-  local aPetBtns2 = mkRowAnchor(pagePet, 392, -228)
+  local aPetBtns2 = mkRowAnchor(pagePet, 392, -260)
   local petHealBtn = mkButton(aPetBtns2, "Soins", 190, 22, 0, 0, function()
     if Core and Core.PetHeal then Core.PetHeal(getNumber(petActionValEB) or 0) end
   end)
