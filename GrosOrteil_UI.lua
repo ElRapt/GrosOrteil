@@ -333,19 +333,41 @@ function ns.UI_Init()
   grip:SetPushedTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Down")
   grip:SetFrameLevel(frame:GetFrameLevel() + 10)
 
+  -- Manual delta-based resize: avoids StartSizing()'s immediate snap to cursor.
+  local resizing = false
+  local resizeOriginX, resizeOriginY = 0, 0
+  local resizeBaseW, resizeBaseH = 0, 0
+
   grip:SetScript("OnMouseDown", function(_, button)
     if button == "LeftButton" then
+      -- Re-anchor to TOPLEFT before resizing so the top-left corner stays fixed.
+      local left = frame:GetLeft()
+      local top  = frame:GetTop()
+      frame:ClearAllPoints()
+      frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+      db.ui.point, db.ui.x, db.ui.y = "TOPLEFT", left, top
+
+      resizing = true
+      resizeOriginX, resizeOriginY = GetCursorPosition()
+      resizeBaseW = frame:GetWidth()
+      resizeBaseH = frame:GetHeight()
       sizeLabel:Show()
-      sizeLabel:SetText(math.floor(frame:GetWidth()) .. " × " .. math.floor(frame:GetHeight()))
-      frame:StartSizing("BOTTOMRIGHT")
     end
   end)
 
+  grip:SetScript("OnUpdate", function()
+    if not resizing then return end
+    local cx, cy = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    local w = math.max(MIN_W, math.min(MAX_W, resizeBaseW + (cx - resizeOriginX) / scale))
+    local h = math.max(MIN_H, math.min(MAX_H, resizeBaseH - (cy - resizeOriginY) / scale))
+    frame:SetSize(w, h)
+  end)
+
   grip:SetScript("OnMouseUp", function(_, button)
-    if button == "LeftButton" then
-      frame:StopMovingOrSizing()
+    if button == "LeftButton" and resizing then
+      resizing = false
       sizeLabel:Hide()
-      -- Clamp and save final size.
       local w = math.floor(math.max(MIN_W, math.min(MAX_W, frame:GetWidth())))
       local h = math.floor(math.max(MIN_H, math.min(MAX_H, frame:GetHeight())))
       frame:SetSize(w, h)
@@ -353,7 +375,6 @@ function ns.UI_Init()
       if UI.resAnchor then applyContentHostLayout(UI.resAnchor, 0) end
       if UI.syncHistoryWidth then UI.syncHistoryWidth() end
     elseif button == "RightButton" then
-      -- Right-click: reset to default size.
       frame:SetSize(FRAME_W, FRAME_H)
       db.ui.w, db.ui.h = FRAME_W, FRAME_H
       if UI.resAnchor then applyContentHostLayout(UI.resAnchor, 0) end
