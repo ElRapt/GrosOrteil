@@ -208,8 +208,10 @@ function ns.UI_Init()
   end
 
   local FRAME_W, FRAME_H = 820, 440
-  local BASE_FRAME_H = FRAME_H
+  local MIN_W, MIN_H     = 640, 360
+  local MAX_W, MAX_H     = 1500, 1000
   local PAD_X = 14
+  local applyContentHostLayout  -- forward declaration; defined below
 
   -- Left sidebar navigation (vertical tabs) + right content area.
   local SIDEBAR_W = 160
@@ -222,7 +224,7 @@ function ns.UI_Init()
 
   local frame = CreateFrame("Frame", "GrosOrteilFrame", UIParent, "BackdropTemplate")
   UI.frame = frame
-  frame:SetSize(FRAME_W, FRAME_H)
+  frame:SetSize(db.ui.w or FRAME_W, db.ui.h or FRAME_H)
 
   -- QoL: allow ESC to close the window.
   -- WoW closes frames listed in UISpecialFrames when pressing Escape.
@@ -309,6 +311,60 @@ function ns.UI_Init()
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -2, -2)
 
+  -- Make the main frame directly resizable.
+  frame:SetResizable(true)
+  frame:SetResizeBounds(MIN_W, MIN_H, MAX_W, MAX_H)
+
+  -- Size label shown in the centre during resize.
+  local sizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+  sizeLabel:SetPoint("CENTER", frame, "CENTER")
+  sizeLabel:Hide()
+
+  frame:SetScript("OnSizeChanged", function(_, w, h)
+    w, h = math.floor(w), math.floor(h)
+    sizeLabel:SetText(w .. " × " .. h)
+    db.ui.w, db.ui.h = w, h
+    if UI.resAnchor then applyContentHostLayout(UI.resAnchor, 0) end
+    if UI.syncHistoryWidth then UI.syncHistoryWidth() end
+  end)
+
+  -- Grip button (BOTTOMRIGHT corner)
+  local grip = CreateFrame("Button", nil, frame)
+  grip:SetSize(16, 16)
+  grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+  grip:SetNormalTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Up")
+  grip:SetHighlightTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Highlight")
+  grip:SetPushedTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Down")
+  grip:SetFrameLevel(frame:GetFrameLevel() + 10)
+
+  grip:SetScript("OnMouseDown", function(_, button)
+    if button == "LeftButton" then
+      sizeLabel:Show()
+      sizeLabel:SetText(math.floor(frame:GetWidth()) .. " × " .. math.floor(frame:GetHeight()))
+      frame:StartSizing("BOTTOMRIGHT")
+    end
+  end)
+
+  grip:SetScript("OnMouseUp", function(_, button)
+    if button == "LeftButton" then
+      frame:StopMovingOrSizing()
+      sizeLabel:Hide()
+      -- Clamp and save final size.
+      local w = math.floor(math.max(MIN_W, math.min(MAX_W, frame:GetWidth())))
+      local h = math.floor(math.max(MIN_H, math.min(MAX_H, frame:GetHeight())))
+      frame:SetSize(w, h)
+      db.ui.w, db.ui.h = w, h
+      if UI.resAnchor then applyContentHostLayout(UI.resAnchor, 0) end
+      if UI.syncHistoryWidth then UI.syncHistoryWidth() end
+    elseif button == "RightButton" then
+      -- Right-click: reset to default size.
+      frame:SetSize(FRAME_W, FRAME_H)
+      db.ui.w, db.ui.h = FRAME_W, FRAME_H
+      if UI.resAnchor then applyContentHostLayout(UI.resAnchor, 0) end
+      if UI.syncHistoryWidth then UI.syncHistoryWidth() end
+    end
+  end)
+
   -- Main body: sidebar (left) + content (right)
   local body = CreateFrame("Frame", nil, frame)
   body:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD_X, -34)
@@ -332,8 +388,9 @@ function ns.UI_Init()
   -- Barres
   local hpBar = CreateFrame("StatusBar", nil, content)
   UI.hpBar = hpBar
-  hpBar:SetSize(CONTENT_W, 20)
+  hpBar:SetHeight(20)
   hpBar:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+  hpBar:SetPoint("RIGHT", content, "RIGHT", 0, 0)
   hpBar:SetMinMaxValues(0, 1)
   hpBar:SetValue(1)
   skinBar(hpBar, 0.85, 0.12, 0.12) -- rouge
@@ -369,6 +426,10 @@ function ns.UI_Init()
   local capMarker = makeMarker(hpBar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
   UI.hpCapMarker = capMarker
 
+  hpBar:SetScript("OnSizeChanged", function()
+    if UI.repositionHpMarkers then UI.repositionHpMarkers() end
+  end)
+
   local capText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   UI.capText = capText
   capText:SetPoint("TOPLEFT", hpBar, "BOTTOMLEFT", 0, -6)
@@ -379,17 +440,17 @@ function ns.UI_Init()
   UI.resTexts = {}
   local RES_BAR_H = 14
   local RES_GAP = 4
-  local RES_EXTRA_H = (RES_BAR_H + RES_GAP)
 
   local function mkResBar(idx)
     local bar = CreateFrame("StatusBar", nil, content)
     UI.resBars[idx] = bar
-    bar:SetSize(CONTENT_W, RES_BAR_H)
+    bar:SetHeight(RES_BAR_H)
     if idx == 1 then
       bar:SetPoint("TOPLEFT", capText, "BOTTOMLEFT", 0, -8)
     else
       bar:SetPoint("TOPLEFT", UI.resBars[idx - 1], "BOTTOMLEFT", 0, -RES_GAP)
     end
+    bar:SetPoint("RIGHT", content, "RIGHT", 0, 0)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
     skinBar(bar, 0.2, 0.55, 1.0)
@@ -445,7 +506,7 @@ function ns.UI_Init()
   -- Content host (pages) sits under HP/Resource bars and above class strip.
   local CONTENT_VPAD_BASE = 20
 
-  local function applyContentHostLayout(anchor, extraVertical)
+  applyContentHostLayout = function(anchor, extraVertical)
     if not UI.contentHost then return end
     -- Always keep a baseline vertical inset, then split extra height to stay centered.
     local dynamicPad = math.max(0, math.floor((extraVertical or 0) / 2))
@@ -1011,40 +1072,49 @@ function ns.UI_Init()
       s.tempBlock or 0, s.tempMagicBlock or 0
     )
 
-    local w = hpBar:GetWidth() or 0
-    for i = 1, #UI.hpMarkers do
-      local m = UI.hpMarkers[i]
-      local pct = (m.pct or 0)
-      -- Threshold value is based on base max HP only.
-      -- The bar range may include bonus HP, so convert base-threshold to a fraction of effMax.
-      local thresholdHp = baseMaxHp * pct
-      local x = (effMaxHp > 0) and (w * (thresholdHp / effMaxHp)) or 0
-      if x < 0 then x = 0 elseif x > w then x = w end
-      m:Show()
-      m:ClearAllPoints()
-      m:SetPoint("LEFT", hpBar, "LEFT", x, 0)
-    end
-
     local cap
     local w2 = s.wounds
     if w2 and w2.hit10 then cap = 0.25
     elseif w2 and w2.hit25 then cap = 0.50
     else cap = 1.0 end
 
-    -- Ligne de plafond (sur la barre PV)
-    if UI.hpCapMarker then
-      if cap >= 0.999 then
-        UI.hpCapMarker:Hide()
-      else
-        UI.hpCapMarker:Show()
-        -- Core.Heal() caps at (baseMax*cap). Bonus HP does not extend the cap.
-        local capHp = (baseMaxHp * cap)
-        local xCap = (effMaxHp > 0) and (w * (capHp / effMaxHp)) or 0
-        if xCap < 0 then xCap = 0 elseif xCap > w then xCap = w end
-        UI.hpCapMarker:ClearAllPoints()
-        UI.hpCapMarker:SetPoint("LEFT", hpBar, "LEFT", xCap, 0)
+    -- Cache HP state for repositioning on resize.
+    UI.hpMarkerCache = { baseMaxHp = baseMaxHp, effMaxHp = effMaxHp, cap = cap }
+
+    -- Reposition threshold markers and cap marker relative to current bar width.
+    local function repositionHpMarkers()
+      local cache = UI.hpMarkerCache
+      if not cache then return end
+      local bMaxHp = cache.baseMaxHp
+      local eMaxHp = cache.effMaxHp
+      local barW = hpBar:GetWidth() or 0
+
+      for i = 1, #UI.hpMarkers do
+        local m = UI.hpMarkers[i]
+        local pct = (m.pct or 0)
+        local thresholdHp = bMaxHp * pct
+        local x = (eMaxHp > 0) and (barW * (thresholdHp / eMaxHp)) or 0
+        if x < 0 then x = 0 elseif x > barW then x = barW end
+        m:Show()
+        m:ClearAllPoints()
+        m:SetPoint("LEFT", hpBar, "LEFT", x, 0)
+      end
+
+      if UI.hpCapMarker then
+        if cache.cap >= 0.999 then
+          UI.hpCapMarker:Hide()
+        else
+          UI.hpCapMarker:Show()
+          local capHp = bMaxHp * cache.cap
+          local xCap = (eMaxHp > 0) and (barW * (capHp / eMaxHp)) or 0
+          if xCap < 0 then xCap = 0 elseif xCap > barW then xCap = barW end
+          UI.hpCapMarker:ClearAllPoints()
+          UI.hpCapMarker:SetPoint("LEFT", hpBar, "LEFT", xCap, 0)
+        end
       end
     end
+    UI.repositionHpMarkers = repositionHpMarkers
+    repositionHpMarkers()
 
     if cap >= 0.999 then
       capText:SetText("")
@@ -1113,7 +1183,7 @@ function ns.UI_Init()
     hideMarkers(UI.corruptionMarkers)
     hideMarkers(UI.insanityMarkers)
 
-    -- Resize the frame to fit the current resource bar layout.
+    -- Position content host below the last visible resource bar.
     do
       local n = barCount
       if n < 0 then n = 0 end
@@ -1124,11 +1194,8 @@ function ns.UI_Init()
         anchor = UI.resBars[n]
       end
 
-      local extraPad = (n >= 4) and 26 or 0
-      local targetH = BASE_FRAME_H + (math.max(0, n - 1) * RES_EXTRA_H) + extraPad
-      if targetH < BASE_FRAME_H then targetH = BASE_FRAME_H end
-      frame:SetHeight(targetH)
-      applyContentHostLayout(anchor, targetH - BASE_FRAME_H)
+      UI.resAnchor = anchor
+      applyContentHostLayout(anchor, 0)
     end
 
     if UI.syncHistoryWidth then
