@@ -417,11 +417,11 @@ local function showForState(targetName, state)
     tonumber(state.tempMagicBlock) or 0
   )
 
+  local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
   for i = 1, #popupFrame.hpMarkers do
     local m = popupFrame.hpMarkers[i]
-    local pct = m.pct or 0
-    local thresholdHp = baseHp * pct
-    m.pct = thresholdHp / effMaxHp
+    local thresholdHp = baseHp * (HP_THRESHOLD_PCTS[i] or 0)
+    m.pct = (effMaxHp > 0) and (thresholdHp / effMaxHp) or 0
   end
   positionMarkers(popupFrame.hpMarkers, popupFrame.hpRow.bar)
 
