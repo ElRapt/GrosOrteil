@@ -12,21 +12,101 @@ local hideMarkers          = Shared.HideMarkers
 local positionMarkers      = Shared.PositionMarkers
 local roundPct             = Shared.RoundPct
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Design System : GrosOrteil Premium Theme
+-- Warm amber/gold palette inspired by TRP3's rich WoW-authentic aesthetic.
+-- ═══════════════════════════════════════════════════════════════════════════
+local C = {
+  -- Gold family
+  GOLD          = { 1.00, 0.675, 0.125 },
+  GOLD_BRIGHT   = { 1.00, 0.82,  0.22  },
+  GOLD_LIGHT    = { 1.00, 0.90,  0.55  },
+  GOLD_DIM      = { 0.85, 0.70,  0.40  },
+  GOLD_MUTED    = { 0.55, 0.42,  0.18  },
+  -- Brown family
+  BROWN_DEEP    = { 0.08, 0.05,  0.02  },
+  BROWN_DARK    = { 0.14, 0.09,  0.04  },
+  BROWN_MED     = { 0.24, 0.17,  0.08  },
+  BROWN_WARM    = { 0.32, 0.24,  0.12  },
+  -- Cream / parchment
+  CREAM         = { 0.92, 0.86,  0.74  },
+  CREAM_DIM     = { 0.78, 0.72,  0.58  },
+  -- Text hierarchy
+  TEXT_TITLE    = { 1.00, 0.84,  0.30  },
+  TEXT_BRIGHT   = { 1.00, 0.95,  0.80  },
+  TEXT_NORMAL   = { 0.90, 0.84,  0.68  },
+  TEXT_LABEL    = { 0.82, 0.74,  0.55  },
+  TEXT_DIM      = { 0.60, 0.52,  0.36  },
+  TEXT_DISABLED = { 0.40, 0.34,  0.22  },
+  -- Functional
+  RED_HP        = { 0.80, 0.15,  0.15  },
+  BG_PANEL      = { 0.06, 0.04,  0.02  },
+}
+
+local TEX = {
+  FLAT        = "Interface/Buttons/WHITE8x8",
+  STATUSBAR   = "Interface/TargetingFrame/UI-StatusBar",
+  BG_STONE    = "Interface/DialogFrame/UI-DialogBox-Background",
+  BG_DARK     = "Interface/DialogFrame/UI-DialogBox-Background-Dark",
+  BORDER_GOLD = "Interface/DialogFrame/UI-DialogBox-Gold-Border",
+  TOOLTIP_BG  = "Interface/Tooltips/UI-Tooltip-Background",
+  TOOLTIP_BD  = "Interface/Tooltips/UI-Tooltip-Border",
+}
+
+-- Reusable backdrop definitions.
+local BACKDROP_BUTTON = {
+  bgFile   = TEX.TOOLTIP_BG,
+  edgeFile = TEX.FLAT,
+  edgeSize = 1,
+  insets   = { left = 1, right = 1, top = 1, bottom = 1 },
+}
+local BACKDROP_EDITBOX = {
+  bgFile   = TEX.TOOLTIP_BG,
+  edgeFile = TEX.FLAT,
+  edgeSize = 1,
+  insets   = { left = 1, right = 1, top = 1, bottom = 1 },
+}
+local BACKDROP_SIDEBAR = {
+  bgFile   = TEX.BG_DARK,
+  edgeFile = TEX.FLAT,
+  tile = true, tileSize = 32, edgeSize = 1,
+  insets   = { left = 0, right = 0, top = 0, bottom = 0 },
+}
+local BACKDROP_FRAME = {
+  bgFile   = TEX.BG_STONE,
+  edgeFile = TEX.BORDER_GOLD,
+  tile = true, tileSize = 32, edgeSize = 32,
+  insets   = { left = 10, right = 10, top = 10, bottom = 10 },
+}
+local BACKDROP_CONTENT = {
+  bgFile   = TEX.BG_STONE,
+  edgeFile = TEX.TOOLTIP_BD,
+  tile = true, tileSize = 32, edgeSize = 10,
+  insets   = { left = 2, right = 2, top = 2, bottom = 2 },
+}
+local BACKDROP_TAB = {
+  edgeFile = TEX.FLAT,
+  edgeSize = 1,
+}
+
 local function applyResTextColor(txt)
   if not txt or not txt.SetTextColor then return end
-  txt:SetTextColor(1, 1, 1, 1)
+  txt:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
 end
 
 local function setEditBoxEnabled(eb, enabled)
   if not eb then return end
+  local wrap = eb._wrap
   if enabled then
     if eb.Enable then eb:Enable()
     elseif eb.EnableMouse then eb:EnableMouse(true) end
     if eb.SetAlpha then eb:SetAlpha(1) end
+    if wrap and wrap.SetAlpha then wrap:SetAlpha(1) end
   else
     if eb.Disable then eb:Disable()
     elseif eb.EnableMouse then eb:EnableMouse(false) end
     if eb.SetAlpha then eb:SetAlpha(0.55) end
+    if wrap and wrap.SetAlpha then wrap:SetAlpha(0.55) end
   end
 end
 
@@ -113,6 +193,7 @@ end
 local function mkLabel(parent, text, x, y)
   local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   fs:SetPoint("TOPLEFT", x, y)
+  fs:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
   fs:SetText(text)
   return fs
 end
@@ -121,30 +202,100 @@ local function mkLabelCenter(parent, text, x, y)
   local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   fs:SetPoint("TOP", x, y)
   fs:SetJustifyH("CENTER")
+  fs:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
   fs:SetText(text)
   return fs
 end
 
+-- Styled edit box with warm dark backdrop and gold focus highlight.
 local function mkEdit(parent, w, h, x, y, onEnter)
-  local eb = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
-  eb:SetSize(w, h)
-  eb:SetPoint("TOPLEFT", x, y)
+  local wrap = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+  wrap:SetSize(w, h)
+  wrap:SetPoint("TOPLEFT", x, y)
+  wrap:SetBackdrop(BACKDROP_EDITBOX)
+  wrap:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.92)
+  wrap:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+
+  local eb = CreateFrame("EditBox", nil, wrap)
+  eb:SetPoint("TOPLEFT", 5, -2)
+  eb:SetPoint("BOTTOMRIGHT", -4, 2)
+  eb:SetFontObject("GameFontHighlightSmall")
   eb:SetAutoFocus(false)
   eb:SetNumeric(true)
+  eb:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
+
+  -- Gold border glow on focus.
+  eb:SetScript("OnEditFocusGained", function()
+    wrap:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 0.90)
+    wrap:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.95)
+  end)
+  eb:SetScript("OnEditFocusLost", function()
+    wrap:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+    wrap:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.92)
+  end)
   eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
   eb:SetScript("OnEnterPressed", function(self)
     self:ClearFocus()
     if onEnter then onEnter() end
   end)
+
+  -- Proxy size/position APIs so callers that adjust the edit box get the wrapper.
+  eb._wrap = wrap
+  eb.SetSize_orig = eb.SetSize
   return eb
 end
 
+-- Custom styled button with dark backdrop, gold border, warm hover.
 local function mkButton(parent, text, w, h, x, y, onClick)
-  local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+  local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
   b:SetSize(w, h)
   b:SetPoint("TOPLEFT", x, y)
-  b:SetText(text)
-  b:SetScript("OnClick", onClick)
+  b:SetBackdrop(BACKDROP_BUTTON)
+  b:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
+  b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
+
+  -- Highlight overlay (warm glow on hover).
+  local hl = b:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints()
+  hl:SetTexture(TEX.FLAT)
+  hl:SetColorTexture(1.0, 0.80, 0.30, 0.10)
+
+  -- Text label.
+  local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  fs:SetPoint("CENTER", 0, 0)
+  fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
+  fs:SetText(text)
+  b._fs = fs
+
+  -- Override SetText/GetText to use our custom FontString.
+  function b:SetText(t) fs:SetText(t) end
+  function b:GetText() return fs:GetText() end
+
+  -- Visual pressed state.
+  b:SetScript("OnMouseDown", function()
+    if b:IsEnabled() then fs:SetPoint("CENTER", 1, -1) end
+  end)
+  b:SetScript("OnMouseUp", function()
+    fs:SetPoint("CENTER", 0, 0)
+  end)
+
+  -- Disabled/enabled state visual overrides.
+  local origDisable = b.Disable
+  function b:Disable()
+    origDisable(self)
+    fs:SetTextColor(C.TEXT_DISABLED[1], C.TEXT_DISABLED[2], C.TEXT_DISABLED[3], 1)
+    self:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.65)
+    self:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.35)
+  end
+  local origEnable = b.Enable
+  function b:Enable()
+    origEnable(self)
+    fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
+    self:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
+    self:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
+  end
+
+  if onClick then b:SetScript("OnClick", function() onClick() end) end
   return b
 end
 
@@ -168,26 +319,47 @@ local function setNumber(eb, n)
 end
 
 local function skinBar(bar, r, g, b)
-  bar:SetStatusBarTexture("Interface/TargetingFrame/UI-StatusBar")
+  bar:SetStatusBarTexture(TEX.STATUSBAR)
   bar:SetStatusBarColor(r, g, b, 1)
 
+  -- Dark background with subtle warm tint.
   local barBg = bar:CreateTexture(nil, "BACKGROUND")
   barBg:SetAllPoints(bar)
-  barBg:SetTexture("Interface/Buttons/WHITE8x8")
-  barBg:SetColorTexture(0.05, 0.05, 0.05, 0.90)
+  barBg:SetTexture(TEX.FLAT)
+  barBg:SetColorTexture(0.04, 0.03, 0.01, 0.92)
   bar._bg = barBg
 
+  -- Top-half sheen for depth / glass effect.
   local sheen = bar:CreateTexture(nil, "OVERLAY")
-  sheen:SetTexture("Interface/Buttons/WHITE8x8")
-  sheen:SetVertexColor(1, 1, 1, 0.08)
-  sheen:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-  sheen:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+  sheen:SetTexture(TEX.FLAT)
+  sheen:SetVertexColor(1, 1, 1, 0.07)
+  sheen:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
+  sheen:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -1, -1)
   sheen:SetHeight(math.max(1, math.floor((bar:GetHeight() or 20) / 2)))
 
+  -- Bottom shadow line for inset effect.
+  local shadow = bar:CreateTexture(nil, "OVERLAY")
+  shadow:SetTexture(TEX.FLAT)
+  shadow:SetColorTexture(0, 0, 0, 0.25)
+  shadow:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 1, 1)
+  shadow:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
+  shadow:SetHeight(1)
+
+  -- Spark texture at the fill edge.
+  local spark = bar:CreateTexture(nil, "OVERLAY")
+  spark:SetTexture("Interface/CastingBar/UI-CastingBar-Spark")
+  spark:SetBlendMode("ADD")
+  spark:SetSize(12, bar:GetHeight() + 6)
+  spark:SetAlpha(0.55)
+  spark:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", 0, 0)
+  bar._spark = spark
+
+  -- Gold-trimmed border frame.
   local border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
-  border:SetAllPoints(bar)
-  border:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
-  border:SetBackdropBorderColor(0.15, 0.15, 0.15, 0.85)
+  border:SetPoint("TOPLEFT", -1, 1)
+  border:SetPoint("BOTTOMRIGHT", 1, -1)
+  border:SetBackdrop({ edgeFile = TEX.FLAT, edgeSize = 1 })
+  border:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.60)
   bar._border = border
 end
 
@@ -262,37 +434,62 @@ function ns.UI_Init()
     end
   end)
 
-  frame:SetBackdrop({
-    bgFile = "Interface/DialogFrame/UI-DialogBox-Background-Dark",
-    edgeFile = "Interface/DialogFrame/UI-DialogBox-Gold-Border",
-    tile = true, tileSize = 24, edgeSize = 24,
-    insets = { left = 6, right = 6, top = 6, bottom = 6 },
-  })
-  frame:SetBackdropColor(0.04, 0.04, 0.05, 0.95)
+  frame:SetBackdrop(BACKDROP_FRAME)
+  frame:SetBackdropColor(0.95, 0.90, 0.80, 0.98)
 
-  local header = frame:CreateTexture(nil, "ARTWORK")
-  header:SetPoint("TOPLEFT", 8, -8)
-  header:SetPoint("TOPRIGHT", -8, -8)
-  header:SetHeight(26)
-  header:SetTexture("Interface/Buttons/WHITE8x8")
-  header:SetColorTexture(0.14, 0.10, 0.05, 0.50)
-  frame._header = header
+  -- Inner shadow frame for depth (inset below the gold border).
+  local innerShadow = CreateFrame("Frame", nil, frame)
+  innerShadow:SetPoint("TOPLEFT", 8, -8)
+  innerShadow:SetPoint("BOTTOMRIGHT", -8, 8)
+  innerShadow:SetFrameLevel(frame:GetFrameLevel() + 1)
+  local shadowTop = innerShadow:CreateTexture(nil, "OVERLAY")
+  shadowTop:SetTexture(TEX.FLAT)
+  shadowTop:SetColorTexture(0, 0, 0, 0.18)
+  shadowTop:SetPoint("TOPLEFT")
+  shadowTop:SetPoint("TOPRIGHT")
+  shadowTop:SetHeight(3)
+  local shadowLeft = innerShadow:CreateTexture(nil, "OVERLAY")
+  shadowLeft:SetTexture(TEX.FLAT)
+  shadowLeft:SetColorTexture(0, 0, 0, 0.12)
+  shadowLeft:SetPoint("TOPLEFT", 0, -3)
+  shadowLeft:SetPoint("BOTTOMLEFT")
+  shadowLeft:SetWidth(2)
 
+  -- Header band: warm dark gradient behind the title area.
+  local headerBand = frame:CreateTexture(nil, "ARTWORK")
+  headerBand:SetPoint("TOPLEFT",  frame, "TOPLEFT",  10, -10)
+  headerBand:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+  headerBand:SetHeight(28)
+  headerBand:SetTexture(TEX.FLAT)
+  headerBand:SetColorTexture(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.50)
+
+  -- Gold separator below header band.
   local headerLine = frame:CreateTexture(nil, "ARTWORK")
-  headerLine:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
-  headerLine:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 0)
-  headerLine:SetHeight(1)
-  headerLine:SetTexture("Interface/Buttons/WHITE8x8")
-  headerLine:SetColorTexture(1.0, 0.675, 0.125, 0.30)
+  headerLine:SetPoint("TOPLEFT",  frame, "TOPLEFT",  PAD_X, -38)
+  headerLine:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD_X, -38)
+  headerLine:SetHeight(2)
+  headerLine:SetTexture(TEX.FLAT)
+  headerLine:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.45)
   frame._headerLine = headerLine
+
+  -- Subtle second line for depth effect.
+  local headerLine2 = frame:CreateTexture(nil, "ARTWORK")
+  headerLine2:SetPoint("TOPLEFT",  headerLine, "BOTTOMLEFT",  0, 0)
+  headerLine2:SetPoint("TOPRIGHT", headerLine, "BOTTOMRIGHT", 0, 0)
+  headerLine2:SetHeight(1)
+  headerLine2:SetTexture(TEX.FLAT)
+  headerLine2:SetColorTexture(0, 0, 0, 0.20)
 
   frame:SetPoint(db.ui.point, UIParent, db.ui.point, db.ui.x, db.ui.y)
   if db.ui.shown then frame:Show() else frame:Hide() end
 
-  -- Titre
+  -- Title: large gold text with shadow.
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   UI.title = title
-  title:SetPoint("TOP", 0, -12)
+  title:SetPoint("TOP", 0, -15)
+  title:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  title:SetShadowOffset(1, -1)
+  title:SetShadowColor(0, 0, 0, 0.65)
   updateWindowTitle()
 
   -- Retry TRP3 hook once after a delay in case TRP3 initializes after us.
@@ -304,11 +501,15 @@ function ns.UI_Init()
   end
 
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", -2, -2)
+  close:SetPoint("TOPRIGHT", -4, -4)
+  close:SetSize(22, 22)
 
   -- Size label shown in the centre during resize.
-  local sizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+  local sizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   sizeLabel:SetPoint("CENTER", frame, "CENTER")
+  sizeLabel:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
+  sizeLabel:SetShadowOffset(1, -1)
+  sizeLabel:SetShadowColor(0, 0, 0, 0.80)
   sizeLabel:Hide()
 
   -- Manual delta-based resize state (declared before OnSizeChanged so the closure can read it).
@@ -382,51 +583,98 @@ function ns.UI_Init()
 
   -- Main body: sidebar (left) + content (right)
   local body = CreateFrame("Frame", nil, frame)
-  body:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD_X, -34)
+  body:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD_X, -40)
   body:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD_X, PAD_X)
   UI.body = body
 
+  -- ── Sidebar ───────────────────────────────────────────────────────────
   local sidebar = CreateFrame("Frame", nil, body, "BackdropTemplate")
   sidebar:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
   sidebar:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
   sidebar:SetWidth(SIDEBAR_W)
-  sidebar:SetBackdrop({ bgFile = "Interface/Buttons/WHITE8x8", edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
-  sidebar:SetBackdropColor(0.06, 0.05, 0.04, 0.55)
-  sidebar:SetBackdropBorderColor(0.3, 0.25, 0.15, 0.45)
+  sidebar:SetBackdrop(BACKDROP_SIDEBAR)
+  sidebar:SetBackdropColor(0.12, 0.08, 0.04, 0.98)
+  sidebar:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.50)
   UI.sidebar = sidebar
 
-  local content = CreateFrame("Frame", nil, body)
+  -- Top gradient overlay on sidebar for depth.
+  local sidebarTopGrad = sidebar:CreateTexture(nil, "ARTWORK")
+  sidebarTopGrad:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 1, -1)
+  sidebarTopGrad:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -1, -1)
+  sidebarTopGrad:SetHeight(40)
+  sidebarTopGrad:SetTexture(TEX.FLAT)
+  sidebarTopGrad:SetColorTexture(0, 0, 0, 0.18)
+  sidebarTopGrad:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 1))
+
+  -- Bottom gradient overlay on sidebar.
+  local sidebarBotGrad = sidebar:CreateTexture(nil, "ARTWORK")
+  sidebarBotGrad:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", 1, 1)
+  sidebarBotGrad:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -1, 1)
+  sidebarBotGrad:SetHeight(30)
+  sidebarBotGrad:SetTexture(TEX.FLAT)
+  sidebarBotGrad:SetColorTexture(0, 0, 0, 0.15)
+  sidebarBotGrad:SetGradient("VERTICAL", CreateColor(0, 0, 0, 1), CreateColor(0, 0, 0, 0))
+
+  -- Gold vertical divider (double line for depth).
+  local sidebarDiv = body:CreateTexture(nil, "ARTWORK")
+  sidebarDiv:SetWidth(2)
+  sidebarDiv:SetPoint("TOPLEFT",    sidebar, "TOPRIGHT",    0, 0)
+  sidebarDiv:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMRIGHT", 0, 0)
+  sidebarDiv:SetTexture(TEX.FLAT)
+  sidebarDiv:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.35)
+
+  local sidebarShadow = body:CreateTexture(nil, "ARTWORK")
+  sidebarShadow:SetWidth(4)
+  sidebarShadow:SetPoint("TOPLEFT",    sidebarDiv, "TOPRIGHT",    0, 0)
+  sidebarShadow:SetPoint("BOTTOMLEFT", sidebarDiv, "BOTTOMRIGHT", 0, 0)
+  sidebarShadow:SetTexture(TEX.FLAT)
+  sidebarShadow:SetColorTexture(0, 0, 0, 0.12)
+
+  -- ── Content area ──────────────────────────────────────────────────────
+  local content = CreateFrame("Frame", nil, body, "BackdropTemplate")
   content:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", GUTTER, 0)
   content:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
+  content:SetBackdrop(BACKDROP_CONTENT)
+  content:SetBackdropColor(C.CREAM[1], C.CREAM[2], C.CREAM[3], 0.25)
+  content:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.30)
   UI.content = content
 
-  -- Barres
+  -- Inner top shadow for inset depth on content.
+  local contentTopShadow = content:CreateTexture(nil, "BORDER")
+  contentTopShadow:SetPoint("TOPLEFT", content, "TOPLEFT", 2, -2)
+  contentTopShadow:SetPoint("TOPRIGHT", content, "TOPRIGHT", -2, -2)
+  contentTopShadow:SetHeight(3)
+  contentTopShadow:SetTexture(TEX.FLAT)
+  contentTopShadow:SetColorTexture(0, 0, 0, 0.10)
+
+  -- ── HP Bar ─────────────────────────────────────────────────────────────
   local hpBar = CreateFrame("StatusBar", nil, content)
   UI.hpBar = hpBar
-  hpBar:SetHeight(20)
-  hpBar:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
-  hpBar:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+  hpBar:SetHeight(24)
+  hpBar:SetPoint("TOPLEFT", content, "TOPLEFT", 3, -3)
+  hpBar:SetPoint("RIGHT", content, "RIGHT", -3, 0)
   hpBar:SetMinMaxValues(0, 1)
   hpBar:SetValue(1)
-  skinBar(hpBar, 0.85, 0.12, 0.12) -- rouge
+  skinBar(hpBar, C.RED_HP[1], C.RED_HP[2], C.RED_HP[3])
 
   local hpText = hpBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   UI.hpText = hpText
   hpText:SetPoint("CENTER")
-
+  hpText:SetShadowOffset(1, -1)
+  hpText:SetShadowColor(0, 0, 0, 0.80)
 
   local blockOverlay = hpBar:CreateTexture(nil, "OVERLAY")
   UI.hpBlockOverlay = blockOverlay
-  blockOverlay:SetTexture("Interface/Buttons/WHITE8x8")
-  blockOverlay:SetColorTexture(0.65, 0.65, 0.65, 0.55)
+  blockOverlay:SetTexture(TEX.FLAT)
+  blockOverlay:SetColorTexture(0.60, 0.60, 0.60, 0.50)
   blockOverlay:SetPoint("TOP", hpBar, "TOP", 0, 0)
   blockOverlay:SetPoint("BOTTOM", hpBar, "BOTTOM", 0, 0)
   blockOverlay:Hide()
 
   local magicOverlay = hpBar:CreateTexture(nil, "OVERLAY")
   UI.hpMagicBlockOverlay = magicOverlay
-  magicOverlay:SetTexture("Interface/Buttons/WHITE8x8")
-  magicOverlay:SetColorTexture(1.0, 0.82, 0.22, 0.60) -- doré
+  magicOverlay:SetTexture(TEX.FLAT)
+  magicOverlay:SetColorTexture(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 0.55)
   magicOverlay:SetPoint("TOP", hpBar, "TOP", 0, 0)
   magicOverlay:SetPoint("BOTTOM", hpBar, "BOTTOM", 0, 0)
   magicOverlay:Hide()
@@ -481,7 +729,10 @@ function ns.UI_Init()
 
   local capText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   UI.capText = capText
-  capText:SetPoint("TOPLEFT", hpBar, "BOTTOMLEFT", 0, -6)
+  capText:SetPoint("TOPLEFT", hpBar, "BOTTOMLEFT", 3, -4)
+  capText:SetTextColor(C.GOLD_DIM[1], C.GOLD_DIM[2], C.GOLD_DIM[3], 1)
+  capText:SetShadowOffset(1, -1)
+  capText:SetShadowColor(0, 0, 0, 0.60)
   capText:SetText("")
 
   -- Ressource bars (up to 4, depending on selected class)
@@ -499,7 +750,7 @@ function ns.UI_Init()
     else
       bar:SetPoint("TOPLEFT", UI.resBars[idx - 1], "BOTTOMLEFT", 0, -RES_GAP)
     end
-    bar:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    bar:SetPoint("RIGHT", content, "RIGHT", -3, 0)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
     skinBar(bar, 0.2, 0.55, 1.0)
@@ -510,7 +761,7 @@ function ns.UI_Init()
       bar._stackSegs = {}
       for j = 1, 4 do
         local seg = bar:CreateTexture(nil, "OVERLAY")
-        seg:SetTexture("Interface\\Buttons\\WHITE8x8")
+        seg:SetTexture(TEX.FLAT)
         seg:SetVertexColor(1, 1, 1, 1)
         seg:Hide()
         bar._stackSegs[j] = seg
@@ -636,20 +887,47 @@ function ns.UI_Init()
       if not (UI.tabHidden and UI.tabHidden[i]) then
         local disabled = UI.tabDisabled and UI.tabDisabled[i]
         if i == active then
+          -- Active: warm lit background, bright gold text, accent visible.
           b:Disable()
-          if b._bg then b._bg:SetColorTexture(0.20, 0.20, 0.24, 0.95) end
+          if b._bg then
+            b._bg:SetColorTexture(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], 0.92)
+          end
           if b._accent then b._accent:Show() end
-          if b._text and b._text.SetTextColor then b._text:SetTextColor(1, 1, 1, 1) end
+          if b._accentGlow then b._accentGlow:Show() end
+          if b._text then
+            b._text:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
+          end
+          if b.SetBackdropBorderColor then
+            b:SetBackdropBorderColor(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.50)
+          end
         elseif disabled then
+          -- Disabled: dim and muted.
           b:Disable()
-          if b._bg then b._bg:SetColorTexture(0.10, 0.10, 0.11, 0.55) end
+          if b._bg then
+            b._bg:SetColorTexture(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.40)
+          end
           if b._accent then b._accent:Hide() end
-          if b._text and b._text.SetTextColor then b._text:SetTextColor(0.50, 0.50, 0.50, 1) end
+          if b._accentGlow then b._accentGlow:Hide() end
+          if b._text then
+            b._text:SetTextColor(C.TEXT_DISABLED[1], C.TEXT_DISABLED[2], C.TEXT_DISABLED[3], 1)
+          end
+          if b.SetBackdropBorderColor then
+            b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.15)
+          end
         else
+          -- Normal: subtle warm background, readable text.
           b:Enable()
-          if b._bg then b._bg:SetColorTexture(0.12, 0.12, 0.14, 0.75) end
+          if b._bg then
+            b._bg:SetColorTexture(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.55)
+          end
           if b._accent then b._accent:Hide() end
-          if b._text and b._text.SetTextColor then b._text:SetTextColor(0.9, 0.9, 0.9, 1) end
+          if b._accentGlow then b._accentGlow:Hide() end
+          if b._text then
+            b._text:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
+          end
+          if b.SetBackdropBorderColor then
+            b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.25)
+          end
         end
       end
     end
@@ -673,40 +951,66 @@ function ns.UI_Init()
     "Actions",          -- 10
   }
 
-  local NAV_PAD = 10
-  local NAV_GAP = 6
-  local NAV_BTN_H = 28
+  local NAV_PAD = 5
+  local NAV_GAP = 1
+  local NAV_BTN_H = 30
 
   local function mkTab(text, idx)
     local tab = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
     tab:SetSize(SIDEBAR_W - (NAV_PAD * 2), NAV_BTN_H)
-    tab:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
-    tab:SetBackdropBorderColor(0, 0, 0, 0.70)
+    tab:SetBackdrop(BACKDROP_TAB)
+    tab:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.25)
 
+    -- Background fill.
     local tabBg = tab:CreateTexture(nil, "BACKGROUND")
     tabBg:SetAllPoints(tab)
-    tabBg:SetTexture("Interface/Buttons/WHITE8x8")
-    tabBg:SetColorTexture(0.12, 0.12, 0.14, 0.75)
+    tabBg:SetTexture(TEX.FLAT)
+    tabBg:SetColorTexture(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.55)
     tab._bg = tabBg
 
+    -- Hover highlight: warm gold tint.
     local hl = tab:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints(tab)
-    hl:SetTexture("Interface/Buttons/WHITE8x8")
-    hl:SetColorTexture(1, 1, 1, 0.06)
+    hl:SetPoint("TOPLEFT", 1, -1)
+    hl:SetPoint("BOTTOMRIGHT", -1, 1)
+    hl:SetTexture(TEX.FLAT)
+    hl:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.08)
 
+    -- Left gold accent stripe (shown when active).
     local accent = tab:CreateTexture(nil, "ARTWORK")
-    accent:SetTexture("Interface/Buttons/WHITE8x8")
-    accent:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, 0)
+    accent:SetTexture(TEX.FLAT)
+    accent:SetPoint("TOPLEFT",    tab, "TOPLEFT",    0, 0)
     accent:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
     accent:SetWidth(3)
-    accent:SetColorTexture(1.0, 0.82, 0.22, 0.85)
+    accent:SetColorTexture(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
     accent:Hide()
     tab._accent = accent
 
-    local fs = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    fs:SetPoint("LEFT", tab, "LEFT", 10, 0)
-    fs:SetPoint("RIGHT", tab, "RIGHT", -10, 0)
+    -- Accent glow: soft additive glow beside the accent bar.
+    local accentGlow = tab:CreateTexture(nil, "ARTWORK")
+    accentGlow:SetTexture(TEX.FLAT)
+    accentGlow:SetPoint("TOPLEFT",    accent, "TOPRIGHT",    0, 0)
+    accentGlow:SetPoint("BOTTOMLEFT", accent, "BOTTOMRIGHT", 0, 0)
+    accentGlow:SetWidth(8)
+    accentGlow:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.08)
+    accentGlow:SetBlendMode("ADD")
+    accentGlow:Hide()
+    tab._accentGlow = accentGlow
+
+    -- Bottom separator line between tabs.
+    local sep = tab:CreateTexture(nil, "ARTWORK")
+    sep:SetTexture(TEX.FLAT)
+    sep:SetPoint("BOTTOMLEFT",  tab, "BOTTOMLEFT",  4, 0)
+    sep:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -4, 0)
+    sep:SetHeight(1)
+    sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.12)
+
+    local fs = tab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    fs:SetPoint("LEFT",  tab, "LEFT",  14, 0)
+    fs:SetPoint("RIGHT", tab, "RIGHT", -8, 0)
     fs:SetJustifyH("LEFT")
+    fs:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
+    fs:SetShadowOffset(1, -1)
+    fs:SetShadowColor(0, 0, 0, 0.50)
     fs:SetText(text)
     tab._text = fs
 
@@ -771,8 +1075,8 @@ function ns.UI_Init()
   -- Tab 6 is always hidden; familiar tabs (8-10) start hidden (character section is default).
   UI.tabHidden[6] = true
 
-  -- Section switcher buttons at the bottom of the sidebar.
-  local SECT_BTN_H = 22
+  -- ── Section switcher buttons (bottom of sidebar) ────────────────────
+  local SECT_BTN_H = 24
   local SECT_BTN_W = math.floor((SIDEBAR_W - NAV_PAD * 2 - 4) / 2)
 
   local sectChar = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
@@ -780,13 +1084,19 @@ function ns.UI_Init()
 
   local function styleSectBtn(btn, active)
     if active then
-      btn:SetBackdropColor(0.20, 0.16, 0.06, 0.95)
-      btn:SetBackdropBorderColor(0.85, 0.68, 0.20, 0.90)
-      if btn._text then btn._text:SetTextColor(1.0, 0.85, 0.25, 1) end
+      btn:SetBackdropColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], 0.95)
+      btn:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 0.85)
+      if btn._text then
+        btn._text:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
+      end
+      if btn._topAccent then btn._topAccent:Show() end
     else
-      btn:SetBackdropColor(0.10, 0.10, 0.11, 0.75)
-      btn:SetBackdropBorderColor(0.25, 0.25, 0.28, 0.55)
-      if btn._text then btn._text:SetTextColor(0.70, 0.70, 0.70, 1) end
+      btn:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.60)
+      btn:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+      if btn._text then
+        btn._text:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+      end
+      if btn._topAccent then btn._topAccent:Hide() end
     end
   end
 
@@ -807,13 +1117,27 @@ function ns.UI_Init()
   local function makeSectBtn(btn, label, x, onClick)
     btn:SetSize(SECT_BTN_W, SECT_BTN_H)
     btn:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", x, NAV_PAD)
-    btn:SetBackdrop({ bgFile = "Interface/Buttons/WHITE8x8", edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
+    btn:SetBackdrop(BACKDROP_SIDEBAR)
+    -- Warm hover glow.
     local hl = btn:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints(btn)
-    hl:SetTexture("Interface/Buttons/WHITE8x8")
-    hl:SetColorTexture(1, 1, 1, 0.06)
-    local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    lbl:SetPoint("CENTER")
+    hl:SetPoint("TOPLEFT", 1, -1)
+    hl:SetPoint("BOTTOMRIGHT", -1, 1)
+    hl:SetTexture(TEX.FLAT)
+    hl:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.08)
+    -- Top gold accent line (shown when active).
+    local topAccent = btn:CreateTexture(nil, "ARTWORK")
+    topAccent:SetTexture(TEX.FLAT)
+    topAccent:SetPoint("TOPLEFT", btn, "TOPLEFT", 2, 0)
+    topAccent:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -2, 0)
+    topAccent:SetHeight(2)
+    topAccent:SetColorTexture(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 0.80)
+    topAccent:Hide()
+    btn._topAccent = topAccent
+    -- Label.
+    local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lbl:SetPoint("CENTER", 0, 0)
+    lbl:SetShadowOffset(1, -1)
+    lbl:SetShadowColor(0, 0, 0, 0.50)
     lbl:SetText(label)
     btn._text = lbl
     btn:SetScript("OnClick", onClick)
@@ -821,6 +1145,22 @@ function ns.UI_Init()
 
   makeSectBtn(sectChar, "Personnage", NAV_PAD,                    function() setSidebarSection(1) end)
   makeSectBtn(sectPet,  "Familier",   NAV_PAD + SECT_BTN_W + 4,  function() setSidebarSection(2) end)
+
+  -- Decorative separator above section switcher.
+  local sectSep = sidebar:CreateTexture(nil, "ARTWORK")
+  sectSep:SetTexture(TEX.FLAT)
+  sectSep:SetPoint("BOTTOMLEFT",  sidebar, "BOTTOMLEFT",  NAV_PAD + 6, SECT_BTN_H + NAV_PAD + 6)
+  sectSep:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -NAV_PAD - 6, SECT_BTN_H + NAV_PAD + 6)
+  sectSep:SetHeight(1)
+  sectSep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.25)
+
+  -- Decorative diamond in the center of the separator.
+  local sectDiamond = sidebar:CreateTexture(nil, "ARTWORK")
+  sectDiamond:SetTexture(TEX.FLAT)
+  sectDiamond:SetSize(5, 5)
+  sectDiamond:SetPoint("CENTER", sectSep, "CENTER", 0, 0)
+  sectDiamond:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.35)
+  sectDiamond:SetRotation(math.rad(45))
 
   -- Onglet 1 : PV
   local hpCur, hpMax
@@ -944,6 +1284,15 @@ function ns.UI_Init()
   local aArmorApply = mkRowAnchor(pageArmor, 90, -64)
   mkButton(aArmorApply, "Appliquer", 90, 20, 0, 0, applyAllArmor)
 
+  -- Decorative separator between sections.
+  local armorSep = pageArmor:CreateTexture(nil, "ARTWORK")
+  armorSep:SetTexture(TEX.FLAT)
+  armorSep:SetPoint("LEFT", pageArmor, "LEFT", 20, 0)
+  armorSep:SetPoint("RIGHT", pageArmor, "RIGHT", -20, 0)
+  armorSep:SetPoint("TOP", pageArmor, "TOP", 0, -92)
+  armorSep:SetHeight(1)
+  armorSep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
+
   -- ── Blocage temporaire ──────────────
   local aBlock1 = mkRowAnchor(pageArmor, 280, -100)
   mkLabel(aBlock1, "Blocage (temp.)", 0, -2)
@@ -976,8 +1325,20 @@ function ns.UI_Init()
 
   -- Onglet 7 : Historique
   do
+    -- Section header for History page.
+    local histHeader = pageHistory:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    histHeader:SetPoint("TOPLEFT", pageHistory, "TOPLEFT", 4, -2)
+    histHeader:SetTextColor(C.GOLD_DIM[1], C.GOLD_DIM[2], C.GOLD_DIM[3], 1)
+    histHeader:SetText("Historique des évènements")
+    local histHeaderLine = pageHistory:CreateTexture(nil, "ARTWORK")
+    histHeaderLine:SetTexture(TEX.FLAT)
+    histHeaderLine:SetPoint("TOPLEFT", histHeader, "BOTTOMLEFT", 0, -2)
+    histHeaderLine:SetPoint("RIGHT", pageHistory, "RIGHT", -4, 0)
+    histHeaderLine:SetHeight(1)
+    histHeaderLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.30)
+
     local sf = CreateFrame("ScrollFrame", nil, pageHistory, "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT", pageHistory, "TOPLEFT", 2, -4)
+    sf:SetPoint("TOPLEFT", histHeaderLine, "BOTTOMLEFT", 0, -4)
     sf:SetPoint("BOTTOMRIGHT", pageHistory, "BOTTOMRIGHT", -20, 44)
     UI.historyScroll = sf
 
@@ -986,11 +1347,12 @@ function ns.UI_Init()
     sf:SetScrollChild(child)
     UI.historyChild = child
 
-    local txt = child:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local txt = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     txt:SetPoint("TOPLEFT", 0, 0)
     txt:SetJustifyH("LEFT")
     txt:SetJustifyV("TOP")
     txt:SetWidth(CONTENT_W - 72)
+    txt:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
     txt:SetText("")
     UI.historyText = txt
 
@@ -1167,8 +1529,14 @@ function ns.UI_Init()
     local b = CreateFrame("Button", nil, classStrip, "BackdropTemplate")
     b:SetSize(CLASS_BTN_SIZE, CLASS_BTN_SIZE)
     b.classKey = classKey
-    b:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
-    b:SetBackdropBorderColor(0, 0, 0, 0.85)
+
+    -- Double border: dark inner + gold outer for selected state.
+    b:SetBackdrop({
+      edgeFile = TEX.FLAT,
+      edgeSize = 2,
+      insets = { left = 0, right = 0, top = 0, bottom = 0 },
+    })
+    b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
 
     local row = (idx <= classBtnPerRow) and 1 or 2
     local idxInRow = (row == 1) and idx or (idx - classBtnPerRow)
@@ -1176,12 +1544,26 @@ function ns.UI_Init()
     local x = (idxInRow - 1) * (CLASS_BTN_SIZE + CLASS_BTN_GAP_X)
     b:SetPoint("TOPLEFT", anchor, "TOPLEFT", x, 0)
 
+    -- Dark background behind the icon (visible in corners).
+    local iconBg = b:CreateTexture(nil, "BACKGROUND")
+    iconBg:SetPoint("TOPLEFT", 2, -2)
+    iconBg:SetPoint("BOTTOMRIGHT", -2, 2)
+    iconBg:SetTexture(TEX.FLAT)
+    iconBg:SetColorTexture(0.04, 0.03, 0.01, 1)
+
     local tex = b:CreateTexture(nil, "ARTWORK")
     tex:ClearAllPoints()
-    tex:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1)
-    tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
+    tex:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -2)
+    tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
     b.tex = tex
     setClassIconTexCoords(tex, classKey)
+
+    -- Hover highlight.
+    local hl = b:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetPoint("TOPLEFT", 2, -2)
+    hl:SetPoint("BOTTOMRIGHT", -2, 2)
+    hl:SetTexture(TEX.FLAT)
+    hl:SetColorTexture(1, 1, 1, 0.15)
 
     b:SetScript("OnClick", function()
       if Core and Core.SetClassKey then Core.SetClassKey(classKey) end
@@ -1571,10 +1953,10 @@ function ns.UI_Init()
         if b and b.classKey then
           if b.classKey == s.classKey then
             b:SetAlpha(1)
-            b:SetBackdropBorderColor(1, 1, 1, 0.9)
+            b:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
           else
-            b:SetAlpha(0.75)
-            b:SetBackdropBorderColor(0, 0, 0, 0.85)
+            b:SetAlpha(0.70)
+            b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
           end
         end
       end
