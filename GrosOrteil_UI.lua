@@ -6,7 +6,6 @@ local Shared = ns.Shared
 local UI = {}
 ns.UI = UI
 
-local CLASS_STYLES         = Shared.CLASS_STYLES
 local getResProfile        = Shared.GetResProfile
 local getKeysForIdx        = Shared.GetKeysForIdx
 local hideMarkers          = Shared.HideMarkers
@@ -610,12 +609,21 @@ function ns.UI_Init()
   UI.tabHidden = {}
   UI.activeTab = 1
 
+  -- 1 = character section, 2 = familiar section.
+  local activeSection    = 1
+  local lastState        = nil
+  local refreshHpDisplay   -- forward declaration; assigned after hpBar is created
+  local onChangeCallback   -- forward declaration; allows setSidebarSection to trigger a full re-render
+
   local function setTab(active)
     if UI.tabDisabled and UI.tabDisabled[active] then
       return
     end
+    -- Don't activate a tab that belongs to the inactive section.
+    if active <= 7 and activeSection ~= 1 then return end
+    if active >= 8 and activeSection ~= 2 then return end
     if UI.tabHidden and UI.tabHidden[active] then
-      setTab(1)
+      setTab(activeSection == 1 and 1 or 8)
       return
     end
     UI.activeTab = active
@@ -653,13 +661,16 @@ function ns.UI_Init()
 
   -- Sidebar navigation (vertical tabs)
   local TAB_TEXTS = {
-    "Points de vie",
-    "Ressources",
-    "Classes",
-    "Armure & blocage",
-    "Actions",
-    "Familier",
-    "Historique",
+    "Points de vie",    -- 1  character section
+    "Ressources",       -- 2
+    "Classes",          -- 3
+    "Armure & blocage", -- 4
+    "Actions",          -- 5
+    "",                 -- 6  reserved slot (always hidden)
+    "Historique",       -- 7
+    "Points de vie",    -- 8  familiar section
+    "Armure",           -- 9
+    "Actions",          -- 10
   }
 
   local NAV_PAD = 10
@@ -724,7 +735,9 @@ function ns.UI_Init()
     for i = 1, #UI.tabs do
       local tab = UI.tabs[i]
       if not tab then break end
-      if UI.tabHidden and UI.tabHidden[i] then
+      -- Hide tabs that belong to the inactive section or are explicitly hidden.
+      local sectionHide = (activeSection == 1 and i >= 8) or (activeSection == 2 and i <= 7)
+      if (UI.tabHidden and UI.tabHidden[i]) or sectionHide then
         tab:Hide()
       else
         tab:Show()
@@ -743,15 +756,71 @@ function ns.UI_Init()
     mkTab(TAB_TEXTS[i], i)
   end
 
-  local pageHP = mkPage()
-  local pageRes = mkPage()
-  local pageClasses = mkPage()
-  local pageArmor = mkPage()
-  local pageCombat = mkPage()
-  local pagePet = mkPage()
-  local pageHistory = mkPage()
+  local pageHP      = mkPage()   -- 1
+  local pageRes     = mkPage()   -- 2
+  local pageClasses = mkPage()   -- 3
+  local pageArmor   = mkPage()   -- 4
+  local pageCombat  = mkPage()   -- 5
+  mkPage()                       -- 6 (reserved slot, always hidden)
+  local pageHistory = mkPage()   -- 7
+  local pagePetHP     = mkPage() -- 8: familiar – Points de vie
+  local pagePetArmor  = mkPage() -- 9: familiar – Armure
+  local pagePetCombat = mkPage() -- 10: familiar – Actions
   UI.pageHistory = pageHistory
-  UI.pagePet = pagePet
+
+  -- Tab 6 is always hidden; familiar tabs (8-10) start hidden (character section is default).
+  UI.tabHidden[6] = true
+
+  -- Section switcher buttons at the bottom of the sidebar.
+  local SECT_BTN_H = 22
+  local SECT_BTN_W = math.floor((SIDEBAR_W - NAV_PAD * 2 - 4) / 2)
+
+  local sectChar = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
+  local sectPet  = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
+
+  local function styleSectBtn(btn, active)
+    if active then
+      btn:SetBackdropColor(0.20, 0.16, 0.06, 0.95)
+      btn:SetBackdropBorderColor(0.85, 0.68, 0.20, 0.90)
+      if btn._text then btn._text:SetTextColor(1.0, 0.85, 0.25, 1) end
+    else
+      btn:SetBackdropColor(0.10, 0.10, 0.11, 0.75)
+      btn:SetBackdropBorderColor(0.25, 0.25, 0.28, 0.55)
+      if btn._text then btn._text:SetTextColor(0.70, 0.70, 0.70, 1) end
+    end
+  end
+
+  local function setSidebarSection(sect)
+    activeSection = sect
+    repositionSidebarTabs()
+    styleSectBtn(sectChar, sect == 1)
+    styleSectBtn(sectPet,  sect == 2)
+    if sect == 1 then
+      if UI.activeTab and UI.activeTab >= 8 then setTab(1) end
+    else
+      if not UI.activeTab or UI.activeTab < 8 then setTab(8) end
+    end
+    -- Full re-render for the newly active section.
+    if lastState and onChangeCallback then onChangeCallback(lastState) end
+  end
+
+  local function makeSectBtn(btn, label, x, onClick)
+    btn:SetSize(SECT_BTN_W, SECT_BTN_H)
+    btn:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", x, NAV_PAD)
+    btn:SetBackdrop({ bgFile = "Interface/Buttons/WHITE8x8", edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
+    local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints(btn)
+    hl:SetTexture("Interface/Buttons/WHITE8x8")
+    hl:SetColorTexture(1, 1, 1, 0.06)
+    local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    lbl:SetPoint("CENTER")
+    lbl:SetText(label)
+    btn._text = lbl
+    btn:SetScript("OnClick", onClick)
+  end
+
+  makeSectBtn(sectChar, "Personnage", NAV_PAD,                    function() setSidebarSection(1) end)
+  makeSectBtn(sectPet,  "Familier",   NAV_PAD + SECT_BTN_W + 4,  function() setSidebarSection(2) end)
 
   -- Onglet 1 : PV
   local hpCur, hpMax, tempHpEB
@@ -776,15 +845,6 @@ function ns.UI_Init()
   mkButton(aHP2, "Appliquer", 90, 20, 206, 0, applyAllHP)
 
   -- Onglet 2 : Ressource
-  local aResHeader = mkRowAnchor(pageRes, 420, -6)
-  UI.resPageLabel = mkLabel(aResHeader, "Ressource", 0, 0)
-
-  local resDeltaEB
-  local aResControls = mkRowAnchor(pageRes, 420, -32)
-  UI.resDeltaLabel = mkLabel(aResControls, "Valeur (±)", 0, -2)
-  resDeltaEB = mkEdit(aResControls, 70, 20, 96, 0)
-  UI.resDeltaEB = resDeltaEB
-
   UI.resRow = UI.resRow or {}
   UI.resRowLabel = UI.resRowLabel or {}
   UI.resRowCur = UI.resRowCur or {}
@@ -809,8 +869,6 @@ function ns.UI_Init()
     end
   end
 
-  mkButton(aResControls, "Appliquer", 90, 20, 176, 0, applyAllRes)
-
   local function mkResRow(idx, y)
     local row = CreateFrame("Frame", nil, pageRes)
     row:SetSize(330, 24)
@@ -832,14 +890,12 @@ function ns.UI_Init()
 
     mkButton(row, "+", 28, 20, 270, 2, function()
       if Core and Core.AddResIndex then
-        local targetIdx = row.resIdx or idx
-        Core.AddResIndex(targetIdx, getNumber(resDeltaEB) or 0)
+        Core.AddResIndex(row.resIdx or idx, 1)
       end
     end)
     mkButton(row, "-", 28, 20, 302, 2, function()
       if Core and Core.AddResIndex then
-        local targetIdx = row.resIdx or idx
-        Core.AddResIndex(targetIdx, -(getNumber(resDeltaEB) or 0))
+        Core.AddResIndex(row.resIdx or idx, -1)
       end
     end)
 
@@ -847,13 +903,13 @@ function ns.UI_Init()
   end
 
   -- Rows are shown/hidden based on selected class.
-  mkResRow(1, -60)
-  mkResRow(2, -88)
-  mkResRow(3, -116)
-  mkResRow(4, -144)
-  mkResRow(5, -172)
+  mkResRow(1, -6)
+  mkResRow(2, -34)
+  mkResRow(3, -62)
+  mkResRow(4, -90)
+  mkResRow(5, -118)
 
-  UI.noResHint = mkLabelCenter(pageRes, "Aucune ressource pour cette classe.", 0, -110)
+  UI.noResHint = mkLabelCenter(pageRes, "Aucune ressource pour cette classe.", 0, -40)
   UI.noResHint:Hide()
 
   -- Resources tab can be disabled for classes without resources (eg Warrior).
@@ -959,7 +1015,7 @@ function ns.UI_Init()
     UI.historyClear = clearBtn
   end
 
-  -- Onglet 8 : Familier
+  -- Onglets 8-10 : Familier (section séparée)
   local petToggleBtn
   local petNameEB
   local petHpCurEB, petHpMaxEB
@@ -968,54 +1024,53 @@ function ns.UI_Init()
 
   local function applyAllPet()
     if not Core then return end
-    local petNameVal = petNameEB and petNameEB:GetText() or nil
-    local petHpCurVal = getNumber(petHpCurEB)
-    local petHpMaxVal = getNumber(petHpMaxEB)
-    local armorVal = getNumber(petArmorEB)
+    local petNameVal   = petNameEB and petNameEB:GetText() or nil
+    local petHpCurVal  = getNumber(petHpCurEB)
+    local petHpMaxVal  = getNumber(petHpMaxEB)
+    local armorVal     = getNumber(petArmorEB)
     local trueArmorVal = getNumber(petTrueArmorEB)
-    local dodgeVal = getNumber(petDodgeEB)
-    local magicVal = getNumber(petMagicBlockEB)
+    local dodgeVal     = getNumber(petDodgeEB)
+    local magicVal     = getNumber(petMagicBlockEB)
     if Core.SetPetName and petNameVal then Core.SetPetName(petNameVal) end
-    if Core.SetPetHP then Core.SetPetHP(petHpCurVal, petHpMaxVal) end
+    if Core.SetPetHP    then Core.SetPetHP(petHpCurVal, petHpMaxVal) end
     if Core.SetPetArmor then Core.SetPetArmor(armorVal, trueArmorVal) end
     if Core.SetPetDodge then Core.SetPetDodge(dodgeVal) end
     if Core.SetPetTempMagicBlock then Core.SetPetTempMagicBlock(magicVal) end
   end
 
-  -- ── Identité ──────────────────────
-  local aPetToggle = mkRowAnchor(pagePet, 170, -6)
+  -- ── Tab 8 : Identité / PV ─────────────────────────────────────────────────
+  local aPetToggle = mkRowAnchor(pagePetHP, 170, -6)
   petToggleBtn = mkButton(aPetToggle, "Activer le familier", 170, 22, 0, 0, function()
     if not Core or not Core.SetPetEnabled then return end
     local p = Core.GetPet and Core.GetPet() or nil
     Core.SetPetEnabled(not (p and p.enabled))
   end)
 
-  local aPetNom = mkRowAnchor(pagePet, 230, -38)
+  local aPetNom = mkRowAnchor(pagePetHP, 230, -38)
   mkLabel(aPetNom, "Nom", 0, -2)
   petNameEB = mkEdit(aPetNom, 180, 20, 46, 0, applyAllPet)
   petNameEB:SetNumeric(false)
 
-  local aPetHP = mkRowAnchor(pagePet, 230, -68)
+  local aPetHP = mkRowAnchor(pagePetHP, 230, -68)
   mkLabel(aPetHP, "PV", 0, -2)
   petHpCurEB = mkEdit(aPetHP, 70, 20, 30,  0, applyAllPet)
   mkLabel(aPetHP, "/", 106, -2)
   petHpMaxEB = mkEdit(aPetHP, 70, 20, 120, 0, applyAllPet)
 
-  -- ── Défense (2 colonnes, ~320 px) ────────────────────
-  -- Col1: x=0..133  Col2: x=150..313
-  local aPetDef1 = mkRowAnchor(pagePet, 320, -106)
+  -- ── Tab 9 : Armure ───────────────────────────────────────────────────────
+  local aPetDef1 = mkRowAnchor(pagePetArmor, 320, -4)
   mkLabel(aPetDef1, "Armure", 0, -2)
-  petArmorEB     = mkEdit(aPetDef1, 70, 20, 60, 0, applyAllPet)
+  petArmorEB     = mkEdit(aPetDef1, 70, 20, 60,  0, applyAllPet)
   mkLabel(aPetDef1, "Armure invul", 150, -2)
   petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 244, 0, applyAllPet)
 
-  local aPetDef2 = mkRowAnchor(pagePet, 320, -136)
+  local aPetDef2 = mkRowAnchor(pagePetArmor, 320, -34)
   mkLabel(aPetDef2, "Esquive", 0, -2)
-  petDodgeEB      = mkEdit(aPetDef2, 70, 20, 60, 0, applyAllPet)
+  petDodgeEB      = mkEdit(aPetDef2, 70, 20, 60,  0, applyAllPet)
   mkLabel(aPetDef2, "Bouclier mag.", 150, -2)
   petMagicBlockEB = mkEdit(aPetDef2, 70, 20, 244, 0, applyAllPet)
 
-  local aPetDefBtns = mkRowAnchor(pagePet, 180, -166)
+  local aPetDefBtns = mkRowAnchor(pagePetArmor, 180, -64)
   mkButton(aPetDefBtns, "Appliquer", 86, 20, 0,  0, applyAllPet)
   mkButton(aPetDefBtns, "Réinit.",   86, 20, 94, 0, function()
     if Core and Core.ResetPetTempMagicBlock then
@@ -1025,12 +1080,12 @@ function ns.UI_Init()
     end
   end)
 
-  -- ── Actions ───────────────────────
-  local aPetVal = mkRowAnchor(pagePet, 180, -202)
+  -- ── Tab 10 : Actions ─────────────────────────────────────────────────────
+  local aPetVal = mkRowAnchor(pagePetCombat, 180, -4)
   mkLabel(aPetVal, "Valeur", 0, -2)
   petActionValEB = mkEdit(aPetVal, 80, 20, 56, 0)
 
-  local aPetBtns1 = mkRowAnchor(pagePet, 392, -232)
+  local aPetBtns1 = mkRowAnchor(pagePetCombat, 392, -34)
   local petDmgArmorBtn = mkButton(aPetBtns1, "Dégâts (armure)", 190, 22, 0,   0, function()
     if Core and Core.PetDamageWithArmor then Core.PetDamageWithArmor(getNumber(petActionValEB) or 0) end
   end)
@@ -1038,7 +1093,7 @@ function ns.UI_Init()
     if Core and Core.PetDamageTrue then Core.PetDamageTrue(getNumber(petActionValEB) or 0) end
   end)
 
-  local aPetBtns2 = mkRowAnchor(pagePet, 392, -260)
+  local aPetBtns2 = mkRowAnchor(pagePetCombat, 392, -62)
   local petHealBtn = mkButton(aPetBtns2, "Soins", 190, 22, 0, 0, function()
     if Core and Core.PetHeal then Core.PetHeal(getNumber(petActionValEB) or 0) end
   end)
@@ -1071,7 +1126,7 @@ function ns.UI_Init()
   }
   UI.petButtons = { petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn }
 
-  setTab(1)
+  setSidebarSection(1)
 
   local CLASS_BTN_SIZE = 60
   local CLASS_BTN_GAP_X = 8
@@ -1140,47 +1195,86 @@ function ns.UI_Init()
     mkClassButton(i, CLASS_KEYS[i])
   end
 
-  Core.OnChange(function(s)
-    local baseMaxHp = (s.maxHp or 0)
-    local bonusHp = math.max(0, s.bonusHp or 0)
-    local effMaxHp = baseMaxHp + bonusHp
-    local hpNow = (s.hp or 0)
-
-    local hpPct = (effMaxHp > 0) and (hpNow / effMaxHp) or 0
-    hpBar:SetValue(math.max(0, math.min(1, hpPct)))
-
-    if bonusHp > 0 then
-      hpText:SetText(string.format("PV : %d / %d (+%d bonus, %d%%)", hpNow, effMaxHp, bonusHp, roundPct(hpPct)))
+  refreshHpDisplay = function(s)
+    if activeSection == 2 then
+      -- Familiar section: show pet HP on the main bar.
+      local pet       = type(s.pet) == "table" and s.pet or {}
+      local petEnabled = not not pet.enabled
+      if petEnabled then
+        if UI.title then UI.title:SetText(pet.name or "Familier") end
+        local petHp    = tonumber(pet.hp)    or 0
+        local petMaxHp = math.max(1, tonumber(pet.maxHp) or 1)
+        local petPct   = petHp / petMaxHp
+        hpBar:SetValue(math.max(0, math.min(1, petPct)))
+        hpText:SetText(string.format("PV familier : %d / %d (%d%%)", petHp, petMaxHp, roundPct(petPct)))
+        Shared.UpdateHpShieldOverlays(
+          UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
+          petHp, petMaxHp, 0, tonumber(pet.tempMagicBlock) or 0
+        )
+        local petCap = 1.0
+        if pet.wounds and pet.wounds.hit10 then petCap = 0.25
+        elseif pet.wounds and pet.wounds.hit25 then petCap = 0.50 end
+        UI.hpMarkerCache.baseMaxHp = petMaxHp
+        UI.hpMarkerCache.effMaxHp  = petMaxHp
+        UI.hpMarkerCache.cap       = petCap
+        UI.repositionHpMarkers()
+        if petCap >= 0.999 then
+          capText:SetText("")
+        else
+          capText:SetText(string.format("Plafond de soins : %d%%", roundPct(petCap)))
+        end
+      else
+        if UI.title then UI.title:SetText("Familier") end
+        hpBar:SetValue(0)
+        hpText:SetText("Aucun familier actif")
+        Shared.UpdateHpShieldOverlays(UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar, 0, 1, 0, 0)
+        UI.hpMarkerCache.baseMaxHp = 0
+        UI.hpMarkerCache.effMaxHp  = 1
+        UI.hpMarkerCache.cap       = 1.0
+        UI.repositionHpMarkers()
+        capText:SetText("")
+      end
     else
-      hpText:SetText(string.format("PV : %d / %d (%d%%)", s.hp or 0, baseMaxHp, roundPct(hpPct)))
+      -- Character section: show character HP.
+      updateWindowTitle()
+      local baseMaxHp = (s.maxHp or 0)
+      local bonusHp   = math.max(0, s.bonusHp or 0)
+      local effMaxHp  = baseMaxHp + bonusHp
+      local hpNow     = (s.hp or 0)
+      local hpPct     = (effMaxHp > 0) and (hpNow / effMaxHp) or 0
+      hpBar:SetValue(math.max(0, math.min(1, hpPct)))
+      if bonusHp > 0 then
+        hpText:SetText(string.format("PV : %d / %d (+%d bonus, %d%%)", hpNow, effMaxHp, bonusHp, roundPct(hpPct)))
+      else
+        hpText:SetText(string.format("PV : %d / %d (%d%%)", hpNow, baseMaxHp, roundPct(hpPct)))
+      end
+      Shared.UpdateHpShieldOverlays(
+        UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
+        hpNow, effMaxHp, s.tempBlock or 0, s.tempMagicBlock or 0
+      )
+      local cap
+      local w2 = s.wounds
+      if w2 and w2.hit10 then cap = 0.25
+      elseif w2 and w2.hit25 then cap = 0.50
+      else cap = 1.0 end
+      UI.hpMarkerCache.baseMaxHp = baseMaxHp
+      UI.hpMarkerCache.effMaxHp  = effMaxHp
+      UI.hpMarkerCache.cap       = cap
+      UI.repositionHpMarkers()
+      if cap >= 0.999 then
+        capText:SetText("")
+      else
+        capText:SetText(string.format("Plafond de soins : %d%%", roundPct(cap)))
+      end
     end
+  end
 
-    -- Overlays Blocage (gris) + Blocage magique (doré)
-    Shared.UpdateHpShieldOverlays(
-      UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
-      hpNow, effMaxHp,
-      s.tempBlock or 0, s.tempMagicBlock or 0
-    )
+  onChangeCallback = function(s)
+    lastState = s
+    refreshHpDisplay(s)
 
-    local cap
-    local w2 = s.wounds
-    if w2 and w2.hit10 then cap = 0.25
-    elseif w2 and w2.hit25 then cap = 0.50
-    else cap = 1.0 end
-
-    -- Update HP marker cache then reposition.
-    UI.hpMarkerCache.baseMaxHp = baseMaxHp
-    UI.hpMarkerCache.effMaxHp  = effMaxHp
-    UI.hpMarkerCache.cap       = cap
-    UI.repositionHpMarkers()
-
-    if cap >= 0.999 then
-      capText:SetText("")
-    else
-      capText:SetText(string.format("Plafond de soins : %d%%", roundPct(cap)))
-    end
-
-    -- Ressource
+    -- Resources (character section only)
+    if activeSection == 1 then
     local profile = getResProfile(s)
     local rowCount = #profile
     local barCount
@@ -1197,28 +1291,9 @@ function ns.UI_Init()
       barCount = rowCount
     end
 
-    if UI.resPageLabel and UI.resPageLabel.SetText then
-      local headerText
-      if rowCount == 0 then
-        headerText = "Aucune ressource"
-      elseif rowCount == 1 and profile[1] and profile[1].idx == 5 then
-        headerText = profile[1].label or "Ressource"
-      else
-        headerText = (CLASS_STYLES[s.classKey] and CLASS_STYLES[s.classKey].label) or "Ressource"
-      end
-      UI.resPageLabel:SetText(headerText)
-    end
-
     if UI.noResHint then
       if rowCount == 0 then UI.noResHint:Show() else UI.noResHint:Hide() end
     end
-    if UI.resDeltaLabel then
-      if rowCount == 0 then UI.resDeltaLabel:Hide() else UI.resDeltaLabel:Show() end
-    end
-    if UI.resDeltaEB then
-      if rowCount == 0 then UI.resDeltaEB:Hide() else UI.resDeltaEB:Show() end
-    end
-
     -- Hide resources tab for Classique (WARRIOR) with no pet; disable for other no-resource classes.
     local hideRes = (s.classKey == "WARRIOR" and rowCount == 0)
     if UI.tabHidden then
@@ -1476,6 +1551,20 @@ function ns.UI_Init()
       end
     end
 
+    else
+      -- Familiar section: collapse all resource bars so the content host sits under the HP bar.
+      for i = 1, 5 do
+        if UI.resBars  and UI.resBars[i]  then UI.resBars[i]:Hide() end
+        if UI.resTexts and UI.resTexts[i] then UI.resTexts[i]:SetText("") end
+        if UI.resRow   and UI.resRow[i]   then UI.resRow[i]:Hide() end
+      end
+      hideMarkers(UI.corruptionMarkers)
+      hideMarkers(UI.insanityMarkers)
+      UI.resAnchor = hpBar
+      applyContentHostLayout(hpBar, 0)
+      if UI.syncHistoryWidth then UI.syncHistoryWidth() end
+    end  -- activeSection == 1
+
     if UI.classButtons then
       for i = 1, #UI.classButtons do
         local b = UI.classButtons[i]
@@ -1549,7 +1638,8 @@ function ns.UI_Init()
         UI.historyChild:SetHeight(math.max(20, h + 10))
       end
     end
-  end)
+  end
+  Core.OnChange(onChangeCallback)
 end
 
 function ns.UI_Show(show)
