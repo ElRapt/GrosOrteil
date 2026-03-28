@@ -317,7 +317,7 @@ function ns.Core_Init()
 
   db.state = db.state or {
     hp = 50, maxHp = 50,
-    bonusHp = 0,
+    bonusHp = 0, bonusHpMax = 0,
     classKey = nil,
     res = 20, maxRes = 20,
     res2 = 0, maxRes2 = 20,
@@ -394,6 +394,10 @@ function ns.Core_Init()
     db.state.bonusHp = db.state.tempHp or 0
   end
   db.state.tempHp = nil
+  -- Migration: bonusHpMax (new field; seed from current bonusHp if missing)
+  if db.state.bonusHpMax == nil then
+    db.state.bonusHpMax = db.state.bonusHp or 0
+  end
   clampHpToEffectiveMax(db.state)
 
   Core.state = db.state
@@ -524,11 +528,32 @@ function Core.SetHP(hp, maxHp)
   bump(); notify()
 end
 
+-- Sets the configured bonus HP maximum. If bonus HP is currently active,
+-- also updates the live pool to match.
 function Core.SetBonusHP(v)
   local s = Core.state
   if not s then return end
-  v = clampNumber(v, 0, 1e9)
-  if v then s.bonusHp = v end
+  v = clampNumber(v, 0, 1e9) or 0
+  s.bonusHpMax = v
+  if (s.bonusHp or 0) > 0 then
+    s.bonusHp = v
+  end
+  clampHpToEffectiveMax(s)
+  recomputeWounds(s)
+  bump(); notify()
+end
+
+-- Toggles bonus HP on (adds the pool and fills HP by that amount) or off (removes the pool).
+function Core.ToggleBonusHP()
+  local s = Core.state
+  if not s then return end
+  if (s.bonusHp or 0) > 0 then
+    s.bonusHp = 0
+  else
+    local amount = (s.bonusHpMax or 0)
+    s.bonusHp = amount
+    s.hp = (s.hp or 0) + amount
+  end
   clampHpToEffectiveMax(s)
   recomputeWounds(s)
   bump(); notify()
@@ -849,8 +874,7 @@ function Core.Heal(amount)
   -- Cap selon l'état courant (seuils dynamiques)
   local baseMax = (s.maxHp or 0)
   local bonus = math.max(0, s.bonusHp or 0)
-  -- IMPORTANT: the cap threshold is based on base max HP only.
-  -- Bonus HP must not increase the cap.
+  -- Wound cap is based on base max HP only; bonus HP does not extend the threshold.
   local capMax = (baseMax * getWoundCap(s))
   local effMax = baseMax + bonus
 

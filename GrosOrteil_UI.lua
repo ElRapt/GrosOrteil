@@ -823,14 +823,10 @@ function ns.UI_Init()
   makeSectBtn(sectPet,  "Familier",   NAV_PAD + SECT_BTN_W + 4,  function() setSidebarSection(2) end)
 
   -- Onglet 1 : PV
-  local hpCur, hpMax, tempHpEB
+  local hpCur, hpMax
 
   local function applyAllHP()
-    local hpCurVal = getNumber(hpCur)
-    local hpMaxVal = getNumber(hpMax)
-    local tempHpVal = getNumber(tempHpEB)
-    Core.SetHP(hpCurVal, hpMaxVal)
-    Core.SetBonusHP(tempHpVal)
+    Core.SetHP(getNumber(hpCur), getNumber(hpMax))
   end
 
   local aHP1 = mkRowAnchor(pageHP, 360, -4)
@@ -839,10 +835,15 @@ function ns.UI_Init()
   hpCur = mkEdit(aHP1, 70, 20, 36, 0, applyAllHP)
   hpMax = mkEdit(aHP1, 70, 20, 126, 0, applyAllHP)
 
-  local aHP2 = mkRowAnchor(pageHP, 362, -36)
-  mkLabel(aHP2, "PV bonus", 0, -2)
-  tempHpEB = mkEdit(aHP2, 70, 20, 120, 0, applyAllHP)
-  mkButton(aHP2, "Appliquer", 90, 20, 206, 0, applyAllHP)
+  local bonusHpValEB
+  local aHP2 = mkRowAnchor(pageHP, 360, -36)
+  UI.bonusHpToggleBtn = mkButton(aHP2, "Activer PV bonus", 160, 20, 0, 0, function()
+    if Core and Core.ToggleBonusHP then Core.ToggleBonusHP() end
+  end)
+  mkLabel(aHP2, "Max", 172, -2)
+  bonusHpValEB = mkEdit(aHP2, 70, 20, 202, 0, function()
+    if Core and Core.SetBonusHP then Core.SetBonusHP(getNumber(bonusHpValEB) or 0) end
+  end)
 
   -- Onglet 2 : Ressource
   UI.resRow = UI.resRow or {}
@@ -1102,8 +1103,7 @@ function ns.UI_Init()
   end)
 
   UI.inputs = {
-    hpCur = hpCur, hpMax = hpMax,
-    tempHp = tempHpEB,
+    hpCur = hpCur, hpMax = hpMax, bonusHpMax = bonusHpValEB,
     armor = armorEB, trueArmor = trueArmorEB,
     dodge = dodgeEB,
     block = blockEB,
@@ -1583,7 +1583,10 @@ function ns.UI_Init()
     -- Inputs : on reflète la state (pratique MVP)
     setNumber(UI.inputs.hpCur, s.hp)
     setNumber(UI.inputs.hpMax, s.maxHp)
-    setNumber(UI.inputs.tempHp, s.bonusHp)
+    setNumber(UI.inputs.bonusHpMax, s.bonusHpMax)
+    if UI.bonusHpToggleBtn then
+      UI.bonusHpToggleBtn:SetText((s.bonusHp or 0) > 0 and "Désactiver PV bonus" or "Activer PV bonus")
+    end
     -- Resource inputs are handled per-row above.
     setNumber(UI.inputs.armor, s.armor)
     setNumber(UI.inputs.trueArmor, s.trueArmor)
