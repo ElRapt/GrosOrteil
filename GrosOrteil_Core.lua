@@ -961,6 +961,42 @@ function Core.AddRes(amount)
   Core.AddResIndex(1, amount)
 end
 
+-- Restaure les PV au maximum (PV de base + bonus actif).
+function Core.RestoreHP()
+  local s = Core.state
+  if not s then return end
+  local bonus  = math.max(0, s.bonusHp or 0)
+  local baseMax = math.max(1, s.maxHp or 1)
+  s.hp = baseMax + bonus
+  clampHpToEffectiveMax(s)
+  recomputeWounds(s)
+  bump(); notify()
+end
+
+-- Régénération quotidienne PV : +10 % du max de base, ignore les seuils de blessure.
+function Core.DailyRegenHP()
+  local s = Core.state
+  if not s then return end
+  local bonus   = math.max(0, s.bonusHp or 0)
+  local baseMax = math.max(1, s.maxHp or 1)
+  local effMax  = baseMax + bonus
+  local gain    = math.floor(baseMax * 0.10 + 0.5)
+  s.hp = math.min((s.hp or 0) + gain, effMax)
+  clampHpToEffectiveMax(s)
+  recomputeWounds(s)
+  bump(); notify()
+end
+
+-- Régénération quotidienne mystique : +20 % de la ressource principale (idx 1).
+function Core.DailyRegenRes()
+  local s = Core.state
+  if not s then return end
+  local maxRes = math.max(1, s.maxRes or 1)
+  local gain   = math.floor(maxRes * 0.20 + 0.5)
+  s.res = math.min((s.res or 0) + gain, maxRes)
+  bump(); notify()
+end
+
 function Core.PetDamageWithArmor(amount)
   local s = Core.state
   if not s then return end

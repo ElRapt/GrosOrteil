@@ -583,6 +583,80 @@ function ns.UI_Init()
     end
   end)
 
+  -- ── Action icons (bottom-right, all tabs) ───────────────────────
+  do
+    local ICON_SIZE = 18
+    local ICON_GAP  = 3
+
+    local function mkActionIcon(parent, icon, tipTitle, desc, onClick)
+      local btn = CreateFrame("Button", nil, parent)
+      btn:SetSize(ICON_SIZE, ICON_SIZE)
+      btn:SetFrameLevel(parent:GetFrameLevel() + 10)
+
+      -- Background tint
+      local bg = btn:CreateTexture(nil, "BACKGROUND")
+      bg:SetAllPoints()
+      bg:SetColorTexture(0, 0, 0, 0.55)
+
+      -- Icon texture
+      local tex = btn:CreateTexture(nil, "ARTWORK")
+      tex:SetAllPoints()
+      tex:SetTexture(icon)
+      tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+      -- Thin gold border
+      local border = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+      border:SetAllPoints()
+      border:SetBackdrop({ edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1 })
+      border:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+      border:SetFrameLevel(btn:GetFrameLevel() + 1)
+
+      -- Hover highlight
+      local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+      hl:SetAllPoints()
+      hl:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.20)
+
+      btn:SetScript("OnEnter", function(self)
+        border:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(tipTitle, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+        GameTooltip:AddLine(desc, 1, 1, 1, true)
+        GameTooltip:Show()
+      end)
+      btn:SetScript("OnLeave", function()
+        border:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+        GameTooltip:Hide()
+      end)
+      btn:SetScript("OnClick", function()
+        if Core then onClick() end
+      end)
+
+      return btn
+    end
+
+    local iconRestore = mkActionIcon(frame,
+      "Interface/Icons/Spell_Holy_HealingAura",
+      "Restaurer PV",
+      "Remet tous les PV au maximum (bonus inclus).",
+      function() Core.RestoreHP() end)
+    iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -ICON_GAP, 20)
+
+    local iconRegenHP = mkActionIcon(frame,
+      "Interface/Icons/Spell_Nature_Rejuvenation",
+      "Régénération quotidienne PV",
+      "Restaure 10 % du max de PV, ignorant les seuils de blessure.",
+      function() Core.DailyRegenHP() end)
+    iconRegenHP:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
+
+    local iconRegenRes = mkActionIcon(frame,
+      "Interface/Icons/spell_arcane_manatap",
+      "Régénération quotidienne mystique",
+      "Restaure 20 % de la ressource principale (mana, énergie, etc.).",
+      function() Core.DailyRegenRes() end)
+    iconRegenRes:SetPoint("RIGHT", iconRegenHP, "LEFT", -ICON_GAP, 0)
+  end
+
   -- Main body: sidebar (left) + content (right)
   local body = CreateFrame("Frame", nil, frame)
   body:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD_X, -40)
@@ -816,6 +890,23 @@ function ns.UI_Init()
     if bar then
       UI.arcaneChargeMarkers[1] = makeMarker(bar, 4/8, 1.00, 0.82, 0.22, 0.65, 2)
       UI.arcaneChargeMarkers[2] = makeMarker(bar, 8/8, 0.75, 0.30, 1.00, 0.80, 3)
+    end
+  end
+
+  do
+    local bar = UI.resBars[2]
+    if bar then
+      bar:SetScript("OnSizeChanged", function()
+        if UI.corruptionMarkers[1] and UI.corruptionMarkers[1]:IsShown() then
+          positionMarkers(UI.corruptionMarkers, bar)
+        end
+        if UI.insanityMarkers[1] and UI.insanityMarkers[1]:IsShown() then
+          positionMarkers(UI.insanityMarkers, bar)
+        end
+        if UI.arcaneChargeMarkers[1] and UI.arcaneChargeMarkers[1]:IsShown() then
+          positionMarkers(UI.arcaneChargeMarkers, bar)
+        end
+      end)
     end
   end
 
