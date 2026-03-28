@@ -16,7 +16,7 @@ Shared.CLASS_STYLES = {
   SHADOWPRIEST = { label = "Points de foi et insanité",      r = 0.60, g = 0.20, b = 0.85 },
   MAGE         = { label = "Mana",                           r = 0.20, g = 0.55, b = 1.00 },
   ROGUE        = { label = "Énergie",                        r = 1.00, g = 0.90, b = 0.10 },
-  WARLOCK      = { label = "Énergie gangrénée et Corruption",r = 0.20, g = 0.85, b = 0.25 },
+  WARLOCK      = { label = "Énergie gangrénée, Corruption et Fragments d'âme", r = 0.20, g = 0.85, b = 0.25 },
   DRUID        = { label = "Esprit",                         r = 1.00, g = 0.55, b = 0.10 },
   MONK         = { label = "Chi",                            r = 0.55, g = 1.00, b = 0.55 },
   SHAMAN       = { label = "Points élémentaires",            r = 0.00, g = 0.44, b = 0.87 },
@@ -33,6 +33,11 @@ Shared.RES_PROFILES_BY_CLASS = {
   WARLOCK = {
     { idx = 1, label = "Énergie gangrénée", r = 0.20, g = 0.85, b = 0.25 },
     { idx = 2, label = "Corruption",        r = 0.55, g = 0.20, b = 0.85 },
+    { idx = 3, label = "Fragments d'âme",   r = 0.85, g = 0.15, b = 0.25 },
+  },
+  MAGE = {
+    { idx = 1, label = "Mana",             r = 0.20, g = 0.55, b = 1.00 },
+    { idx = 2, label = "Charge arcanique", r = 0.75, g = 0.30, b = 1.00 },
   },
   SHADOWPRIEST = {
     { idx = 1, label = "Points de foi", r = 1.00, g = 1.00, b = 1.00 },

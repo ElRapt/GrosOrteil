@@ -408,7 +408,7 @@ local function showForState(targetName, state)
   local effMaxHp = baseHp + bonusHp
   if effMaxHp <= 0 then effMaxHp = 1 end
 
-  setBarValue(popupFrame.hpRow, "Vie", state.hp, effMaxHp, { 0.85, 0.16, 0.18 })
+  setBarValue(popupFrame.hpRow, "PV", state.hp, effMaxHp, { 0.85, 0.16, 0.18 })
   updateHpShieldOverlays(
     popupFrame.hpRow,
     tonumber(state.hp) or 0,
@@ -449,13 +449,16 @@ local function showForState(targetName, state)
       local maxv = state[maxKey] or 0
       local displayMax = maxv
 
-      local isWarlockCorruption = (state.classKey == "WARLOCK" and p.idx == 2)
-      local isShadowInsanity = (state.classKey == "SHADOWPRIEST" and p.idx == 2)
+      local isWarlockCorruption = (state.classKey == "WARLOCK"      and p.idx == 2)
+      local isShadowInsanity    = (state.classKey == "SHADOWPRIEST" and p.idx == 2)
+      local isMageArcaneCharge  = (state.classKey == "MAGE"         and p.idx == 2)
 
       if isWarlockCorruption then
         displayMax = 60
       elseif isShadowInsanity then
         displayMax = 25
+      elseif isMageArcaneCharge then
+        displayMax = 8
       end
 
       setBarValue(row, p.label or "Ressource", cur, displayMax, { p.r, p.g, p.b })
@@ -473,6 +476,12 @@ local function showForState(targetName, state)
           row.markers[2] = makeMarker(row.bar, 12 / 25, 1.00, 0.82, 0.22, 0.55, 2)
           row.markers[3] = makeMarker(row.bar, 20 / 25, 1.00, 0.55, 0.10, 0.60, 2)
           row.markers[4] = makeMarker(row.bar, 25 / 25, 1.00, 0.25, 0.25, 0.70, 3)
+        end
+        positionMarkers(row.markers, row.bar)
+      elseif isMageArcaneCharge then
+        if #row.markers == 0 then
+          row.markers[1] = makeMarker(row.bar, 4 / 8, 1.00, 0.82, 0.22, 0.65, 2)
+          row.markers[2] = makeMarker(row.bar, 8 / 8, 0.75, 0.30, 1.00, 0.80, 3)
         end
         positionMarkers(row.markers, row.bar)
       end
@@ -507,7 +516,7 @@ local function showForState(targetName, state)
     popupFrame.petNameText:SetText("Familier: " .. petName)
     popupFrame.petArmorText:SetText(string.format("Armure: %d (+%d)", roundNumber(petArmor), roundNumber(petTrueArmor)))
     popupFrame.petDodgeText:SetText(string.format("Esquive: %d", roundNumber(petDodge)))
-    setBarValue(popupFrame.petHpRow, "Vie du familier", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
+    setBarValue(popupFrame.petHpRow, "PV familier", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
     updateHpShieldOverlays(
       popupFrame.petHpRow,
       petHp,

@@ -193,7 +193,7 @@ local function hookTRP3Callbacks()
 end
 
 local function mkLabel(parent, text, x, y)
-  local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   fs:SetPoint("TOPLEFT", x, y)
   fs:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
   fs:SetText(text)
@@ -201,7 +201,7 @@ local function mkLabel(parent, text, x, y)
 end
 
 local function mkLabelCenter(parent, text, x, y)
-  local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   fs:SetPoint("TOP", x, y)
   fs:SetJustifyH("CENTER")
   fs:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
@@ -221,7 +221,7 @@ local function mkEdit(parent, w, h, x, y, onEnter)
   local eb = CreateFrame("EditBox", nil, wrap)
   eb:SetPoint("TOPLEFT", 5, -2)
   eb:SetPoint("BOTTOMRIGHT", -4, 2)
-  eb:SetFontObject("GameFontHighlightSmall")
+  eb:SetFontObject("GameFontHighlight")
   eb:SetAutoFocus(false)
   eb:SetNumeric(true)
   eb:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
@@ -263,7 +263,7 @@ local function mkButton(parent, text, w, h, x, y, onClick)
   hl:SetColorTexture(1.0, 0.80, 0.30, 0.10)
 
   -- Text label.
-  local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   fs:SetPoint("CENTER", 0, 0)
   fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
   fs:SetText(text)
@@ -809,6 +809,16 @@ function ns.UI_Init()
     end
   end
 
+  -- Mage Arcane Charge thresholds (max always 8): T4 at 4, T5 at 8
+  UI.arcaneChargeMarkers = {}
+  do
+    local bar = UI.resBars[2]
+    if bar then
+      UI.arcaneChargeMarkers[1] = makeMarker(bar, 4/8, 1.00, 0.82, 0.22, 0.65, 2)
+      UI.arcaneChargeMarkers[2] = makeMarker(bar, 8/8, 0.75, 0.30, 1.00, 0.80, 3)
+    end
+  end
+
   -- Bars are driven by Core.OnChange; keep them hidden until then.
 
   -- Content host (pages) sits under HP/Resource bars and above class strip.
@@ -949,10 +959,10 @@ function ns.UI_Init()
   local TAB_TEXTS = {
     "Points de vie",    -- 1  character section
     "Ressources",       -- 2
-    "Classes",          -- 3
-    "Armure & blocage", -- 4
-    "Actions",          -- 5
-    "",                 -- 6  reserved slot (always hidden)
+    "Armure & blocage", -- 3 (was 4)
+    "Actions",          -- 4 (was 5)
+    "",                 -- 5  reserved slot (always hidden)
+    "Classes",          -- 6 (was 3)
     "Historique",       -- 7
     "Points de vie",    -- 8  familiar section
     "Armure",           -- 9
@@ -1070,10 +1080,10 @@ function ns.UI_Init()
 
   local pageHP      = mkPage()   -- 1
   local pageRes     = mkPage()   -- 2
-  local pageClasses = mkPage()   -- 3
-  local pageArmor   = mkPage()   -- 4
-  local pageCombat  = mkPage()   -- 5
-  mkPage()                       -- 6 (reserved slot, always hidden)
+  local pageArmor   = mkPage()   -- 3 (was 4)
+  local pageCombat  = mkPage()   -- 4 (was 5)
+  mkPage()                       -- 5 (reserved slot, always hidden)
+  local pageClasses = mkPage()   -- 6 (was 3)
   local pageHistory = mkPage()   -- 7
   local pagePetHP     = mkPage() -- 8: familiar – Points de vie
   local pagePetArmor  = mkPage() -- 9: familiar – Armure
@@ -1081,7 +1091,7 @@ function ns.UI_Init()
   UI.pageHistory = pageHistory
 
   -- Tab 6 is always hidden; familiar tabs (8-10) start hidden (character section is default).
-  UI.tabHidden[6] = true
+  UI.tabHidden[5] = true
 
   -- ── Section switcher buttons (bottom of sidebar) ────────────────────
   local SECT_BTN_H = 24
@@ -1292,27 +1302,7 @@ function ns.UI_Init()
   local aArmorApply = mkRowAnchor(pageArmor, 90, -64)
   mkButton(aArmorApply, "Appliquer", 90, 20, 0, 0, applyAllArmor)
 
-  -- Decorative separator between sections.
-  local armorSep = pageArmor:CreateTexture(nil, "ARTWORK")
-  armorSep:SetTexture(TEX.FLAT)
-  armorSep:SetPoint("LEFT", pageArmor, "LEFT", 20, 0)
-  armorSep:SetPoint("RIGHT", pageArmor, "RIGHT", -20, 0)
-  armorSep:SetPoint("TOP", pageArmor, "TOP", 0, -92)
-  armorSep:SetHeight(1)
-  armorSep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
-
-  -- ── Blocage temporaire ──────────────
-  local aBlock1 = mkRowAnchor(pageArmor, 280, -100)
-  mkLabel(aBlock1, "Blocage (temp.)", 0, -2)
-  blockEB = mkEdit(aBlock1, 70, 20, 130, 0, applyAllArmor)
-  mkButton(aBlock1, "Réinit.", 70, 20, 210, 0, function() Core.ResetTempBlock() end)
-
-  local aBlock2 = mkRowAnchor(pageArmor, 340, -130)
-  mkLabel(aBlock2, "Blocage magique (temp.)", 0, -2)
-  magicBlockEB = mkEdit(aBlock2, 70, 20, 190, 0, applyAllArmor)
-  mkButton(aBlock2, "Réinit.", 70, 20, 270, 0, function() Core.ResetTempMagicBlock() end)
-
-  -- Onglet 5 : Actions (Dégâts & Soins)
+  -- Onglet 4 : Actions (Dégâts & Soins)
   local actValEB
 
   local function doDmgArmor() Core.DamageWithArmor(getNumber(actValEB) or 0) end
@@ -1330,6 +1320,25 @@ function ns.UI_Init()
   local aActBtns2 = mkRowAnchor(pageCombat, 392, -64)
   mkButton(aActBtns2, "Soins",               190, 22, 0,   0, doHeal)
   mkButton(aActBtns2, "Soins divins (75%)",  190, 22, 202, 0, function() Core.DivineHeal() end)
+
+  -- ── Blocage temporaire ──────────────
+  local actBlockSep = pageCombat:CreateTexture(nil, "ARTWORK")
+  actBlockSep:SetTexture(TEX.FLAT)
+  actBlockSep:SetPoint("LEFT",  pageCombat, "LEFT",  20, 0)
+  actBlockSep:SetPoint("RIGHT", pageCombat, "RIGHT", -20, 0)
+  actBlockSep:SetPoint("TOP",   pageCombat, "TOP",   0, -98)
+  actBlockSep:SetHeight(1)
+  actBlockSep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
+
+  local aBlock1 = mkRowAnchor(pageCombat, 280, -106)
+  mkLabel(aBlock1, "Blocage (temp.)", 0, -2)
+  blockEB = mkEdit(aBlock1, 70, 20, 130, 0, applyAllArmor)
+  mkButton(aBlock1, "Réinit.", 70, 20, 210, 0, function() Core.ResetTempBlock() end)
+
+  local aBlock2 = mkRowAnchor(pageCombat, 340, -136)
+  mkLabel(aBlock2, "Blocage mag. (temp.)", 0, -2)
+  magicBlockEB = mkEdit(aBlock2, 70, 20, 190, 0, applyAllArmor)
+  mkButton(aBlock2, "Réinit.", 70, 20, 270, 0, function() Core.ResetTempMagicBlock() end)
 
   -- Onglet 7 : Historique
   do
@@ -1355,7 +1364,7 @@ function ns.UI_Init()
     sf:SetScrollChild(child)
     UI.historyChild = child
 
-    local txt = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local txt = child:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     txt:SetPoint("TOPLEFT", 0, 0)
     txt:SetJustifyH("LEFT")
     txt:SetJustifyV("TOP")
@@ -1435,21 +1444,12 @@ function ns.UI_Init()
   mkLabel(aPetDef1, "Armure invul", 150, -2)
   petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 244, 0, applyAllPet)
 
-  local aPetDef2 = mkRowAnchor(pagePetArmor, 320, -34)
+  local aPetDef2 = mkRowAnchor(pagePetArmor, 160, -34)
   mkLabel(aPetDef2, "Esquive", 0, -2)
-  petDodgeEB      = mkEdit(aPetDef2, 70, 20, 60,  0, applyAllPet)
-  mkLabel(aPetDef2, "Bouclier mag.", 150, -2)
-  petMagicBlockEB = mkEdit(aPetDef2, 70, 20, 244, 0, applyAllPet)
+  petDodgeEB = mkEdit(aPetDef2, 70, 20, 60, 0, applyAllPet)
 
-  local aPetDefBtns = mkRowAnchor(pagePetArmor, 180, -64)
-  mkButton(aPetDefBtns, "Appliquer", 86, 20, 0,  0, applyAllPet)
-  mkButton(aPetDefBtns, "Réinit.",   86, 20, 94, 0, function()
-    if Core and Core.ResetPetTempMagicBlock then
-      Core.ResetPetTempMagicBlock()
-    elseif Core and Core.SetPetTempMagicBlock then
-      Core.SetPetTempMagicBlock(0)
-    end
-  end)
+  local aPetDefBtns = mkRowAnchor(pagePetArmor, 90, -64)
+  mkButton(aPetDefBtns, "Appliquer", 90, 20, 0, 0, applyAllPet)
 
   -- ── Tab 10 : Actions ─────────────────────────────────────────────────────
   local aPetVal = mkRowAnchor(pagePetCombat, 180, -4)
@@ -1470,6 +1470,26 @@ function ns.UI_Init()
   end)
   local petDivineBtn = mkButton(aPetBtns2, "Soins divins (75%)", 190, 22, 202, 0, function()
     if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
+  end)
+
+  -- ── Bouclier magique temporaire ──────────────
+  local petCombatSep = pagePetCombat:CreateTexture(nil, "ARTWORK")
+  petCombatSep:SetTexture(TEX.FLAT)
+  petCombatSep:SetPoint("LEFT",  pagePetCombat, "LEFT",  20, 0)
+  petCombatSep:SetPoint("RIGHT", pagePetCombat, "RIGHT", -20, 0)
+  petCombatSep:SetPoint("TOP",   pagePetCombat, "TOP",   0, -96)
+  petCombatSep:SetHeight(1)
+  petCombatSep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
+
+  local aPetBlock = mkRowAnchor(pagePetCombat, 310, -104)
+  mkLabel(aPetBlock, "Bouclier mag. (temp.)", 0, -2)
+  petMagicBlockEB = mkEdit(aPetBlock, 70, 20, 180, 0, applyAllPet)
+  mkButton(aPetBlock, "Réinit.", 70, 20, 260, 0, function()
+    if Core and Core.ResetPetTempMagicBlock then
+      Core.ResetPetTempMagicBlock()
+    elseif Core and Core.SetPetTempMagicBlock then
+      Core.SetPetTempMagicBlock(0)
+    end
   end)
 
   UI.inputs = {
@@ -1705,6 +1725,7 @@ function ns.UI_Init()
     -- Default: hide resource threshold markers; they'll be re-shown when applicable.
     hideMarkers(UI.corruptionMarkers)
     hideMarkers(UI.insanityMarkers)
+    hideMarkers(UI.arcaneChargeMarkers)
 
     -- Position content host below the last visible resource bar.
     do
@@ -1847,8 +1868,9 @@ function ns.UI_Init()
           local cur = s[resKey] or 0
           local maxv = s[maxKey] or 0
 
-          local isWarlockCorruption = (s.classKey == "WARLOCK" and p.idx == 2)
-          local isShadowInsanity = (s.classKey == "SHADOWPRIEST" and p.idx == 2)
+          local isWarlockCorruption = (s.classKey == "WARLOCK"      and p.idx == 2)
+          local isShadowInsanity    = (s.classKey == "SHADOWPRIEST" and p.idx == 2)
+          local isMageArcaneCharge  = (s.classKey == "MAGE"         and p.idx == 2)
 
           local displayMax = maxv
           if isWarlockCorruption then
@@ -1859,6 +1881,10 @@ function ns.UI_Init()
             -- No real maximum, but bar display caps at 25.
             displayMax = 25
             if cur < 0 then cur = 0 end
+          elseif isMageArcaneCharge then
+            maxv = 8
+            if cur < 0 then cur = 0 elseif cur > 8 then cur = 8 end
+            displayMax = 8
           end
 
           local pct = (displayMax and displayMax > 0) and (math.min(cur, displayMax) / displayMax) or 0
@@ -1909,6 +1935,24 @@ function ns.UI_Init()
                 roundPct(pct),
                 tier
               ))
+            elseif isMageArcaneCharge then
+              local tier
+              if cur >= 8 then
+                tier = "T5 disponible"
+              elseif cur >= 4 then
+                tier = "T4 disponible"
+              end
+              if tier then
+                txt:SetText(string.format(
+                  "%s : %d / %d — %s",
+                  p.label or "Charge arcanique", cur, maxv, tier
+                ))
+              else
+                txt:SetText(string.format(
+                  "%s : %d / %d",
+                  p.label or "Charge arcanique", cur, maxv
+                ))
+              end
             else
               txt:SetText(string.format("%s : %d / %d (%d%%)", p.label or "Ressource", cur, maxv, roundPct(pct)))
             end
@@ -1919,6 +1963,8 @@ function ns.UI_Init()
             positionMarkers(UI.corruptionMarkers, bar)
           elseif isShadowInsanity then
             positionMarkers(UI.insanityMarkers, bar)
+          elseif isMageArcaneCharge then
+            positionMarkers(UI.arcaneChargeMarkers, bar)
           end
 
           if row then
@@ -1930,13 +1976,16 @@ function ns.UI_Init()
           if maxEB then
             if isShadowInsanity then
               setNumber(maxEB, 25)
+            elseif isMageArcaneCharge then
+              setNumber(maxEB, 8)
             else
               setNumber(maxEB, maxv)
             end
           end
 
           -- Fixed/scaled max boxes.
-          setEditBoxEnabled(maxEB, not (isWarlockCorruption or isShadowInsanity))
+          local fixedMax = isWarlockCorruption or isShadowInsanity or isMageArcaneCharge
+          setEditBoxEnabled(maxEB, not fixedMax)
         end
       end
     end

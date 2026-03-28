@@ -295,13 +295,21 @@ local function recomputePetWounds(p)
   p.wounds.hit25 = hit25
 end
 
-local WARLOCK_CORRUPTION_MAX = 60
+local WARLOCK_CORRUPTION_MAX  = 60
+local MAGE_ARCANE_CHARGE_MAX  = 8
 
 local function clampWarlockCorruption(s)
   if not s then return end
   s.maxRes2 = WARLOCK_CORRUPTION_MAX
   if type(s.res2) ~= "number" then s.res2 = 0 end
   if s.res2 < 0 then s.res2 = 0 elseif s.res2 > WARLOCK_CORRUPTION_MAX then s.res2 = WARLOCK_CORRUPTION_MAX end
+end
+
+local function clampMageArcaneCharge(s)
+  if not s then return end
+  s.maxRes2 = MAGE_ARCANE_CHARGE_MAX
+  if type(s.res2) ~= "number" then s.res2 = 0 end
+  if s.res2 < 0 then s.res2 = 0 elseif s.res2 > MAGE_ARCANE_CHARGE_MAX then s.res2 = MAGE_ARCANE_CHARGE_MAX end
 end
 
 local function effDmg(dmg, mitigation)
@@ -431,8 +439,11 @@ function Core.SetClassKey(classKey)
   s.classKey = classKey
 
   -- Warlock: Corruption has a fixed max of 60.
+  -- Mage: Arcane Charge has a fixed max of 8.
   if classKey == "WARLOCK" then
     clampWarlockCorruption(s)
+  elseif classKey == "MAGE" then
+    clampMageArcaneCharge(s)
   end
   bump(); notify()
 end
@@ -596,13 +607,17 @@ function Core.SetResIndex(i, res, maxRes)
   if not resKey then return end
   if not maxKey then return end
 
-  -- Warlock corruption (index 2) has fixed max=60.
+  -- Some resources have fixed maxima.
   local isWarlockCorruption = (i == 2 and s.classKey == "WARLOCK")
-  local isShadowInsanity = (i == 2 and s.classKey == "SHADOWPRIEST")
+  local isShadowInsanity    = (i == 2 and s.classKey == "SHADOWPRIEST")
+  local isMageArcaneCharge  = (i == 2 and s.classKey == "MAGE")
 
   if isWarlockCorruption then
     maxRes = WARLOCK_CORRUPTION_MAX
     res = clampNumber(res, 0, WARLOCK_CORRUPTION_MAX)
+  elseif isMageArcaneCharge then
+    maxRes = MAGE_ARCANE_CHARGE_MAX
+    res = clampNumber(res, 0, MAGE_ARCANE_CHARGE_MAX)
   else
     res = clampNumber(res, -1e9, 1e9)
     maxRes = clampNumber(maxRes, 1, 1e9)
@@ -616,6 +631,8 @@ function Core.SetResIndex(i, res, maxRes)
 
   if isWarlockCorruption then
     clampWarlockCorruption(s)
+  elseif isMageArcaneCharge then
+    clampMageArcaneCharge(s)
   end
   bump(); notify()
 end
@@ -627,12 +644,15 @@ function Core.AddResIndex(i, amount)
   if not resKey then return end
 
   local isWarlockCorruption = (i == 2 and s.classKey == "WARLOCK")
-  local isShadowInsanity = (i == 2 and s.classKey == "SHADOWPRIEST")
+  local isShadowInsanity    = (i == 2 and s.classKey == "SHADOWPRIEST")
+  local isMageArcaneCharge  = (i == 2 and s.classKey == "MAGE")
   amount = clampNumber(amount, -1e9, 1e9) or 0
   s[resKey] = (s[resKey] or 0) + amount
 
   if isWarlockCorruption then
     clampWarlockCorruption(s)
+  elseif isMageArcaneCharge then
+    clampMageArcaneCharge(s)
   elseif not isShadowInsanity then
     clampToMax(s, resKey, maxKey)
   end
