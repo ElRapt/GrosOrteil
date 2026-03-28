@@ -92,6 +92,8 @@ local BACKDROP_TAB = {
 local function applyResTextColor(txt)
   if not txt or not txt.SetTextColor then return end
   txt:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
+  txt:SetShadowOffset(1, -1)
+  txt:SetShadowColor(0, 0, 0, 0.92)
 end
 
 local function setEditBoxEnabled(eb, enabled)
@@ -359,7 +361,7 @@ local function skinBar(bar, r, g, b)
   border:SetPoint("TOPLEFT", -1, 1)
   border:SetPoint("BOTTOMRIGHT", 1, -1)
   border:SetBackdrop({ edgeFile = TEX.FLAT, edgeSize = 1 })
-  border:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.60)
+  border:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.75)
   bar._border = border
 end
 
@@ -657,11 +659,13 @@ function ns.UI_Init()
   hpBar:SetValue(1)
   skinBar(hpBar, C.RED_HP[1], C.RED_HP[2], C.RED_HP[3])
 
-  local hpText = hpBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local hpText = hpBar:CreateFontString(nil, "OVERLAY")
+  hpText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
   UI.hpText = hpText
   hpText:SetPoint("CENTER")
+  hpText:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
   hpText:SetShadowOffset(1, -1)
-  hpText:SetShadowColor(0, 0, 0, 0.80)
+  hpText:SetShadowColor(0, 0, 0, 0.92)
 
   local blockOverlay = hpBar:CreateTexture(nil, "OVERLAY")
   UI.hpBlockOverlay = blockOverlay
@@ -738,7 +742,7 @@ function ns.UI_Init()
   -- Ressource bars (up to 4, depending on selected class)
   UI.resBars = {}
   UI.resTexts = {}
-  local RES_BAR_H = 14
+  local RES_BAR_H = 17
   local RES_GAP = 4
 
   local function mkResBar(idx)
@@ -768,9 +772,13 @@ function ns.UI_Init()
       end
     end
 
-    local txt = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local txt = bar:CreateFontString(nil, "OVERLAY")
+    txt:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
     UI.resTexts[idx] = txt
     txt:SetPoint("CENTER")
+    txt:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
+    txt:SetShadowOffset(1, -1)
+    txt:SetShadowColor(0, 0, 0, 0.92)
     return bar
   end
 
