@@ -1321,8 +1321,8 @@ function ns.UI_Init()
 
   local function mkResRow(idx, y)
     local row = CreateFrame("Frame", nil, pageRes)
-    row:SetSize(330, 24)
-    registerRowAnchor(row, pageRes, 330, y)
+    row:SetSize(354, 24)
+    registerRowAnchor(row, pageRes, 354, y)
     row.resIdx = idx
     UI.resRow[idx] = row
     row:Hide()
@@ -1331,19 +1331,19 @@ function ns.UI_Init()
     UI.resRowLabel[idx] = label
 
     local curEB, maxEB
-    mkLabel(row, "/", 172, 0)
+    mkLabel(row, "/", 196, 0)
 
-    curEB = mkEdit(row, 70, 20, 96, 2, applyAllRes)
-    maxEB = mkEdit(row, 70, 20, 186, 2, applyAllRes)
+    curEB = mkEdit(row, 70, 20, 120, 2, applyAllRes)
+    maxEB = mkEdit(row, 70, 20, 210, 2, applyAllRes)
     UI.resRowCur[idx] = curEB
     UI.resRowMax[idx] = maxEB
 
-    mkButton(row, "+", 28, 20, 270, 2, function()
+    mkButton(row, "+", 28, 20, 294, 2, function()
       if Core and Core.AddResIndex then
         Core.AddResIndex(row.resIdx or idx, 1)
       end
     end)
-    mkButton(row, "-", 28, 20, 302, 2, function()
+    mkButton(row, "-", 28, 20, 326, 2, function()
       if Core and Core.AddResIndex then
         Core.AddResIndex(row.resIdx or idx, -1)
       end
