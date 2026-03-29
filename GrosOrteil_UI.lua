@@ -303,7 +303,8 @@ end
 
 local function formatHistoryText(history)
   if History and History.FormatHistoryText then
-    return History.FormatHistoryText(history)
+    local depth = (Core and Core.GetUndoDepth and Core.GetUndoDepth()) or 0
+    return History.FormatHistoryText(history, depth)
   end
   return nil
 end

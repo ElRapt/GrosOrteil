@@ -161,21 +161,12 @@ local function restoreSnapshot(snap)
   s.rev = (s.rev or 0) + 1
 end
 
-local function pushUndoHistory(kind)
-  local s = Core.state
-  if not s then return end
-  if History and History.Push then
-    History.Push(s, { kind = kind })
-  end
-end
-
 function Core.Undo()
   if #undoStack == 0 or not Core.state then return end
   redoStack[#redoStack + 1] = deepCopyState(Core.state)
   local snap = table.remove(undoStack)
   restoreSnapshot(snap)
   prevSnapshot = deepCopyState(Core.state)
-  pushUndoHistory("UNDO")
   notify()
 end
 
@@ -185,12 +176,12 @@ function Core.Redo()
   local snap = table.remove(redoStack)
   restoreSnapshot(snap)
   prevSnapshot = deepCopyState(Core.state)
-  pushUndoHistory("REDO")
   notify()
 end
 
 function Core.CanUndo() return #undoStack > 0 end
 function Core.CanRedo() return #redoStack > 0 end
+function Core.GetUndoDepth() return #redoStack end
 
 -- bump() is called AFTER state is modified. We save the PREVIOUS
 -- post-change snapshot as the undo target, then record the new

@@ -217,30 +217,23 @@ function History.FormatEntry(e)
 		)
 	end
 
-	if e.kind == "UNDO" then
-		return block(
-			prefix("Annuler", "AAAAAA"),
-			colorize("État restauré au point précédent.", "CCCCCC")
-		)
-	end
-
-	if e.kind == "REDO" then
-		return block(
-			prefix("Rétablir", "AAAAAA"),
-			colorize("État rétabli.", "CCCCCC")
-		)
-	end
-
 	return nil
 end
 
-function History.FormatHistoryText(history)
+function History.FormatHistoryText(history, undoneCount)
 	if type(history) ~= "table" or #history == 0 then return nil end
+	undoneCount = undoneCount or 0
 	local lines = {}
+	local actionsSeen = 0
 	for i = 1, #history do
-		local line = History.FormatEntry(history[i])
-		if line then
-			lines[#lines + 1] = line
+		local e = history[i]
+		local isUndoRedo = (e.kind == "UNDO" or e.kind == "REDO")
+		if not isUndoRedo then
+			actionsSeen = actionsSeen + 1
+		end
+		if isUndoRedo or actionsSeen > undoneCount then
+			local line = History.FormatEntry(e)
+			if line then lines[#lines + 1] = line end
 		end
 	end
 	if #lines == 0 then return nil end
