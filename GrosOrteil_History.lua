@@ -217,6 +217,20 @@ function History.FormatEntry(e)
 		)
 	end
 
+	if e.kind == "UNDO" then
+		return block(
+			prefix("Annuler", "AAAAAA"),
+			colorize("État restauré au point précédent.", "CCCCCC")
+		)
+	end
+
+	if e.kind == "REDO" then
+		return block(
+			prefix("Rétablir", "AAAAAA"),
+			colorize("État rétabli.", "CCCCCC")
+		)
+	end
+
 	return nil
 end
 

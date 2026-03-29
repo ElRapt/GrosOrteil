@@ -583,6 +583,26 @@ function ns.UI_Init()
     end
   end)
 
+  -- ── Keyboard shortcuts ────────────────────────────────────────────
+  frame:EnableKeyboard(true)
+  frame:SetScript("OnKeyDown", function(self, key)
+    if IsControlKeyDown() and (key == "z" or key == "Z") then
+      self:SetPropagateKeyboardInput(false)
+      if Core and Core.Undo then
+        Core.Undo()
+        if UI.refreshUndoRedo then UI.refreshUndoRedo() end
+      end
+    elseif IsControlKeyDown() and (key == "y" or key == "Y") then
+      self:SetPropagateKeyboardInput(false)
+      if Core and Core.Redo then
+        Core.Redo()
+        if UI.refreshUndoRedo then UI.refreshUndoRedo() end
+      end
+    else
+      self:SetPropagateKeyboardInput(true)
+    end
+  end)
+
   -- ── Action icons (bottom-right, all tabs) ───────────────────────
   do
     local ICON_SIZE = 18
@@ -722,6 +742,99 @@ function ns.UI_Init()
   contentTopShadow:SetHeight(3)
   contentTopShadow:SetTexture(TEX.FLAT)
   contentTopShadow:SetColorTexture(0, 0, 0, 0.10)
+
+  -- ── Undo / Redo buttons (bottom-left of content, all tabs) ────────────
+  do
+    local UBTN_W, UBTN_H = 22, 18
+    local UBTN_PAD = 6
+
+    local function mkUndoBtn(parent, label, tipTitle, tipDesc, onClick)
+      local btn = CreateFrame("Button", nil, parent)
+      btn:SetSize(UBTN_W, UBTN_H)
+      btn:SetFrameLevel(parent:GetFrameLevel() + 10)
+
+      local bg = btn:CreateTexture(nil, "BACKGROUND")
+      bg:SetAllPoints()
+      bg:SetColorTexture(0.10, 0.07, 0.03, 0.70)
+
+      local border = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+      border:SetAllPoints()
+      border:SetBackdrop({
+        edgeFile = "Interface/Buttons/WHITE8x8", edgeSize = 1,
+      })
+      border:SetFrameLevel(btn:GetFrameLevel() + 1)
+
+      local text = btn:CreateFontString(nil, "OVERLAY")
+      text:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+      text:SetPoint("CENTER", 0, 1)
+      text:SetText(label)
+
+      btn.border = border
+      btn.text = text
+      btn.bg = bg
+
+      local function refreshVisual(enabled)
+        if enabled then
+          text:SetTextColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
+          border:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+          bg:SetColorTexture(0.10, 0.07, 0.03, 0.70)
+          btn:Enable()
+        else
+          text:SetTextColor(0.40, 0.35, 0.28, 0.40)
+          border:SetBackdropBorderColor(0.30, 0.25, 0.18, 0.30)
+          bg:SetColorTexture(0.06, 0.04, 0.02, 0.40)
+          btn:Disable()
+        end
+      end
+      btn.refreshVisual = refreshVisual
+      refreshVisual(false)
+
+      btn:SetScript("OnEnter", function(self)
+        if not self:IsEnabled() then return end
+        border:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(tipTitle, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+        GameTooltip:AddLine(tipDesc, 1, 1, 1, true)
+        GameTooltip:Show()
+      end)
+      btn:SetScript("OnLeave", function(self)
+        if self:IsEnabled() then
+          border:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+        end
+        GameTooltip:Hide()
+      end)
+      btn:SetScript("OnClick", function()
+        if Core then
+          onClick()
+          UI.refreshUndoRedo()
+        end
+      end)
+
+      return btn
+    end
+
+    local undoBtn = mkUndoBtn(content, "<", "Annuler",
+      "Annule la dernière action.",
+      function() Core.Undo() end)
+    undoBtn:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", UBTN_PAD, UBTN_PAD)
+    UI.undoBtn = undoBtn
+
+    local redoBtn = mkUndoBtn(content, ">", "Rétablir",
+      "Rétablit la dernière action annulée.",
+      function() Core.Redo() end)
+    redoBtn:SetPoint("LEFT", undoBtn, "RIGHT", 3, 0)
+    UI.redoBtn = redoBtn
+
+    function UI.refreshUndoRedo()
+      if UI.undoBtn then
+        UI.undoBtn.refreshVisual(Core and Core.CanUndo())
+      end
+      if UI.redoBtn then
+        UI.redoBtn.refreshVisual(Core and Core.CanRedo())
+      end
+    end
+  end
 
   -- ── HP Bar ─────────────────────────────────────────────────────────────
   local hpBar = CreateFrame("StatusBar", nil, content)
@@ -2172,7 +2285,10 @@ function ns.UI_Init()
       end
     end
   end
-  Core.OnChange(onChangeCallback)
+  Core.OnChange(function(s)
+    onChangeCallback(s)
+    if UI.refreshUndoRedo then UI.refreshUndoRedo() end
+  end)
 end
 
 function ns.UI_Show(show)

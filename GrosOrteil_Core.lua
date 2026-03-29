@@ -101,9 +101,111 @@ function Core.OnChange(fn)
   end
 end
 
+-- ── Undo / Redo ─────────────────────────────────────────────────────────
+local undoStack = {}
+local redoStack = {}
+local MAX_UNDO = 50
+local undoCoalesce = false
+local prevSnapshot = nil
+
+local function deepCopyState(s)
+  local c = {}
+  c.hp = s.hp; c.maxHp = s.maxHp
+  c.bonusHp = s.bonusHp; c.bonusHpMax = s.bonusHpMax
+  c.classKey = s.classKey
+  c.res = s.res; c.maxRes = s.maxRes
+  c.res2 = s.res2; c.maxRes2 = s.maxRes2
+  c.res3 = s.res3; c.maxRes3 = s.maxRes3
+  c.res4 = s.res4; c.maxRes4 = s.maxRes4
+  c.auth = s.auth; c.maxAuth = s.maxAuth
+  c.armor = s.armor; c.trueArmor = s.trueArmor
+  c.dodge = s.dodge
+  c.tempBlock = s.tempBlock
+  c.tempMagicBlock = s.tempMagicBlock
+  c.rev = s.rev
+  c.wounds = { hit25 = s.wounds.hit25, hit10 = s.wounds.hit10 }
+  local p = s.pet or {}
+  local pw = p.wounds or {}
+  c.pet = {
+    enabled = p.enabled, name = p.name,
+    hp = p.hp, maxHp = p.maxHp,
+    armor = p.armor, trueArmor = p.trueArmor,
+    dodge = p.dodge, tempMagicBlock = p.tempMagicBlock,
+    wounds = { hit25 = pw.hit25, hit10 = pw.hit10 },
+  }
+  return c
+end
+
+local function restoreSnapshot(snap)
+  local s = Core.state
+  s.hp = snap.hp; s.maxHp = snap.maxHp
+  s.bonusHp = snap.bonusHp; s.bonusHpMax = snap.bonusHpMax
+  s.classKey = snap.classKey
+  s.res = snap.res; s.maxRes = snap.maxRes
+  s.res2 = snap.res2; s.maxRes2 = snap.maxRes2
+  s.res3 = snap.res3; s.maxRes3 = snap.maxRes3
+  s.res4 = snap.res4; s.maxRes4 = snap.maxRes4
+  s.auth = snap.auth; s.maxAuth = snap.maxAuth
+  s.armor = snap.armor; s.trueArmor = snap.trueArmor
+  s.dodge = snap.dodge
+  s.tempBlock = snap.tempBlock
+  s.tempMagicBlock = snap.tempMagicBlock
+  s.wounds.hit25 = snap.wounds.hit25
+  s.wounds.hit10 = snap.wounds.hit10
+  local p = s.pet; local sp = snap.pet
+  p.enabled = sp.enabled; p.name = sp.name
+  p.hp = sp.hp; p.maxHp = sp.maxHp
+  p.armor = sp.armor; p.trueArmor = sp.trueArmor
+  p.dodge = sp.dodge; p.tempMagicBlock = sp.tempMagicBlock
+  p.wounds.hit25 = sp.wounds.hit25; p.wounds.hit10 = sp.wounds.hit10
+  s.rev = (s.rev or 0) + 1
+end
+
+local function pushUndoHistory(kind)
+  local s = Core.state
+  if not s then return end
+  if History and History.Push then
+    History.Push(s, { kind = kind })
+  end
+end
+
+function Core.Undo()
+  if #undoStack == 0 or not Core.state then return end
+  redoStack[#redoStack + 1] = deepCopyState(Core.state)
+  local snap = table.remove(undoStack)
+  restoreSnapshot(snap)
+  prevSnapshot = deepCopyState(Core.state)
+  pushUndoHistory("UNDO")
+  notify()
+end
+
+function Core.Redo()
+  if #redoStack == 0 or not Core.state then return end
+  undoStack[#undoStack + 1] = deepCopyState(Core.state)
+  local snap = table.remove(redoStack)
+  restoreSnapshot(snap)
+  prevSnapshot = deepCopyState(Core.state)
+  pushUndoHistory("REDO")
+  notify()
+end
+
+function Core.CanUndo() return #undoStack > 0 end
+function Core.CanRedo() return #redoStack > 0 end
+
+-- bump() is called AFTER state is modified. We save the PREVIOUS
+-- post-change snapshot as the undo target, then record the new
+-- post-change snapshot for the next undo.
 local function bump()
   if not Core.state then return end
+  if prevSnapshot and not undoCoalesce then
+    undoCoalesce = true
+    undoStack[#undoStack + 1] = prevSnapshot
+    if #undoStack > MAX_UNDO then table.remove(undoStack, 1) end
+    for i = #redoStack, 1, -1 do redoStack[i] = nil end
+    C_Timer.After(0, function() undoCoalesce = false end)
+  end
   Core.state.rev = (Core.state.rev or 0) + 1
+  prevSnapshot = deepCopyState(Core.state)
 end
 
 local function clampNumber(x, minv, maxv)
@@ -410,6 +512,7 @@ function ns.Core_Init()
 
   Core.state = db.state
   updateWoundsSticky(Core.state)
+  prevSnapshot = deepCopyState(Core.state)
   notify()
 end
 
