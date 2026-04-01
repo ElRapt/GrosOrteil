@@ -124,7 +124,7 @@ function Shared.GetResProfile(state)
     end
   end
 
-  if state and state.pet and state.pet.enabled then
+  if state and state.pet and state.pet.enabled and state.pet.authorityEnabled then
     out[#out + 1] = { idx = 5, label = "Points d'autorité", r = 1.00, g = 0.45, b = 0.10 }
   end
 

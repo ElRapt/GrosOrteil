@@ -381,7 +381,14 @@ function ns.UI_Init()
     db.ui._migrated_20260217_sidebar = true
   end
 
-  local FRAME_W, FRAME_H = 820, 440
+  -- Migration: Paramètres tab merge requires a wider default window.
+  if not db.ui._migrated_20260401_paramtab then
+    db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
+    db.ui.w, db.ui.h = nil, nil
+    db.ui._migrated_20260401_paramtab = true
+  end
+
+  local FRAME_W, FRAME_H = 880, 460
   local MIN_W, MIN_H     = 640, 360
   local MAX_W, MAX_H     = 1500, 1000
   local PAD_X = 14
@@ -661,7 +668,7 @@ function ns.UI_Init()
       "Restaurer PV",
       "Remet tous les PV au maximum (bonus inclus).",
       function() Core.RestoreHP() end)
-    iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -ICON_GAP, 20)
+    iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -50, 20)
 
     local iconRegenHP = mkActionIcon(frame,
       "Interface/Icons/Spell_Nature_Rejuvenation",
@@ -1162,7 +1169,7 @@ function ns.UI_Init()
 
   -- Sidebar navigation (vertical tabs)
   local TAB_TEXTS = {
-    "Points de vie",    -- 1  character section
+    "Fiche",             -- 1  character section
     "Ressources",       -- 2
     "Armure & blocage", -- 3 (was 4)
     "Actions",          -- 4 (was 5)
@@ -1283,10 +1290,10 @@ function ns.UI_Init()
     mkTab(TAB_TEXTS[i], i)
   end
 
-  local pageHP      = mkPage()   -- 1
+  local pageHP      = mkPage()   -- 1  (Paramètres)
   local pageRes     = mkPage()   -- 2
-  local pageArmor   = mkPage()   -- 3 (was 4)
-  local pageCombat  = mkPage()   -- 4 (was 5)
+  mkPage()                       -- 3  (hidden — merged into Paramètres)
+  mkPage()                       -- 4  (hidden — merged into Paramètres)
   mkPage()                       -- 5 (reserved slot, always hidden)
   local pageClasses = mkPage()   -- 6 (was 3)
   local pageHistory = mkPage()   -- 7
@@ -1295,7 +1302,11 @@ function ns.UI_Init()
   local pagePetCombat = mkPage() -- 10: familiar – Actions
   UI.pageHistory = pageHistory
 
-  -- Tab 6 is always hidden; familiar tabs (8-10) start hidden (character section is default).
+  -- Tabs 2-5 are merged into tab 1 (Fiche). Tab 5 is a reserved slot.
+  -- Familiar tabs (8-10) start hidden (character section is default).
+  UI.tabHidden[2] = true
+  UI.tabHidden[3] = true
+  UI.tabHidden[4] = true
   UI.tabHidden[5] = true
 
   -- ── Section switcher buttons (bottom of sidebar) ────────────────────
@@ -1385,30 +1396,44 @@ function ns.UI_Init()
   sectDiamond:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.35)
   sectDiamond:SetRotation(math.rad(45))
 
-  -- Onglet 1 : PV
-  local hpCur, hpMax
+  -- Onglet 1 : Fiche (PV + Armure & Esquive + Actions + Blocage + Ressources)
+  -- Déclarations anticipées ; l'UI est construite après les ressources.
+  local hpCur, hpMax, bonusHpValEB
+  local armorEB, trueArmorEB, dodgeEB, blockEB, magicBlockEB
+  local actValEB
 
   local function applyAllHP()
     Core.SetHP(getNumber(hpCur), getNumber(hpMax))
   end
 
-  local aHP1 = mkRowAnchor(pageHP, 360, -4)
-  mkLabel(aHP1, "PV", 0, -2)
-  mkLabel(aHP1, "/", 112, -2)
-  hpCur = mkEdit(aHP1, 70, 20, 36, 0, applyAllHP)
-  hpMax = mkEdit(aHP1, 70, 20, 126, 0, applyAllHP)
+  local function applyAllArmor()
+    local armorVal     = getNumber(armorEB)
+    local trueArmorVal = getNumber(trueArmorEB)
+    local dodgeVal     = getNumber(dodgeEB)
+    local blockVal     = getNumber(blockEB)
+    local magicVal     = getNumber(magicBlockEB)
+    Core.SetArmor(armorVal, trueArmorVal)
+    Core.SetDodge(dodgeVal)
+    Core.SetTempBlock(blockVal)
+    Core.SetTempMagicBlock(magicVal)
+  end
 
-  local bonusHpValEB
-  local aHP2 = mkRowAnchor(pageHP, 360, -36)
-  UI.bonusHpToggleBtn = mkButton(aHP2, "Activer PV bonus", 160, 20, 0, 0, function()
-    if Core and Core.ToggleBonusHP then Core.ToggleBonusHP() end
-  end)
-  mkLabel(aHP2, "Max", 172, -2)
-  bonusHpValEB = mkEdit(aHP2, 70, 20, 202, 0, function()
-    if Core and Core.SetBonusHP then Core.SetBonusHP(getNumber(bonusHpValEB) or 0) end
-  end)
+  local function doDmgArmor() Core.DamageWithArmor(getNumber(actValEB) or 0) end
+  local function doDmgTrue()  Core.DamageTrue(getNumber(actValEB) or 0) end
+  local function doHeal()     Core.Heal(getNumber(actValEB) or 0) end
 
-  -- Onglet 2 : Ressource
+  -- Build scroll frame early so resource rows can be parented to cA.
+  local BLOCK_W = 440
+  local paramSF = CreateFrame("ScrollFrame", nil, pageHP, "UIPanelScrollFrameTemplate")
+  paramSF:SetPoint("TOPLEFT",     pageHP, "TOPLEFT",     0,   0)
+  paramSF:SetPoint("BOTTOMRIGHT", pageHP, "BOTTOMRIGHT", -20, 0)
+  local paramChild = CreateFrame("Frame", nil, paramSF)
+  paramChild:SetHeight(680)
+  paramSF:SetScrollChild(paramChild)
+  local cA = CreateFrame("Frame", nil, paramChild)
+  cA:SetSize(BLOCK_W, 1)
+
+  -- Onglet 2 (fusionné dans Fiche) : Ressources
   UI.resRow = UI.resRow or {}
   UI.resRowLabel = UI.resRowLabel or {}
   UI.resRowCur = UI.resRowCur or {}
@@ -1433,10 +1458,12 @@ function ns.UI_Init()
     end
   end
 
+  -- Row width 354; centered in BLOCK_W=440 → x offset = (440-354)/2 = 43.
+  -- Y offsets are relative to cA top; rows start at -514 (below Ressources header).
   local function mkResRow(idx, y)
-    local row = CreateFrame("Frame", nil, pageRes)
+    local row = CreateFrame("Frame", nil, cA)
     row:SetSize(354, 24)
-    registerRowAnchor(row, pageRes, 354, y)
+    row:SetPoint("TOPLEFT", cA, "TOPLEFT", 43, y)
     row.resIdx = idx
     UI.resRow[idx] = row
     row:Hide()
@@ -1467,83 +1494,131 @@ function ns.UI_Init()
   end
 
   -- Rows are shown/hidden based on selected class.
-  mkResRow(1, -6)
-  mkResRow(2, -34)
-  mkResRow(3, -62)
-  mkResRow(4, -90)
-  mkResRow(5, -118)
+  mkResRow(1, -514)
+  mkResRow(2, -542)
+  mkResRow(3, -570)
+  mkResRow(4, -598)
+  mkResRow(5, -626)
 
-  UI.noResHint = mkLabelCenter(pageRes, "Aucune ressource pour cette classe.", 0, -40)
+  UI.noResHint = mkLabelCenter(cA, "Aucune ressource pour cette classe.", 0, -540)
   UI.noResHint:Hide()
 
-  -- Resources tab can be disabled for classes without resources (eg Warrior).
+  -- Onglet 1 (suite) : Fiche — construction du scroll
+  do
+    local INPUT_H = 22
+    local BTN_H   = 26
+    local LBL_Y   = -2   -- décalage vertical label/input (centre optique)
 
-  -- Onglet 2 : Armure & Blocage
-  local armorEB, trueArmorEB, dodgeEB, blockEB, magicBlockEB
+    local function centerContent()
+      local w = paramChild:GetWidth() or 0
+      if w <= 0 then return end
+      local x = math.max(8, math.floor((w - BLOCK_W) / 2))
+      cA:ClearAllPoints()
+      cA:SetPoint("TOPLEFT", paramChild, "TOPLEFT", x, 0)
+    end
+    local function syncParamWidth()
+      local w = paramSF:GetWidth() or 0
+      if w <= 0 then return end
+      paramChild:SetWidth(math.max(200, w - 20))
+    end
+    paramSF:SetScript("OnSizeChanged", syncParamWidth)
+    paramChild:SetScript("OnSizeChanged", centerContent)
 
-  local function applyAllArmor()
-    local armorVal = getNumber(armorEB)
-    local trueArmorVal = getNumber(trueArmorEB)
-    local dodgeVal = getNumber(dodgeEB)
-    local blockVal = getNumber(blockEB)
-    local magicVal = getNumber(magicBlockEB)
-    Core.SetArmor(armorVal, trueArmorVal)
-    Core.SetDodge(dodgeVal)
-    Core.SetTempBlock(blockVal)
-    Core.SetTempMagicBlock(magicVal)
+    -- En-tête de section : titre centré 14 pt + ligne décorative.
+    local function mkSectionHeader(text, y)
+      local lbl = cA:CreateFontString(nil, "OVERLAY")
+      lbl:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+      lbl:SetPoint("TOP", cA, "TOP", 0, y)
+      lbl:SetWidth(BLOCK_W)
+      lbl:SetJustifyH("CENTER")
+      lbl:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+      lbl:SetShadowOffset(1, -1)
+      lbl:SetShadowColor(0, 0, 0, 0.60)
+      lbl:SetText(text)
+      local ul = cA:CreateTexture(nil, "ARTWORK")
+      ul:SetTexture(TEX.FLAT)
+      ul:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, y - 18)
+      ul:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, y - 18)
+      ul:SetHeight(1)
+      ul:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+    end
+
+    -- Séparateur discret pleine largeur entre sections.
+    local function mkSep(y)
+      local sep = paramChild:CreateTexture(nil, "ARTWORK")
+      sep:SetTexture(TEX.FLAT)
+      sep:SetPoint("TOPLEFT",  paramChild, "TOPLEFT",  16, y)
+      sep:SetPoint("TOPRIGHT", paramChild, "TOPRIGHT", -16, y)
+      sep:SetHeight(1)
+      sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.16)
+    end
+
+    -- Helpers positionnés dans le bloc centré.
+    local function lbl(text, x, y)  mkLabel(cA, text, x, y + LBL_Y)  end
+    local function edt(w, x, y, fn) return mkEdit(cA, w, INPUT_H, x, y, fn) end
+    local function btn(text, w, x, y, fn) return mkButton(cA, text, w, BTN_H, x, y, fn) end
+
+    -- ── Points de vie ───────────────────────────────────────────────
+    mkSectionHeader("Points de vie", -10)
+
+    lbl("PV",  0,   -38)
+    lbl("/",   148, -38)
+    hpCur = edt(110, 26,  -36, applyAllHP)
+    hpMax = edt(110, 166, -36, applyAllHP)
+
+    UI.bonusHpToggleBtn = btn("Activer PV bonus", 172, 0, -70, function()
+      if Core and Core.ToggleBonusHP then Core.ToggleBonusHP() end
+    end)
+    lbl("Valeur", 186, -72)
+    bonusHpValEB = edt(110, 234, -70, function()
+      if Core and Core.SetBonusHP then Core.SetBonusHP(getNumber(bonusHpValEB) or 0) end
+    end)
+
+    mkSep(-106)
+
+    -- ── Armure & Esquive ────────────────────────────────────────────
+    mkSectionHeader("Armure & Esquive", -118)
+
+    lbl("Armure",       0,   -144)
+    lbl("Armure invul", 190, -144)
+    armorEB     = edt(110, 66,  -142, applyAllArmor)
+    trueArmorEB = edt(110, 284, -142, applyAllArmor)
+
+    lbl("Esquive", 0, -178)
+    dodgeEB = edt(110, 66, -176, applyAllArmor)
+
+    mkSep(-212)
+
+    -- ── Actions ─────────────────────────────────────────────────────
+    mkSectionHeader("Actions", -224)
+
+    lbl("Valeur", 0, -252)
+    actValEB = edt(120, 60, -250, doDmgArmor)
+
+    btn("Dégâts (armure)", 210, 0,   -284, doDmgArmor)
+    btn("Dégâts (bruts)",  210, 230, -284, doDmgTrue)
+
+    btn("Soins",              210, 0,   -322, doHeal)
+    btn("Soins divins (75%)", 210, 230, -322, function() Core.DivineHeal() end)
+
+    mkSep(-364)
+
+    -- ── Blocage ─────────────────────────────────────────────────────
+    mkSectionHeader("Blocage", -376)
+
+    lbl("Blocage",         0, -402)
+    lbl("Blocage magique", 0, -436)
+    blockEB     = edt(110, 162, -400, applyAllArmor)
+    magicBlockEB = edt(110, 162, -434, applyAllArmor)
+    btn("Réinit.", 100, 284, -400, function() Core.ResetTempBlock() end)
+    btn("Réinit.", 100, 284, -434, function() Core.ResetTempMagicBlock() end)
+
+    mkSep(-470)
+
+    -- ── Ressources ──────────────────────────────────────────────────
+    -- Rows (mkResRow) and noResHint are pre-built above, parented to cA at y=-514…-626.
+    mkSectionHeader("Ressources", -482)
   end
-
-  -- ── Armure & Esquive (2 colonnes, ~320 px) ──────────
-  local aArmor1 = mkRowAnchor(pageArmor, 320, -4)
-  mkLabel(aArmor1, "Armure", 0, -2)
-  armorEB     = mkEdit(aArmor1, 70, 20, 64, 0, applyAllArmor)
-  mkLabel(aArmor1, "Armure invul", 154, -2)
-  trueArmorEB = mkEdit(aArmor1, 70, 20, 248, 0, applyAllArmor)
-
-  local aArmor2 = mkRowAnchor(pageArmor, 180, -34)
-  mkLabel(aArmor2, "Esquive", 0, -2)
-  dodgeEB = mkEdit(aArmor2, 70, 20, 64, 0, applyAllArmor)
-
-  local aArmorApply = mkRowAnchor(pageArmor, 90, -64)
-  mkButton(aArmorApply, "Appliquer", 90, 20, 0, 0, applyAllArmor)
-
-  -- Onglet 4 : Actions (Dégâts & Soins)
-  local actValEB
-
-  local function doDmgArmor() Core.DamageWithArmor(getNumber(actValEB) or 0) end
-  local function doDmgTrue()  Core.DamageTrue(getNumber(actValEB) or 0) end
-  local function doHeal()     Core.Heal(getNumber(actValEB) or 0) end
-
-  local aActVal = mkRowAnchor(pageCombat, 180, -4)
-  mkLabel(aActVal, "Valeur", 0, -2)
-  actValEB = mkEdit(aActVal, 80, 20, 56, 0, doDmgArmor)
-
-  local aActBtns1 = mkRowAnchor(pageCombat, 392, -36)
-  mkButton(aActBtns1, "Dégâts (armure)", 190, 22, 0,   0, doDmgArmor)
-  mkButton(aActBtns1, "Dégâts (bruts)",  190, 22, 202, 0, doDmgTrue)
-
-  local aActBtns2 = mkRowAnchor(pageCombat, 392, -64)
-  mkButton(aActBtns2, "Soins",               190, 22, 0,   0, doHeal)
-  mkButton(aActBtns2, "Soins divins (75%)",  190, 22, 202, 0, function() Core.DivineHeal() end)
-
-  -- ── Blocage temporaire ──────────────
-  local actBlockSep = pageCombat:CreateTexture(nil, "ARTWORK")
-  actBlockSep:SetTexture(TEX.FLAT)
-  actBlockSep:SetPoint("LEFT",  pageCombat, "LEFT",  20, 0)
-  actBlockSep:SetPoint("RIGHT", pageCombat, "RIGHT", -20, 0)
-  actBlockSep:SetPoint("TOP",   pageCombat, "TOP",   0, -98)
-  actBlockSep:SetHeight(1)
-  actBlockSep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
-
-  local aBlock1 = mkRowAnchor(pageCombat, 280, -106)
-  mkLabel(aBlock1, "Blocage (temp.)", 0, -2)
-  blockEB = mkEdit(aBlock1, 70, 20, 130, 0, applyAllArmor)
-  mkButton(aBlock1, "Réinit.", 70, 20, 210, 0, function() Core.ResetTempBlock() end)
-
-  local aBlock2 = mkRowAnchor(pageCombat, 340, -136)
-  mkLabel(aBlock2, "Blocage mag. (temp.)", 0, -2)
-  magicBlockEB = mkEdit(aBlock2, 70, 20, 190, 0, applyAllArmor)
-  mkButton(aBlock2, "Réinit.", 70, 20, 270, 0, function() Core.ResetTempMagicBlock() end)
 
   -- Onglet 7 : Historique
   do
@@ -1624,11 +1699,16 @@ function ns.UI_Init()
   end
 
   -- ── Tab 8 : Identité / PV ─────────────────────────────────────────────────
-  local aPetToggle = mkRowAnchor(pagePetHP, 170, -6)
-  petToggleBtn = mkButton(aPetToggle, "Activer le familier", 170, 22, 0, 0, function()
+  local aPetToggle = mkRowAnchor(pagePetHP, 380, -6)
+  petToggleBtn = mkButton(aPetToggle, "Activer le familier", 180, 22, 0, 0, function()
     if not Core or not Core.SetPetEnabled then return end
     local p = Core.GetPet and Core.GetPet() or nil
     Core.SetPetEnabled(not (p and p.enabled))
+  end)
+  UI.petAuthorityToggleBtn = mkButton(aPetToggle, "Autorité", 180, 22, 200, 0, function()
+    if not Core or not Core.SetPetAuthorityEnabled then return end
+    local p = Core.GetPet and Core.GetPet() or nil
+    Core.SetPetAuthorityEnabled(not (p and p.authorityEnabled))
   end)
 
   local aPetNom = mkRowAnchor(pagePetHP, 230, -38)
@@ -1802,6 +1882,34 @@ function ns.UI_Init()
       if Core and Core.SetClassKey then Core.SetClassKey(classKey) end
     end)
 
+    b:SetScript("OnEnter", function(self)
+      b:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
+      local name = (Shared.CLASS_NAMES_FR and Shared.CLASS_NAMES_FR[classKey]) or classKey
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:ClearLines()
+      GameTooltip:AddLine(name, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+      -- Resource list
+      local profile = Shared.RES_PROFILES_BY_CLASS and Shared.RES_PROFILES_BY_CLASS[classKey]
+      if not profile then
+        local style = Shared.CLASS_STYLES and Shared.CLASS_STYLES[classKey]
+        if style and style.label then
+          profile = {{ label = style.label }}
+        end
+      end
+      if profile and #profile > 0 then
+        local parts = {}
+        for i = 1, #profile do parts[#parts + 1] = profile[i].label end
+        GameTooltip:AddLine(table.concat(parts, ", "), 1, 1, 1, true)
+      else
+        GameTooltip:AddLine("Aucune ressource", 0.6, 0.6, 0.6, true)
+      end
+      GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function()
+      b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
+      GameTooltip:Hide()
+    end)
+
     UI.classButtons[idx] = b
     return b
   end
@@ -1909,22 +2017,10 @@ function ns.UI_Init()
     if UI.noResHint then
       if rowCount == 0 then UI.noResHint:Show() else UI.noResHint:Hide() end
     end
-    -- Hide resources tab for Classique (WARRIOR) with no pet; disable for other no-resource classes.
-    local hideRes = (s.classKey == "WARRIOR" and rowCount == 0)
-    if UI.tabHidden then
-      local wasHidden = UI.tabHidden[2]
-      UI.tabHidden[2] = hideRes
-      if wasHidden ~= hideRes then
-        repositionSidebarTabs()
-      end
-    end
+    -- Resources are merged into tab 1 (Fiche); tab 2 is always hidden.
     if UI.tabDisabled then
       UI.tabDisabled[2] = (rowCount == 0)
-      if (hideRes or UI.tabDisabled[2]) and UI.activeTab == 2 then
-        setTab(1)
-      else
-        setTab(UI.activeTab or 1)
-      end
+      setTab(UI.activeTab or 1)
     end
 
     -- Default: hide resource threshold markers; they'll be re-shown when applicable.
@@ -2245,6 +2341,13 @@ function ns.UI_Init()
         UI.petToggleBtn:SetText("Désactiver le familier")
       else
         UI.petToggleBtn:SetText("Activer le familier")
+      end
+    end
+    if UI.petAuthorityToggleBtn and UI.petAuthorityToggleBtn.SetText then
+      if p.authorityEnabled then
+        UI.petAuthorityToggleBtn:SetText("Désactiver points d'autorité")
+      else
+        UI.petAuthorityToggleBtn:SetText("Activer points d'autorité")
       end
     end
 

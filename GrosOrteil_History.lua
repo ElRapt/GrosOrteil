@@ -116,7 +116,7 @@ function History.FormatEntry(e)
 		if e.dodged then
 			return block(
 				sep({
-					prefix("Dégâts armure", COLORS.DAMAGE),
+					prefix("Dégâts subis (armure)", COLORS.DAMAGE),
 					"Valeur " .. fmtInt(e.input),
 					"Résultat " .. colorize("ESQUIVÉ", COLORS.RESULT),
 				}),
@@ -133,7 +133,7 @@ function History.FormatEntry(e)
 		end
 		return block(
 			sep({
-				prefix("Dégâts armure", COLORS.DAMAGE),
+				prefix("Dégâts subis (armure)", COLORS.DAMAGE),
 				"Valeur " .. fmtInt(e.input),
 				"Résultat " .. colorize(fmtInt(e.damage), COLORS.RESULT),
 			}),
@@ -152,7 +152,7 @@ function History.FormatEntry(e)
 		if e.dodged then
 			return block(
 				sep({
-					prefix("Dégâts bruts", COLORS.DAMAGE),
+					prefix("Dégâts subis (bruts)", COLORS.DAMAGE),
 					"Valeur " .. fmtInt(e.input),
 					"Résultat " .. colorize("ESQUIVÉ", COLORS.RESULT),
 				}),
@@ -169,7 +169,7 @@ function History.FormatEntry(e)
 		end
 		return block(
 			sep({
-				prefix("Dégâts bruts", COLORS.DAMAGE),
+				prefix("Dégâts subis (bruts)", COLORS.DAMAGE),
 				"Valeur " .. fmtInt(e.input),
 				"Résultat " .. colorize(fmtInt(e.damage), COLORS.RESULT),
 			}),
@@ -186,7 +186,7 @@ function History.FormatEntry(e)
 	elseif e.kind == "HEAL" then
 		return block(
 			sep({
-				prefix("Soins", COLORS.HEAL),
+				prefix("Soins reçus", COLORS.HEAL),
 				"Valeur " .. fmtInt(e.input),
 			}),
 			sep({
@@ -202,7 +202,7 @@ function History.FormatEntry(e)
 	elseif e.kind == "DIVINE_HEAL" then
 		return block(
 			sep({
-				prefix("Soins divins", COLORS.DIVINE),
+				prefix("Soins divins reçus", COLORS.DIVINE),
 				"Valeur " .. fmtInt(e.gain),
 			}),
 			sep({

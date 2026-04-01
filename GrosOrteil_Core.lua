@@ -326,6 +326,7 @@ local function ensurePetDefaults(pet)
   if type(pet.trueArmor) ~= "number" or pet.trueArmor < 0 then pet.trueArmor = 0 end
   if type(pet.dodge) ~= "number" or pet.dodge < 0 then pet.dodge = 0 end
   if type(pet.tempMagicBlock) ~= "number" or pet.tempMagicBlock < 0 then pet.tempMagicBlock = 0 end
+  if type(pet.authorityEnabled) ~= "boolean" then pet.authorityEnabled = false end
   if type(pet.wounds) ~= "table" then pet.wounds = {} end
   pet.wounds.hit25 = not not pet.wounds.hit25
   pet.wounds.hit10 = not not pet.wounds.hit10
@@ -555,6 +556,16 @@ function Core.SetPetEnabled(enabled)
   local v = not not enabled
   if p.enabled == v then return end
   p.enabled = v
+  bump(); notify()
+end
+
+function Core.SetPetAuthorityEnabled(enabled)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  local v = not not enabled
+  if p.authorityEnabled == v then return end
+  p.authorityEnabled = v
   bump(); notify()
 end
 
