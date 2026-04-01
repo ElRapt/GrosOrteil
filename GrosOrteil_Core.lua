@@ -123,6 +123,13 @@ local function deepCopyState(s)
   c.tempBlock = s.tempBlock
   c.tempMagicBlock = s.tempMagicBlock
   c.rev = s.rev
+  c.shamanPosture = s.shamanPosture
+  c.shamanPostureDmgBonus = s.shamanPostureDmgBonus
+  local spb = s.shamanPostureBase
+  c.shamanPostureBase = spb and {
+    armor = spb.armor, dodge = spb.dodge, maxHp = spb.maxHp,
+    maxRes = spb.maxRes, maxRes2 = spb.maxRes2, maxRes3 = spb.maxRes3, maxRes4 = spb.maxRes4,
+  } or nil
   c.wounds = { hit25 = s.wounds.hit25, hit10 = s.wounds.hit10 }
   local p = s.pet or {}
   local pw = p.wounds or {}
@@ -150,6 +157,13 @@ local function restoreSnapshot(snap)
   s.dodge = snap.dodge
   s.tempBlock = snap.tempBlock
   s.tempMagicBlock = snap.tempMagicBlock
+  s.shamanPosture = snap.shamanPosture
+  s.shamanPostureDmgBonus = snap.shamanPostureDmgBonus or 0
+  local spb = snap.shamanPostureBase
+  s.shamanPostureBase = spb and {
+    armor = spb.armor, dodge = spb.dodge, maxHp = spb.maxHp,
+    maxRes = spb.maxRes, maxRes2 = spb.maxRes2, maxRes3 = spb.maxRes3, maxRes4 = spb.maxRes4,
+  } or nil
   s.wounds.hit25 = snap.wounds.hit25
   s.wounds.hit10 = snap.wounds.hit10
   local p = s.pet; local sp = snap.pet
@@ -491,6 +505,7 @@ function ns.Core_Init()
   if db.state.maxRes4 == nil then db.state.maxRes4 = db.state.maxRes or 20 end
   if db.state.auth == nil then db.state.auth = 0 end
   if db.state.maxAuth == nil then db.state.maxAuth = 5 end
+  if db.state.shamanPostureDmgBonus == nil then db.state.shamanPostureDmgBonus = 0 end
   -- Migration: tempHp -> bonusHp
   if db.state.bonusHp == nil then
     db.state.bonusHp = db.state.tempHp or 0
@@ -724,8 +739,9 @@ function Core.SetResIndex(i, res, maxRes)
     maxRes = MAGE_ARCANE_CHARGE_MAX
     res = clampNumber(res, 0, MAGE_ARCANE_CHARGE_MAX)
   else
+    local isShamanElemental = (s.classKey == "SHAMAN" and i >= 1 and i <= 4)
     res = clampNumber(res, -1e9, 1e9)
-    maxRes = clampNumber(maxRes, 1, 1e9)
+    maxRes = clampNumber(maxRes, isShamanElemental and 0 or 1, 1e9)
   end
 
   if maxRes then s[maxKey] = maxRes end
@@ -822,6 +838,10 @@ function Core.DamageWithArmor(amount)
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
 
+  if s.shamanPosture == "FEU" then
+    amount = amount + (s.shamanPostureDmgBonus or 10)
+  end
+
   local hpBefore = (s.hp or 0)
   local baseMaxBefore = (s.maxHp or 0)
   local bonusBefore = math.max(0, s.bonusHp or 0)
@@ -911,6 +931,10 @@ function Core.DamageTrue(amount)
   local s = Core.state
   if not s then return end
   amount = clampNumber(amount, 0, 1e9) or 0
+
+  if s.shamanPosture == "FEU" then
+    amount = amount + (s.shamanPostureDmgBonus or 10)
+  end
 
   local hpBefore = (s.hp or 0)
   local baseMaxBefore = (s.maxHp or 0)
@@ -1064,6 +1088,74 @@ end
 
 function Core.AddRes(amount)
   Core.AddResIndex(1, amount)
+end
+
+function Core.SetShamanPosture(posture)
+  local s = Core.state
+  if not s or s.classKey ~= "SHAMAN" then return end
+  -- Toggle off if same posture clicked again
+  if s.shamanPosture == posture then posture = nil end
+
+  -- Deactivate current posture first (restore base stats)
+  if s.shamanPosture then
+    local base = s.shamanPostureBase or {}
+    if s.shamanPosture == "FEU" then
+      s.armor = base.armor or s.armor
+      s.shamanPostureDmgBonus = 0
+      s.maxRes4 = base.maxRes4 or s.maxRes4
+      clampToMax(s, "res4", "maxRes4")
+    elseif s.shamanPosture == "TERRE" then
+      s.armor = math.max(0, (s.armor or 0) - 5)
+      s.maxHp = math.max(1, (s.maxHp or 0) - 20)
+      if (s.hp or 0) > s.maxHp then s.hp = s.maxHp end
+      recomputeWounds(s)
+      s.maxRes = base.maxRes or s.maxRes
+      clampToMax(s, "res", "maxRes")
+    elseif s.shamanPosture == "AIR" then
+      s.dodge = math.max(0, (s.dodge or 0) - 15)
+      s.maxRes2 = base.maxRes2 or s.maxRes2
+      clampToMax(s, "res2", "maxRes2")
+    elseif s.shamanPosture == "EAU" then
+      s.maxRes3 = base.maxRes3 or s.maxRes3
+      clampToMax(s, "res3", "maxRes3")
+    end
+    s.shamanPosture = nil
+    s.shamanPostureBase = nil
+  end
+
+  if not posture then bump(); notify(); return end
+
+  -- Check requirement: ≥ 3 points in the matching element
+  local reqKeys = { TERRE = "res", AIR = "res2", EAU = "res3", FEU = "res4" }
+  local reqKey = reqKeys[posture]
+  if not reqKey or (s[reqKey] or 0) < 3 then bump(); notify(); return end
+
+  -- Save base stats before modifying them
+  s.shamanPostureBase = {
+    armor = s.armor, dodge = s.dodge, maxHp = s.maxHp,
+    maxRes = s.maxRes, maxRes2 = s.maxRes2, maxRes3 = s.maxRes3, maxRes4 = s.maxRes4,
+  }
+  s.shamanPosture = posture
+
+  if posture == "FEU" then
+    s.armor = 0
+    s.shamanPostureDmgBonus = 10
+    s.maxRes4 = (s.maxRes4 or 0) + 4
+  elseif posture == "TERRE" then
+    s.armor = (s.armor or 0) + 5
+    s.maxHp = (s.maxHp or 0) + 20
+    s.hp = (s.hp or 0) + 20
+    clampHpToEffectiveMax(s)
+    recomputeWounds(s)
+    s.maxRes = (s.maxRes or 0) + 4
+  elseif posture == "AIR" then
+    s.dodge = (s.dodge or 0) + 15
+    s.maxRes2 = (s.maxRes2 or 0) + 4
+  elseif posture == "EAU" then
+    s.maxRes3 = (s.maxRes3 or 0) + 8
+  end
+
+  bump(); notify()
 end
 
 -- Restaure les PV au maximum (PV de base + bonus actif).

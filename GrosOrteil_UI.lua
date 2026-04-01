@@ -1622,6 +1622,78 @@ function ns.UI_Init()
     -- ── Ressources ──────────────────────────────────────────────────
     -- Rows (mkResRow) and noResHint are pre-built above, parented to cA at y=-514…-626.
     mkSectionHeader("Ressources", -482)
+
+    -- ── Postures Élémentaires (Shaman uniquement) ────────────────────
+    do
+      local POSTURE_DEFS = {
+        { key = "TERRE", label = "Terre",  r = 0.55, g = 0.35, b = 0.15,
+          tip = "Posture de Terre",
+          desc = "+5 armure\n+20 PV maximum\n+4 points de terre\n\nRequiert : 3 points de terre" },
+        { key = "AIR",   label = "Air",    r = 0.60, g = 0.95, b = 0.95,
+          tip = "Posture de l'Air",
+          desc = "+15 esquive\n+4 points d'air\n\nRequiert : 3 points d'air" },
+        { key = "EAU",   label = "Eau",    r = 0.20, g = 0.55, b = 1.00,
+          tip = "Posture de l'Eau",
+          desc = "+8 points d'eau\n\nRequiert : 3 points d'eau" },
+        { key = "FEU",   label = "Feu",    r = 1.00, g = 0.35, b = 0.10,
+          tip = "Posture de Feu",
+          desc = "Armure réduite à 0\nDégâts reçus +10\n+4 points de feu\n\nRequiert : 3 points de feu" },
+      }
+
+      local postureSection = cA:CreateFontString(nil, "OVERLAY")
+      postureSection:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+      postureSection:SetPoint("TOP", cA, "TOP", 0, -664)
+      postureSection:SetWidth(BLOCK_W)
+      postureSection:SetJustifyH("CENTER")
+      postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+      postureSection:SetShadowOffset(1, -1)
+      postureSection:SetShadowColor(0, 0, 0, 0.60)
+      postureSection:SetText("Postures Élémentaires")
+      UI.postureSectionLabel = postureSection
+
+      local postureSepLine = cA:CreateTexture(nil, "ARTWORK")
+      postureSepLine:SetTexture(TEX.FLAT)
+      postureSepLine:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, -682)
+      postureSepLine:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, -682)
+      postureSepLine:SetHeight(1)
+      postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+      UI.postureSepLine = postureSepLine
+
+      UI.postureButtons = {}
+      local BTN_W = 98
+      local BTN_H2 = 26
+      local GAP = 6
+      local totalW = 4 * BTN_W + 3 * GAP
+      local startX = math.floor((BLOCK_W - totalW) / 2)
+
+      for i, def in ipairs(POSTURE_DEFS) do
+        local bx = startX + (i - 1) * (BTN_W + GAP)
+        local b = mkButton(cA, def.label, BTN_W, BTN_H2, bx, -692)
+        b._postureKey = def.key
+        b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
+
+        local tipTitle = def.tip
+        local tipDesc  = def.desc
+        b:SetScript("OnEnter", function(self)
+          GameTooltip:SetOwner(self, "ANCHOR_TOP")
+          GameTooltip:ClearLines()
+          GameTooltip:AddLine(tipTitle, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+          GameTooltip:AddLine(tipDesc, 1, 1, 1, true)
+          GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function()
+          GameTooltip:Hide()
+        end)
+        b:SetScript("OnClick", function()
+          if Core and Core.SetShamanPosture then
+            Core.SetShamanPosture(def.key)
+          end
+        end)
+
+        UI.postureButtons[i] = b
+      end
+    end
+    paramChild:SetHeight(740)
   end
 
   -- Onglet 7 : Historique
@@ -2397,6 +2469,40 @@ function ns.UI_Init()
           else
             b:SetAlpha(0.70)
             b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
+          end
+        end
+      end
+    end
+
+    -- Postures Élémentaires (Shaman uniquement)
+    do
+      local isSham = (s.classKey == "SHAMAN") and (activeSection == 1)
+      if UI.postureSectionLabel then
+        if isSham then UI.postureSectionLabel:Show() else UI.postureSectionLabel:Hide() end
+      end
+      if UI.postureSepLine then
+        if isSham then UI.postureSepLine:Show() else UI.postureSepLine:Hide() end
+      end
+      local reqKeys = { TERRE = "res", AIR = "res2", EAU = "res3", FEU = "res4" }
+      if UI.postureButtons then
+        for _, b in ipairs(UI.postureButtons) do
+          if isSham then
+            b:Show()
+            local pk = b._postureKey
+            local rk = reqKeys[pk]
+            local pts = rk and (s[rk] or 0) or 0
+            local canUse = (pts >= 3)
+            local isActive = (s.shamanPosture == pk)
+            setButtonEnabled(b, canUse)
+            if isActive then
+              b:SetBackdropColor(b._postureR * 0.35, b._postureG * 0.35, b._postureB * 0.35, 0.95)
+              b:SetBackdropBorderColor(b._postureR, b._postureG, b._postureB, 1.0)
+            else
+              b:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
+              b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
+            end
+          else
+            b:Hide()
           end
         end
       end
