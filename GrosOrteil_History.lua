@@ -220,7 +220,8 @@ function History.FormatEntry(e)
 	return nil
 end
 
-function History.FormatHistoryText(history, undoneCount)
+-- subjectFilter: "CHAR" = only character entries, "PET" = only pet entries, nil = all
+function History.FormatHistoryText(history, undoneCount, subjectFilter)
 	if type(history) ~= "table" or #history == 0 then return nil end
 	undoneCount = undoneCount or 0
 	local lines = {}
@@ -232,8 +233,19 @@ function History.FormatHistoryText(history, undoneCount)
 			actionsSeen = actionsSeen + 1
 		end
 		if isUndoRedo or actionsSeen > undoneCount then
-			local line = History.FormatEntry(e)
-			if line then lines[#lines + 1] = line end
+			local include = true
+			if subjectFilter and not isUndoRedo then
+				local eSub = e.subject
+				if subjectFilter == "PET" then
+					include = (eSub == "PET")
+				elseif subjectFilter == "CHAR" then
+					include = (eSub ~= "PET")
+				end
+			end
+			if include then
+				local line = History.FormatEntry(e)
+				if line then lines[#lines + 1] = line end
+			end
 		end
 	end
 	if #lines == 0 then return nil end

@@ -301,10 +301,10 @@ local function mkButton(parent, text, w, h, x, y, onClick)
   return b
 end
 
-local function formatHistoryText(history)
+local function formatHistoryText(history, subjectFilter)
   if History and History.FormatHistoryText then
     local depth = (Core and Core.GetUndoDepth and Core.GetUndoDepth()) or 0
-    return History.FormatHistoryText(history, depth)
+    return History.FormatHistoryText(history, depth, subjectFilter)
   end
   return nil
 end
@@ -1165,6 +1165,9 @@ function ns.UI_Init()
     if active == 7 and UI.syncHistoryWidth then
       UI.syncHistoryWidth()
     end
+    if active == 9 and UI.syncPetHistoryWidth then
+      UI.syncPetHistoryWidth()
+    end
   end
 
   -- Sidebar navigation (vertical tabs)
@@ -1176,9 +1179,9 @@ function ns.UI_Init()
     "",                 -- 5  reserved slot (always hidden)
     "Classes",          -- 6 (was 3)
     "Historique",       -- 7
-    "Points de vie",    -- 8  familiar section
-    "Armure",           -- 9
-    "Actions",          -- 10
+    "Familier",         -- 8  familiar section (merged)
+    "Historique",       -- 9  familiar history
+    "",                 -- 10 hidden slot
   }
 
   local NAV_PAD = 5
@@ -1297,17 +1300,18 @@ function ns.UI_Init()
   mkPage()                       -- 5 (reserved slot, always hidden)
   local pageClasses = mkPage()   -- 6 (was 3)
   local pageHistory = mkPage()   -- 7
-  local pagePetHP     = mkPage() -- 8: familiar – Points de vie
-  local pagePetArmor  = mkPage() -- 9: familiar – Armure
-  local pagePetCombat = mkPage() -- 10: familiar – Actions
+  local pagePetHP     = mkPage() -- 8: familiar – Fiche (merged)
+  local pagePetArmor  = mkPage() -- 9: familiar – Historique
+  local pagePetCombat = mkPage() -- 10: hidden slot
   UI.pageHistory = pageHistory
 
   -- Tabs 2-5 are merged into tab 1 (Fiche). Tab 5 is a reserved slot.
-  -- Familiar tabs (8-10) start hidden (character section is default).
+  -- Tab 10 is a hidden slot (familiar has only Fiche + Historique).
   UI.tabHidden[2] = true
   UI.tabHidden[3] = true
   UI.tabHidden[4] = true
   UI.tabHidden[5] = true
+  UI.tabHidden[10] = true
 
   -- ── Section switcher buttons (bottom of sidebar) ────────────────────
   local SECT_BTN_H = 24
@@ -1675,12 +1679,13 @@ function ns.UI_Init()
     UI.historyClear = clearBtn
   end
 
-  -- Onglets 8-10 : Familier (section séparée)
+  -- Onglets 8-9 : Familier (section séparée — tout fusionné dans l'onglet 8)
   local petToggleBtn
   local petNameEB
   local petHpCurEB, petHpMaxEB
   local petArmorEB, petTrueArmorEB, petDodgeEB, petMagicBlockEB
   local petActionValEB
+  local petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn
 
   local function applyAllPet()
     if not Core then return end
@@ -1698,84 +1703,161 @@ function ns.UI_Init()
     if Core.SetPetTempMagicBlock then Core.SetPetTempMagicBlock(magicVal) end
   end
 
-  -- ── Tab 8 : Identité / PV ─────────────────────────────────────────────────
-  local aPetToggle = mkRowAnchor(pagePetHP, 380, -6)
-  petToggleBtn = mkButton(aPetToggle, "Activer le familier", 180, 22, 0, 0, function()
-    if not Core or not Core.SetPetEnabled then return end
-    local p = Core.GetPet and Core.GetPet() or nil
-    Core.SetPetEnabled(not (p and p.enabled))
-  end)
-  UI.petAuthorityToggleBtn = mkButton(aPetToggle, "Autorité", 180, 22, 200, 0, function()
-    if not Core or not Core.SetPetAuthorityEnabled then return end
-    local p = Core.GetPet and Core.GetPet() or nil
-    Core.SetPetAuthorityEnabled(not (p and p.authorityEnabled))
-  end)
-
-  local aPetNom = mkRowAnchor(pagePetHP, 230, -38)
-  mkLabel(aPetNom, "Nom", 0, -2)
-  petNameEB = mkEdit(aPetNom, 180, 20, 46, 0, applyAllPet)
-  petNameEB:SetNumeric(false)
-
-  local aPetHP = mkRowAnchor(pagePetHP, 230, -68)
-  mkLabel(aPetHP, "PV", 0, -2)
-  petHpCurEB = mkEdit(aPetHP, 70, 20, 30,  0, applyAllPet)
-  mkLabel(aPetHP, "/", 106, -2)
-  petHpMaxEB = mkEdit(aPetHP, 70, 20, 120, 0, applyAllPet)
-
-  -- ── Tab 9 : Armure ───────────────────────────────────────────────────────
-  local aPetDef1 = mkRowAnchor(pagePetArmor, 320, -4)
-  mkLabel(aPetDef1, "Armure", 0, -2)
-  petArmorEB     = mkEdit(aPetDef1, 70, 20, 60,  0, applyAllPet)
-  mkLabel(aPetDef1, "Armure invul", 150, -2)
-  petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 244, 0, applyAllPet)
-
-  local aPetDef2 = mkRowAnchor(pagePetArmor, 160, -34)
-  mkLabel(aPetDef2, "Esquive", 0, -2)
-  petDodgeEB = mkEdit(aPetDef2, 70, 20, 60, 0, applyAllPet)
-
-  local aPetDefBtns = mkRowAnchor(pagePetArmor, 90, -64)
-  mkButton(aPetDefBtns, "Appliquer", 90, 20, 0, 0, applyAllPet)
-
-  -- ── Tab 10 : Actions ─────────────────────────────────────────────────────
-  local aPetVal = mkRowAnchor(pagePetCombat, 180, -4)
-  mkLabel(aPetVal, "Valeur", 0, -2)
-  petActionValEB = mkEdit(aPetVal, 80, 20, 56, 0)
-
-  local aPetBtns1 = mkRowAnchor(pagePetCombat, 392, -34)
-  local petDmgArmorBtn = mkButton(aPetBtns1, "Dégâts (armure)", 190, 22, 0,   0, function()
-    if Core and Core.PetDamageWithArmor then Core.PetDamageWithArmor(getNumber(petActionValEB) or 0) end
-  end)
-  local petDmgTrueBtn = mkButton(aPetBtns1, "Dégâts (bruts)", 190, 22, 202, 0, function()
-    if Core and Core.PetDamageTrue then Core.PetDamageTrue(getNumber(petActionValEB) or 0) end
-  end)
-
-  local aPetBtns2 = mkRowAnchor(pagePetCombat, 392, -62)
-  local petHealBtn = mkButton(aPetBtns2, "Soins", 190, 22, 0, 0, function()
-    if Core and Core.PetHeal then Core.PetHeal(getNumber(petActionValEB) or 0) end
-  end)
-  local petDivineBtn = mkButton(aPetBtns2, "Soins divins (75%)", 190, 22, 202, 0, function()
-    if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
-  end)
-
-  -- ── Bouclier magique temporaire ──────────────
-  local petCombatSep = pagePetCombat:CreateTexture(nil, "ARTWORK")
-  petCombatSep:SetTexture(TEX.FLAT)
-  petCombatSep:SetPoint("LEFT",  pagePetCombat, "LEFT",  20, 0)
-  petCombatSep:SetPoint("RIGHT", pagePetCombat, "RIGHT", -20, 0)
-  petCombatSep:SetPoint("TOP",   pagePetCombat, "TOP",   0, -96)
-  petCombatSep:SetHeight(1)
-  petCombatSep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
-
-  local aPetBlock = mkRowAnchor(pagePetCombat, 310, -104)
-  mkLabel(aPetBlock, "Bouclier mag. (temp.)", 0, -2)
-  petMagicBlockEB = mkEdit(aPetBlock, 70, 20, 180, 0, applyAllPet)
-  mkButton(aPetBlock, "Réinit.", 70, 20, 260, 0, function()
-    if Core and Core.ResetPetTempMagicBlock then
-      Core.ResetPetTempMagicBlock()
-    elseif Core and Core.SetPetTempMagicBlock then
-      Core.SetPetTempMagicBlock(0)
+  -- ── Tab 8 : Familier — Fiche (Identité, Armure, Actions, Blocage fusionnés) ──
+  do
+    local function mkPetHeader(text, y)
+      local lbl = pagePetHP:CreateFontString(nil, "OVERLAY")
+      lbl:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
+      lbl:SetPoint("TOPLEFT",  pagePetHP, "TOPLEFT",  0, y)
+      lbl:SetPoint("TOPRIGHT", pagePetHP, "TOPRIGHT", 0, y)
+      lbl:SetJustifyH("CENTER")
+      lbl:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+      lbl:SetShadowOffset(1, -1)
+      lbl:SetShadowColor(0, 0, 0, 0.60)
+      lbl:SetText(text)
     end
-  end)
+
+    local function mkPetSep(y)
+      local sep = pagePetHP:CreateTexture(nil, "ARTWORK")
+      sep:SetTexture(TEX.FLAT)
+      sep:SetPoint("LEFT",  pagePetHP, "LEFT",  20, 0)
+      sep:SetPoint("RIGHT", pagePetHP, "RIGHT", -20, 0)
+      sep:SetPoint("TOP",   pagePetHP, "TOP",   0, y)
+      sep:SetHeight(1)
+      sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
+    end
+
+    -- ── Identité ──
+    mkPetHeader("Identité", -6)
+
+    local aPetToggle = mkRowAnchor(pagePetHP, 380, -26)
+    petToggleBtn = mkButton(aPetToggle, "Activer le familier", 180, 22, 0, 0, function()
+      if not Core or not Core.SetPetEnabled then return end
+      local p = Core.GetPet and Core.GetPet() or nil
+      Core.SetPetEnabled(not (p and p.enabled))
+    end)
+    UI.petAuthorityToggleBtn = mkButton(aPetToggle, "Autorité", 180, 22, 200, 0, function()
+      if not Core or not Core.SetPetAuthorityEnabled then return end
+      local p = Core.GetPet and Core.GetPet() or nil
+      Core.SetPetAuthorityEnabled(not (p and p.authorityEnabled))
+    end)
+
+    local aPetNom = mkRowAnchor(pagePetHP, 230, -54)
+    mkLabel(aPetNom, "Nom", 0, -2)
+    petNameEB = mkEdit(aPetNom, 180, 20, 46, 0, applyAllPet)
+    petNameEB:SetNumeric(false)
+
+    local aPetHP = mkRowAnchor(pagePetHP, 230, -80)
+    mkLabel(aPetHP, "PV", 0, -2)
+    petHpCurEB = mkEdit(aPetHP, 70, 20, 30,  0, applyAllPet)
+    mkLabel(aPetHP, "/", 106, -2)
+    petHpMaxEB = mkEdit(aPetHP, 70, 20, 120, 0, applyAllPet)
+
+    -- ── Armure & Esquive ──
+    mkPetSep(-106)
+    mkPetHeader("Armure & Esquive", -114)
+
+    local aPetDef1 = mkRowAnchor(pagePetHP, 320, -132)
+    mkLabel(aPetDef1, "Armure", 0, -2)
+    petArmorEB     = mkEdit(aPetDef1, 70, 20, 60,  0, applyAllPet)
+    mkLabel(aPetDef1, "Armure invul", 150, -2)
+    petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 244, 0, applyAllPet)
+
+    local aPetDef2 = mkRowAnchor(pagePetHP, 160, -160)
+    mkLabel(aPetDef2, "Esquive", 0, -2)
+    petDodgeEB = mkEdit(aPetDef2, 70, 20, 60, 0, applyAllPet)
+
+    -- ── Actions ──
+    mkPetSep(-188)
+    mkPetHeader("Actions", -196)
+
+    local aPetVal = mkRowAnchor(pagePetHP, 180, -214)
+    mkLabel(aPetVal, "Valeur", 0, -2)
+    petActionValEB = mkEdit(aPetVal, 80, 20, 56, 0)
+
+    local aPetBtns1 = mkRowAnchor(pagePetHP, 392, -240)
+    petDmgArmorBtn = mkButton(aPetBtns1, "Dégâts (armure)", 190, 22, 0,   0, function()
+      if Core and Core.PetDamageWithArmor then Core.PetDamageWithArmor(getNumber(petActionValEB) or 0) end
+    end)
+    petDmgTrueBtn = mkButton(aPetBtns1, "Dégâts (bruts)", 190, 22, 202, 0, function()
+      if Core and Core.PetDamageTrue then Core.PetDamageTrue(getNumber(petActionValEB) or 0) end
+    end)
+
+    local aPetBtns2 = mkRowAnchor(pagePetHP, 392, -268)
+    petHealBtn = mkButton(aPetBtns2, "Soins", 190, 22, 0, 0, function()
+      if Core and Core.PetHeal then Core.PetHeal(getNumber(petActionValEB) or 0) end
+    end)
+    petDivineBtn = mkButton(aPetBtns2, "Soins divins (75%)", 190, 22, 202, 0, function()
+      if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
+    end)
+
+    -- ── Blocage ──
+    mkPetSep(-298)
+    mkPetHeader("Blocage", -306)
+
+    local aPetBlock = mkRowAnchor(pagePetHP, 310, -324)
+    mkLabel(aPetBlock, "Bouclier magique", 0, -2)
+    petMagicBlockEB = mkEdit(aPetBlock, 70, 20, 180, 0, applyAllPet)
+    mkButton(aPetBlock, "Réinit.", 70, 20, 260, 0, function()
+      if Core and Core.ResetPetTempMagicBlock then
+        Core.ResetPetTempMagicBlock()
+      elseif Core and Core.SetPetTempMagicBlock then
+        Core.SetPetTempMagicBlock(0)
+      end
+    end)
+  end
+
+  -- ── Tab 9 : Familier — Historique ────────────────────────────────────────
+  do
+    local petHistHeader = pagePetArmor:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    petHistHeader:SetPoint("TOPLEFT", pagePetArmor, "TOPLEFT", 4, -2)
+    petHistHeader:SetTextColor(C.GOLD_DIM[1], C.GOLD_DIM[2], C.GOLD_DIM[3], 1)
+    petHistHeader:SetText("Historique du familier")
+    local petHistHeaderLine = pagePetArmor:CreateTexture(nil, "ARTWORK")
+    petHistHeaderLine:SetTexture(TEX.FLAT)
+    petHistHeaderLine:SetPoint("TOPLEFT", petHistHeader, "BOTTOMLEFT", 0, -2)
+    petHistHeaderLine:SetPoint("RIGHT", pagePetArmor, "RIGHT", -4, 0)
+    petHistHeaderLine:SetHeight(1)
+    petHistHeaderLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.30)
+
+    local petSF = CreateFrame("ScrollFrame", nil, pagePetArmor, "UIPanelScrollFrameTemplate")
+    petSF:SetPoint("TOPLEFT",     petHistHeaderLine, "BOTTOMLEFT",  0, -4)
+    petSF:SetPoint("BOTTOMRIGHT", pagePetArmor,      "BOTTOMRIGHT", -20, 44)
+    UI.petHistoryScroll = petSF
+
+    local petChild = CreateFrame("Frame", nil, petSF)
+    petChild:SetSize(CONTENT_W - 64, 10)
+    petSF:SetScrollChild(petChild)
+    UI.petHistoryChild = petChild
+
+    local petTxt = petChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    petTxt:SetPoint("TOPLEFT", 0, 0)
+    petTxt:SetJustifyH("LEFT")
+    petTxt:SetJustifyV("TOP")
+    petTxt:SetWidth(CONTENT_W - 72)
+    petTxt:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
+    petTxt:SetText("")
+    UI.petHistoryText = petTxt
+
+    local function syncPetHistoryWidth()
+      if not UI.petHistoryScroll or not UI.petHistoryChild or not UI.petHistoryText then return end
+      local w = UI.petHistoryScroll:GetWidth() or 0
+      if w <= 0 then return end
+      local textW = math.max(80, w - 14)
+      UI.petHistoryChild:SetWidth(textW)
+      UI.petHistoryText:SetWidth(textW)
+    end
+    UI.syncPetHistoryWidth = syncPetHistoryWidth
+    petSF:SetScript("OnSizeChanged", syncPetHistoryWidth)
+    syncPetHistoryWidth()
+
+    local petClearBtn = mkButton(pagePetArmor, "Effacer", 90, 20, 0, 0)
+    petClearBtn:ClearAllPoints()
+    petClearBtn:SetPoint("BOTTOMLEFT", pagePetArmor, "BOTTOMLEFT", 14, 12)
+    petClearBtn:SetScript("OnClick", function()
+      if Core and Core.ClearHistory then Core.ClearHistory() end
+    end)
+  end
 
   UI.inputs = {
     hpCur = hpCur, hpMax = hpMax, bonusHpMax = bonusHpValEB,
@@ -2375,10 +2457,10 @@ function ns.UI_Init()
       end
     end
 
-    -- Historique
+    -- Historique personnage (tab 7)
     if UI.historyText and UI.historyChild then
       local hist = s.history
-      local text = formatHistoryText(hist)
+      local text = formatHistoryText(hist, "CHAR")
       if not text then
         UI.historyText:SetText("Aucun évènement récent.")
         UI.historyChild:SetHeight(20)
@@ -2386,6 +2468,20 @@ function ns.UI_Init()
         UI.historyText:SetText(text)
         local h = (UI.historyText.GetStringHeight and UI.historyText:GetStringHeight()) or 0
         UI.historyChild:SetHeight(math.max(20, h + 10))
+      end
+    end
+
+    -- Historique familier (tab 9)
+    if UI.petHistoryText and UI.petHistoryChild then
+      local hist = s.history
+      local text = formatHistoryText(hist, "PET")
+      if not text then
+        UI.petHistoryText:SetText("Aucun évènement récent.")
+        UI.petHistoryChild:SetHeight(20)
+      else
+        UI.petHistoryText:SetText(text)
+        local h = (UI.petHistoryText.GetStringHeight and UI.petHistoryText:GetStringHeight()) or 0
+        UI.petHistoryChild:SetHeight(math.max(20, h + 10))
       end
     end
   end
