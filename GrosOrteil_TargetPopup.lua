@@ -31,6 +31,7 @@ local getClassNameFr   = Shared.GetClassNameFr
 
 local pendingTarget
 local popupFrame
+local currentShownSender
 
 local function normalizeName(name)
   if type(name) ~= "string" then return nil end
@@ -91,6 +92,19 @@ end
 
 
 
+-- Resolve the TRP3 unit ID for a sender name (e.g. "Foo" → "Foo-RealmName").
+local function senderToUnitID(playerName)
+  if playerName:find("-") then
+    return playerName
+  end
+  local api = rawget(_G, "TRP3_API")
+  local realm = api and api.globals and api.globals.player_realm_id
+  if type(realm) == "string" and realm ~= "" then
+    return playerName .. "-" .. realm
+  end
+  return playerName
+end
+
 local function getRPDisplayName(playerName)
   local guid
   local targetName = unitTargetName("target")
@@ -99,32 +113,41 @@ local function getRPDisplayName(playerName)
   end
 
   -- Lazy lookup: LibRPNames may not be in _G at addon load time.
+  -- LibRPNames.Get() always returns a non-empty string (falls back to the
+  -- character name when TRP3 has no profile), so we only trust its result
+  -- when it actually found RP data – i.e. when the returned name differs
+  -- from the bare character name.
   local lrn = rawget(_G, "LibRPNames")
   if lrn and lrn.Get then
     local fullName, _, _, color = lrn.Get(playerName, guid)
-    if type(fullName) == "string" and fullName ~= "" then
+    if type(fullName) == "string" and fullName ~= "" and fullName ~= baseCharacterName(playerName) then
       return fullName, color
     end
   end
 
-  -- Fallback: query TRP3 registry directly for the sender's profile.
+  -- Fallback: query TRP3 registry directly using the correct unit ID and API.
+  -- TRP3_API.register.getProfile() takes a profileID (UUID), not a player
+  -- name. The correct call is getUnitIDCurrentProfile(unitID).
   local api = rawget(_G, "TRP3_API")
   if type(api) == "table" then
     local reg = api.register
-    if type(reg) == "table" and type(reg.getProfile) == "function" then
-      local ok, profile = pcall(reg.getProfile, playerName)
-      if ok and type(profile) == "table" then
-        local char = profile.player and profile.player.characteristics
-        if type(char) == "table" then
-          local first = char.FN
-          local last  = char.LN
-          if type(first) == "string" then first = string.gsub(string.gsub(first, "^%s+", ""), "%s+$", "") end
-          if type(last)  == "string" then last  = string.gsub(string.gsub(last,  "^%s+", ""), "%s+$", "") end
-          if type(first) == "string" and first ~= "" then
-            if type(last) == "string" and last ~= "" then
-              return first .. " " .. last, nil
+    if type(reg) == "table" and type(reg.isUnitIDKnown) == "function" then
+      local unitID = senderToUnitID(playerName)
+      if reg.isUnitIDKnown(unitID) and type(reg.getUnitIDCurrentProfile) == "function" then
+        local ok, profile = pcall(reg.getUnitIDCurrentProfile, unitID)
+        if ok and type(profile) == "table" then
+          local char = profile.characteristics
+          if type(char) == "table" then
+            local first = char.FN
+            local last  = char.LN
+            if type(first) == "string" then first = string.gsub(string.gsub(first, "^%s+", ""), "%s+$", "") end
+            if type(last)  == "string" then last  = string.gsub(string.gsub(last,  "^%s+", ""), "%s+$", "") end
+            if type(first) == "string" and first ~= "" then
+              if type(last) == "string" and last ~= "" then
+                return first .. " " .. last, nil
+              end
+              return first, nil
             end
-            return first, nil
           end
         end
       end
@@ -138,6 +161,7 @@ local function hidePopup()
   if popupFrame then
     popupFrame:Hide()
   end
+  currentShownSender = nil
 end
 
 local function createStatBar(parent, yOffset)
@@ -382,14 +406,37 @@ local function createPopup()
   popupFrame.closeButton:SetScript("OnClick", hidePopup)
 end
 
-local function showForState(targetName, state)
-  createPopup()
-
-  local rpName, rpColor = getRPDisplayName(targetName)
+local function applyPopupTitle(rpName, rpColor)
   if rpColor and type(rpColor) == "string" and rpColor:match("^%x%x%x%x%x%x%x%x$") then
     popupFrame.title:SetText("|c" .. rpColor .. rpName .. "|r")
   else
     popupFrame.title:SetText(rpName)
+  end
+end
+
+local function showForState(targetName, state)
+  createPopup()
+  currentShownSender = targetName
+
+  -- Clear LibRPNames cache so we always get a fresh TRP3 lookup rather than
+  -- a stale "character name" result from a previous failed attempt.
+  local lrn = rawget(_G, "LibRPNames")
+  if lrn and lrn.ClearCache then lrn.ClearCache() end
+
+  local rpName, rpColor = getRPDisplayName(targetName)
+  applyPopupTitle(rpName, rpColor)
+
+  -- TRP3 may not have the target's profile yet (it's fetched asynchronously).
+  -- Schedule a deferred refresh so the title updates once TRP3 receives it.
+  if C_Timer and C_Timer.After then
+    local capturedSender = targetName
+    C_Timer.After(2, function()
+      if popupFrame and popupFrame:IsShown() and currentShownSender == capturedSender then
+        if lrn and lrn.ClearCache then lrn.ClearCache() end
+        local newName, newColor = getRPDisplayName(capturedSender)
+        applyPopupTitle(newName, newColor)
+      end
+    end)
   end
 
   local className = getClassNameFr(state.classKey)
