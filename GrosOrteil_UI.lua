@@ -1031,6 +1031,15 @@ function ns.UI_Init()
     end
   end
 
+  do
+    local bar = UI.resBars[1]
+    if bar then
+      bar:SetScript("OnSizeChanged", function()
+        if UI.refreshShamanBar then UI.refreshShamanBar() end
+      end)
+    end
+  end
+
   -- Bars are driven by Core.OnChange; keep them hidden until then.
 
   -- Content host (pages) sits under HP/Resource bars and above class strip.
@@ -1095,6 +1104,69 @@ function ns.UI_Init()
   local lastState        = nil
   local refreshHpDisplay   -- forward declaration; assigned after hpBar is created
   local onChangeCallback   -- forward declaration; allows setSidebarSection to trigger a full re-render
+
+  -- Redraws the shaman stacked-element bar segments from lastState.
+  -- Called from onChangeCallback and from bar #1's OnSizeChanged.
+  UI.refreshShamanBar = function()
+    local s = lastState
+    if not s or s.classKey ~= "SHAMAN" then return end
+    local bar = UI.resBars and UI.resBars[1]
+    local txt = UI.resTexts and UI.resTexts[1]
+    if not bar or not bar._stackSegs or not bar:IsShown() then return end
+
+    local profile = getResProfile(s)
+    local totalMax, totalCur = 0, 0
+    for j = 1, 4 do
+      local pj = profile[j]
+      if pj then
+        local rk, mk = getKeysForIdx(pj.idx)
+        local curJ = math.max(0, s[rk] or 0)
+        local maxJ = s[mk] or 0
+        if maxJ > 0 and curJ > maxJ then curJ = maxJ end
+        totalCur = totalCur + curJ
+        totalMax = totalMax + maxJ
+      end
+    end
+
+    local pct = (totalMax > 0) and (totalCur / totalMax) or 0
+    bar:SetValue(math.max(0, math.min(1, pct)))
+    bar:SetStatusBarColor(0, 0, 0, 0)
+
+    local wBar = bar:GetWidth() or 0
+    local x = 0
+    for j = 1, 4 do
+      local seg = bar._stackSegs[j]
+      local pj = profile[j]
+      if seg and pj and totalMax > 0 and wBar > 0 then
+        local rk, mk = getKeysForIdx(pj.idx)
+        local curJ = math.max(0, s[rk] or 0)
+        local maxJ = s[mk] or 0
+        if maxJ > 0 and curJ > maxJ then curJ = maxJ end
+        local segW = wBar * (curJ / totalMax)
+        if segW > 0.5 then
+          seg:Show()
+          seg:SetVertexColor(pj.r, pj.g, pj.b, 0.95)
+          seg:ClearAllPoints()
+          seg:SetPoint("TOPLEFT",    bar, "TOPLEFT",    x, 0)
+          seg:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x, 0)
+          seg:SetWidth(segW)
+          x = x + segW
+        else
+          seg:Hide()
+        end
+      elseif seg then
+        seg:Hide()
+      end
+    end
+
+    if txt then
+      applyResTextColor(txt)
+      txt:SetText(string.format(
+        "Points élémentaires : %d / %d (%d%%)",
+        totalCur, totalMax, roundPct(pct)
+      ))
+    end
+  end
 
   local function setTab(active)
     if UI.tabDisabled and UI.tabDisabled[active] then
@@ -2243,64 +2315,7 @@ function ns.UI_Init()
         -- After the loop's first iteration, update the stacked bar visuals.
         if i == 1 and bar and bar._stackSegs then
           bar:Show()
-
-          local totalMax = 0
-          local totalCur = 0
-          for j = 1, 4 do
-            local pj = profile[j]
-            if pj then
-              local rk, mk = getKeysForIdx(pj.idx)
-              local curJ = s[rk] or 0
-              local maxJ = s[mk] or 0
-              if maxJ > 0 and curJ > maxJ then curJ = maxJ end
-              if curJ < 0 then curJ = 0 end
-              totalCur = totalCur + curJ
-              totalMax = totalMax + maxJ
-            end
-          end
-
-          local pct = (totalMax > 0) and (totalCur / totalMax) or 0
-          bar:SetValue(math.max(0, math.min(1, pct)))
-          -- Hide base fill; segments provide the color.
-          bar:SetStatusBarColor(0, 0, 0, 0)
-
-          local wBar = bar:GetWidth() or 0
-          local x = 0
-          for j = 1, 4 do
-            local seg = bar._stackSegs[j]
-            local pj = profile[j]
-            if seg and pj and totalMax > 0 and wBar > 0 then
-              local rk, mk = getKeysForIdx(pj.idx)
-              local curJ = s[rk] or 0
-              local maxJ = s[mk] or 0
-              if maxJ > 0 and curJ > maxJ then curJ = maxJ end
-              if curJ < 0 then curJ = 0 end
-              local segW = wBar * (curJ / totalMax)
-              if segW > 0.5 then
-                seg:Show()
-                seg:SetVertexColor(pj.r, pj.g, pj.b, 0.95)
-                seg:ClearAllPoints()
-                seg:SetPoint("TOPLEFT", bar, "TOPLEFT", x, 0)
-                seg:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x, 0)
-                seg:SetWidth(segW)
-                x = x + segW
-              else
-                seg:Hide()
-              end
-            elseif seg then
-              seg:Hide()
-            end
-          end
-
-          if txt then
-            applyResTextColor(txt)
-            txt:SetText(string.format(
-              "Points élémentaires : %d / %d (%d%%)",
-              totalCur,
-              totalMax,
-              roundPct(pct)
-            ))
-          end
+          UI.refreshShamanBar()
         end
 
       else

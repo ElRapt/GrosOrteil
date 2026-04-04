@@ -1141,6 +1141,7 @@ function Core.SetShamanPosture(posture)
     s.armor = 0
     s.shamanPostureDmgBonus = 10
     s.maxRes4 = (s.maxRes4 or 0) + 4
+    s.res4 = s.maxRes4
   elseif posture == "TERRE" then
     s.armor = (s.armor or 0) + 5
     s.maxHp = (s.maxHp or 0) + 20
@@ -1148,11 +1149,14 @@ function Core.SetShamanPosture(posture)
     clampHpToEffectiveMax(s)
     recomputeWounds(s)
     s.maxRes = (s.maxRes or 0) + 4
+    s.res = s.maxRes
   elseif posture == "AIR" then
     s.dodge = (s.dodge or 0) + 15
     s.maxRes2 = (s.maxRes2 or 0) + 4
+    s.res2 = s.maxRes2
   elseif posture == "EAU" then
     s.maxRes3 = (s.maxRes3 or 0) + 8
+    s.res3 = s.maxRes3
   end
 
   bump(); notify()
