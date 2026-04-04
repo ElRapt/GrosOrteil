@@ -517,6 +517,10 @@ function ns.Core_Init()
   end
   clampHpToEffectiveMax(db.state)
 
+  -- Popup settings defaults.
+  db.settings = db.settings or {}
+  if db.settings.popupOnTarget == nil then db.settings.popupOnTarget = true end
+
   Core.state = db.state
   updateWoundsSticky(Core.state)
   prevSnapshot = deepCopyState(Core.state)

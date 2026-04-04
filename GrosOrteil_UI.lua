@@ -514,6 +514,8 @@ function ns.UI_Init()
   close:SetPoint("TOPRIGHT", -4, -4)
   close:SetSize(22, 22)
 
+  -- popupToggleBtn is defined after the sidebar sect buttons (needs sidebar reference).
+
   -- Size label shown in the centre during resize.
   local sizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   sizeLabel:SetPoint("CENTER", frame, "CENTER")
@@ -1455,6 +1457,57 @@ function ns.UI_Init()
 
   makeSectBtn(sectChar, "Personnage", NAV_PAD,                    function() setSidebarSection(1) end)
   makeSectBtn(sectPet,  "Familier",   NAV_PAD + SECT_BTN_W + 4,  function() setSidebarSection(2) end)
+
+  -- Popup-on-target toggle icon button, centered above the two sect buttons.
+  local popupToggleBtn = CreateFrame("Button", nil, sidebar)
+  popupToggleBtn:SetSize(26, 26)
+  popupToggleBtn:SetPoint("BOTTOM", sidebar, "BOTTOM", 0, SECT_BTN_H + NAV_PAD + 10)
+  popupToggleBtn:SetFrameLevel(sidebar:GetFrameLevel() + 5)
+  popupToggleBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Eye_01")
+  popupToggleBtn:SetHighlightTexture("Interface\\Icons\\INV_Misc_Eye_01")
+
+  local function refreshPopupToggleBtn()
+    local sdb = ns.GetDB and ns.GetDB() or {}
+    sdb.settings = sdb.settings or {}
+    local enabled = sdb.settings.popupOnTarget ~= false
+    local tex = popupToggleBtn:GetNormalTexture()
+    if tex then
+      if enabled then
+        tex:SetVertexColor(1.00, 0.82, 0.22, 1)
+        tex:SetDesaturated(false)
+      else
+        tex:SetVertexColor(0.45, 0.40, 0.35, 1)
+        tex:SetDesaturated(true)
+      end
+    end
+  end
+  UI.refreshPopupToggleBtn = refreshPopupToggleBtn
+
+  popupToggleBtn:SetScript("OnClick", function()
+    local sdb = ns.GetDB and ns.GetDB() or {}
+    sdb.settings = sdb.settings or {}
+    sdb.settings.popupOnTarget = not (sdb.settings.popupOnTarget ~= false)
+    refreshPopupToggleBtn()
+  end)
+
+  popupToggleBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+    local sdb = ns.GetDB and ns.GetDB() or {}
+    sdb.settings = sdb.settings or {}
+    local enabled = sdb.settings.popupOnTarget ~= false
+    GameTooltip:SetText("Popup au ciblage", 1, 0.82, 0.22, 1, true)
+    if enabled then
+      GameTooltip:AddLine("Activé — clic pour désactiver", 0.90, 0.84, 0.68)
+    else
+      GameTooltip:AddLine("Désactivé — clic pour activer", 0.60, 0.52, 0.36)
+    end
+    GameTooltip:Show()
+  end)
+  popupToggleBtn:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
+  refreshPopupToggleBtn()
 
   -- Decorative separator above section switcher.
   local sectSep = sidebar:CreateTexture(nil, "ARTWORK")
@@ -2553,6 +2606,8 @@ function ns.UI_Init()
         UI.petAuthorityToggleBtn:SetText("Activer points d'autorité")
       end
     end
+
+    if UI.refreshPopupToggleBtn then UI.refreshPopupToggleBtn() end
 
     if UI.inputs.petName then
       if not (UI.inputs.petName.HasFocus and UI.inputs.petName:HasFocus()) then

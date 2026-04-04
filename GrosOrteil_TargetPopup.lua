@@ -184,6 +184,12 @@ local function hidePopup()
   currentShownSender = nil
 end
 
+local function getSettings()
+  local db = ns.GetDB and ns.GetDB() or {}
+  db.settings = db.settings or {}
+  return db.settings
+end
+
 local function createStatBar(parent, yOffset)
   local holder = CreateFrame("Frame", nil, parent)
   holder:SetSize(304, 34)
@@ -657,6 +663,7 @@ function Popup:OnStateReceived(sender, state)
   if popupFrame and popupFrame:IsShown() and shownKey and namesMatch(senderKey, shownKey) then
     showForState(sender, state)
     pendingTarget = nil
+    pendingMouseover = nil
     return
   end
 
@@ -664,21 +671,34 @@ function Popup:OnStateReceived(sender, state)
   local pendingKey = normalizeName(pendingTarget)
 
   if targetKey and namesMatch(senderKey, targetKey) then
-    showForState(sender, state)
+    local settings = getSettings()
+    if settings.popupOnTarget ~= false then
+      showForState(sender, state)
+    end
     pendingTarget = nil
     return
   end
 
   if pendingKey and namesMatch(senderKey, pendingKey) then
-    showForState(sender, state)
+    local settings = getSettings()
+    if settings.popupOnTarget ~= false then
+      showForState(sender, state)
+    end
     pendingTarget = nil
   end
 end
 
 function Popup:OnTargetChanged()
   local _ = self
-  hidePopup()
+  if popupFrame and popupFrame:IsShown() then
+    hidePopup()
+  end
   pendingTarget = nil
+
+  local settings = getSettings()
+  if settings.popupOnTarget == false then
+    return
+  end
 
   if not UnitExists("target") or not UnitIsPlayer("target") then
     return
