@@ -71,6 +71,12 @@ local function splitNameRealm(name)
   return normalized, nil
 end
 
+-- Cache key uses short name only so "Foo" and "Foo-Realm" share the same entry.
+local function toCacheKey(name)
+  local short = splitNameRealm(name)
+  return short
+end
+
 local function namesMatch(a, b)
   local aShort, aRealm = splitNameRealm(a)
   local bShort, bRealm = splitNameRealm(b)
@@ -656,14 +662,13 @@ function Popup:OnStateReceived(sender, state)
   end
 
   -- Always refresh cache with latest data.
-  setCached(senderKey, state)
+  setCached(toCacheKey(sender), state)
 
   -- If popup is already showing for this sender, refresh it in-place.
   local shownKey = normalizeName(currentShownSender)
   if popupFrame and popupFrame:IsShown() and shownKey and namesMatch(senderKey, shownKey) then
     showForState(sender, state)
     pendingTarget = nil
-    pendingMouseover = nil
     return
   end
 
@@ -710,7 +715,7 @@ function Popup:OnTargetChanged()
   end
 
   -- Show cached state instantly; fresh data will arrive and refresh via OnStateReceived.
-  local cached = getCached(normalizeName(targetName))
+  local cached = getCached(toCacheKey(targetName))
   if cached then
     showForState(targetName, cached)
   else
