@@ -18,6 +18,7 @@ local UnitGUID = rawget(_G, "UnitGUID")
 local CreateFrame = rawget(_G, "CreateFrame")
 local UIParent = rawget(_G, "UIParent")
 local C_Timer = rawget(_G, "C_Timer")
+local GetTime = rawget(_G, "GetTime")
 -- LibRPNames is looked up lazily at call time (may not be ready at load time).
 
 local getResProfile    = Shared.GetResProfile
@@ -32,6 +33,25 @@ local getClassNameFr   = Shared.GetClassNameFr
 local pendingTarget
 local popupFrame
 local currentShownSender
+
+-- State cache: normalizedName → { state, t }
+-- Allows instant popup display on re-target; fresh data still fetched in background.
+local stateCache = {}
+local CACHE_TTL  = 60  -- seconds
+
+local function getCached(key)
+  local e = stateCache[key]
+  if not e then return nil end
+  if GetTime and (GetTime() - e.t) > CACHE_TTL then
+    stateCache[key] = nil
+    return nil
+  end
+  return e.state
+end
+
+local function setCached(key, state)
+  stateCache[key] = { state = state, t = GetTime and GetTime() or 0 }
+end
 
 local function normalizeName(name)
   if type(name) ~= "string" then return nil end
@@ -629,6 +649,17 @@ function Popup:OnStateReceived(sender, state)
     return
   end
 
+  -- Always refresh cache with latest data.
+  setCached(senderKey, state)
+
+  -- If popup is already showing for this sender, refresh it in-place.
+  local shownKey = normalizeName(currentShownSender)
+  if popupFrame and popupFrame:IsShown() and shownKey and namesMatch(senderKey, shownKey) then
+    showForState(sender, state)
+    pendingTarget = nil
+    return
+  end
+
   local targetKey = normalizeName(unitTargetName("target"))
   local pendingKey = normalizeName(pendingTarget)
 
@@ -658,18 +689,25 @@ function Popup:OnTargetChanged()
     return
   end
 
-  pendingTarget = targetName
-
-  if ns.Comm and ns.Comm.RequestState then
-    ns.Comm:RequestState(targetName)
+  -- Show cached state instantly; fresh data will arrive and refresh via OnStateReceived.
+  local cached = getCached(normalizeName(targetName))
+  if cached then
+    showForState(targetName, cached)
+  else
+    -- No cache: wait for the network response before showing.
+    pendingTarget = targetName
+    if C_Timer and C_Timer.After then
+      C_Timer.After(5, function()
+        if pendingTarget and normalizeName(pendingTarget) == normalizeName(targetName) then
+          pendingTarget = nil
+        end
+      end)
+    end
   end
 
-  if C_Timer and C_Timer.After then
-    C_Timer.After(5, function()
-      if pendingTarget and normalizeName(pendingTarget) == normalizeName(targetName) then
-        pendingTarget = nil
-      end
-    end)
+  -- Always request fresh state (updates cache + refreshes popup if shown).
+  if ns.Comm and ns.Comm.RequestState then
+    ns.Comm:RequestState(targetName)
   end
 end
 
