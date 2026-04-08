@@ -1090,6 +1090,37 @@ function Core.DivineHeal()
   bump(); notify()
 end
 
+function Core.Surgery()
+  local s = Core.state
+  if not s then return end
+
+  local hpBefore = (s.hp or 0)
+  local baseMaxBefore = (s.maxHp or 0)
+  local bonusBefore = math.max(0, s.bonusHp or 0)
+
+  sfxLayOnHands()
+  -- Bypass plafond : +50% du total
+  local baseMax = (s.maxHp or 0)
+  local bonus = math.max(0, s.bonusHp or 0)
+  local maxHp = baseMax + bonus
+  local current = (s.hp or 0)
+  local gain = (baseMax * 0.50)
+  s.hp = math.min(current + gain, maxHp)
+  clampHpToEffectiveMax(s)
+
+  pushHistory({
+    kind = "SURGERY",
+    gain = gain,
+    hpBefore = hpBefore,
+    hpAfter = (s.hp or 0),
+    maxHp = baseMaxBefore,
+    bonusHp = bonusBefore,
+  })
+
+  recomputeWounds(s)
+  bump(); notify()
+end
+
 function Core.AddRes(amount)
   Core.AddResIndex(1, amount)
 end
@@ -1400,6 +1431,33 @@ function Core.PetDivineHeal()
 
   pushHistory({
     kind = "DIVINE_HEAL",
+    subject = "PET",
+    gain = gain,
+    hpBefore = hpBefore,
+    hpAfter = (p.hp or 0),
+    maxHp = maxBefore,
+    bonusHp = 0,
+  })
+
+  recomputePetWounds(p)
+
+  bump(); notify()
+end
+
+function Core.PetSurgery()
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+
+  local hpBefore = p.hp or 0
+  local maxBefore = p.maxHp or 0
+  local gain = (maxBefore * 0.50)
+  sfxLayOnHands()
+  p.hp = math.min(maxBefore, hpBefore + gain)
+
+  pushHistory({
+    kind = "SURGERY",
     subject = "PET",
     gain = gain,
     hpBefore = hpBefore,

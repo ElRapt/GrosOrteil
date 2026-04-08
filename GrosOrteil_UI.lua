@@ -1623,13 +1623,13 @@ function ns.UI_Init()
   end
 
   -- Rows are shown/hidden based on selected class.
-  mkResRow(1, -514)
-  mkResRow(2, -542)
-  mkResRow(3, -570)
-  mkResRow(4, -598)
-  mkResRow(5, -626)
+  mkResRow(1, -552)
+  mkResRow(2, -580)
+  mkResRow(3, -608)
+  mkResRow(4, -636)
+  mkResRow(5, -664)
 
-  UI.noResHint = mkLabelCenter(cA, "Aucune ressource pour cette classe.", 0, -540)
+  UI.noResHint = mkLabelCenter(cA, "Aucune ressource pour cette classe.", 0, -578)
   UI.noResHint:Hide()
 
   -- Onglet 1 (suite) : Fiche — construction du scroll
@@ -1730,23 +1730,25 @@ function ns.UI_Init()
     btn("Soins",              210, 0,   -322, doHeal)
     btn("Soins divins (75%)", 210, 230, -322, function() Core.DivineHeal() end)
 
-    mkSep(-364)
+    btn("Chirurgie (50%)",    210, 0,   -360, function() Core.Surgery() end)
+
+    mkSep(-402)
 
     -- ── Blocage ─────────────────────────────────────────────────────
-    mkSectionHeader("Blocage", -376)
+    mkSectionHeader("Blocage", -414)
 
-    lbl("Blocage",         0, -402)
-    lbl("Blocage magique", 0, -436)
-    blockEB     = edt(110, 162, -400, applyAllArmor)
-    magicBlockEB = edt(110, 162, -434, applyAllArmor)
-    btn("Réinit.", 100, 284, -400, function() Core.ResetTempBlock() end)
-    btn("Réinit.", 100, 284, -434, function() Core.ResetTempMagicBlock() end)
+    lbl("Blocage",         0, -440)
+    lbl("Blocage magique", 0, -474)
+    blockEB     = edt(110, 162, -438, applyAllArmor)
+    magicBlockEB = edt(110, 162, -472, applyAllArmor)
+    btn("Réinit.", 100, 284, -438, function() Core.ResetTempBlock() end)
+    btn("Réinit.", 100, 284, -472, function() Core.ResetTempMagicBlock() end)
 
-    mkSep(-470)
+    mkSep(-508)
 
     -- ── Ressources ──────────────────────────────────────────────────
-    -- Rows (mkResRow) and noResHint are pre-built above, parented to cA at y=-514…-626.
-    mkSectionHeader("Ressources", -482)
+    -- Rows (mkResRow) and noResHint are pre-built above, parented to cA at y=-552…-664.
+    mkSectionHeader("Ressources", -520)
 
     -- ── Postures Élémentaires (Shaman uniquement) ────────────────────
     do
@@ -1767,7 +1769,7 @@ function ns.UI_Init()
 
       local postureSection = cA:CreateFontString(nil, "OVERLAY")
       postureSection:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-      postureSection:SetPoint("TOP", cA, "TOP", 0, -664)
+      postureSection:SetPoint("TOP", cA, "TOP", 0, -702)
       postureSection:SetWidth(BLOCK_W)
       postureSection:SetJustifyH("CENTER")
       postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
@@ -1778,8 +1780,8 @@ function ns.UI_Init()
 
       local postureSepLine = cA:CreateTexture(nil, "ARTWORK")
       postureSepLine:SetTexture(TEX.FLAT)
-      postureSepLine:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, -682)
-      postureSepLine:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, -682)
+      postureSepLine:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, -720)
+      postureSepLine:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, -720)
       postureSepLine:SetHeight(1)
       postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
       UI.postureSepLine = postureSepLine
@@ -1793,7 +1795,7 @@ function ns.UI_Init()
 
       for i, def in ipairs(POSTURE_DEFS) do
         local bx = startX + (i - 1) * (BTN_W + GAP)
-        local b = mkButton(cA, def.label, BTN_W, BTN_H2, bx, -692)
+        local b = mkButton(cA, def.label, BTN_W, BTN_H2, bx, -730)
         b._postureKey = def.key
         b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
 
@@ -1818,7 +1820,7 @@ function ns.UI_Init()
         UI.postureButtons[i] = b
       end
     end
-    paramChild:SetHeight(740)
+    paramChild:SetHeight(778)
   end
 
   -- Onglet 7 : Historique
@@ -1882,7 +1884,7 @@ function ns.UI_Init()
   local petHpCurEB, petHpMaxEB
   local petArmorEB, petTrueArmorEB, petDodgeEB, petMagicBlockEB
   local petActionValEB
-  local petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn
+  local petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn, petSurgeryBtn
 
   local function applyAllPet()
     if not Core then return end
@@ -1902,11 +1904,31 @@ function ns.UI_Init()
 
   -- ── Tab 8 : Familier — Fiche (Identité, Armure, Actions, Blocage fusionnés) ──
   do
+    local petSF = CreateFrame("ScrollFrame", nil, pagePetHP, "UIPanelScrollFrameTemplate")
+    petSF:SetPoint("TOPLEFT",     pagePetHP, "TOPLEFT",     0,   0)
+    petSF:SetPoint("BOTTOMRIGHT", pagePetHP, "BOTTOMRIGHT", -20, 0)
+    local petPane = CreateFrame("Frame", nil, petSF)
+    petPane:SetHeight(420)
+    petSF:SetScrollChild(petPane)
+
+    local function syncPetPaneWidth()
+      local w = petSF:GetWidth() or 0
+      if w <= 0 then return end
+      petPane:SetWidth(math.max(200, w - 20))
+    end
+    petSF:SetScript("OnSizeChanged", syncPetPaneWidth)
+    petPane:SetScript("OnSizeChanged", function()
+      for i = 1, #rowAnchors do
+        local f = rowAnchors[i]
+        if f._reposition then f._reposition() end
+      end
+    end)
+
     local function mkPetHeader(text, y)
-      local lbl = pagePetHP:CreateFontString(nil, "OVERLAY")
+      local lbl = petPane:CreateFontString(nil, "OVERLAY")
       lbl:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
-      lbl:SetPoint("TOPLEFT",  pagePetHP, "TOPLEFT",  0, y)
-      lbl:SetPoint("TOPRIGHT", pagePetHP, "TOPRIGHT", 0, y)
+      lbl:SetPoint("TOPLEFT",  petPane, "TOPLEFT",  0, y)
+      lbl:SetPoint("TOPRIGHT", petPane, "TOPRIGHT", 0, y)
       lbl:SetJustifyH("CENTER")
       lbl:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
       lbl:SetShadowOffset(1, -1)
@@ -1915,11 +1937,11 @@ function ns.UI_Init()
     end
 
     local function mkPetSep(y)
-      local sep = pagePetHP:CreateTexture(nil, "ARTWORK")
+      local sep = petPane:CreateTexture(nil, "ARTWORK")
       sep:SetTexture(TEX.FLAT)
-      sep:SetPoint("LEFT",  pagePetHP, "LEFT",  20, 0)
-      sep:SetPoint("RIGHT", pagePetHP, "RIGHT", -20, 0)
-      sep:SetPoint("TOP",   pagePetHP, "TOP",   0, y)
+      sep:SetPoint("LEFT",  petPane, "LEFT",  20, 0)
+      sep:SetPoint("RIGHT", petPane, "RIGHT", -20, 0)
+      sep:SetPoint("TOP",   petPane, "TOP",   0, y)
       sep:SetHeight(1)
       sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
     end
@@ -1927,7 +1949,7 @@ function ns.UI_Init()
     -- ── Identité ──
     mkPetHeader("Identité", -6)
 
-    local aPetToggle = mkRowAnchor(pagePetHP, 380, -26)
+    local aPetToggle = mkRowAnchor(petPane, 380, -26)
     petToggleBtn = mkButton(aPetToggle, "Activer le familier", 180, 22, 0, 0, function()
       if not Core or not Core.SetPetEnabled then return end
       local p = Core.GetPet and Core.GetPet() or nil
@@ -1939,12 +1961,12 @@ function ns.UI_Init()
       Core.SetPetAuthorityEnabled(not (p and p.authorityEnabled))
     end)
 
-    local aPetNom = mkRowAnchor(pagePetHP, 230, -54)
+    local aPetNom = mkRowAnchor(petPane, 230, -54)
     mkLabel(aPetNom, "Nom", 0, -2)
     petNameEB = mkEdit(aPetNom, 180, 20, 46, 0, applyAllPet)
     petNameEB:SetNumeric(false)
 
-    local aPetHP = mkRowAnchor(pagePetHP, 230, -80)
+    local aPetHP = mkRowAnchor(petPane, 230, -80)
     mkLabel(aPetHP, "PV", 0, -2)
     petHpCurEB = mkEdit(aPetHP, 70, 20, 30,  0, applyAllPet)
     mkLabel(aPetHP, "/", 106, -2)
@@ -1954,13 +1976,13 @@ function ns.UI_Init()
     mkPetSep(-106)
     mkPetHeader("Armure & Esquive", -114)
 
-    local aPetDef1 = mkRowAnchor(pagePetHP, 320, -132)
+    local aPetDef1 = mkRowAnchor(petPane, 320, -132)
     mkLabel(aPetDef1, "Armure", 0, -2)
     petArmorEB     = mkEdit(aPetDef1, 70, 20, 60,  0, applyAllPet)
     mkLabel(aPetDef1, "Armure invul", 150, -2)
     petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 244, 0, applyAllPet)
 
-    local aPetDef2 = mkRowAnchor(pagePetHP, 160, -160)
+    local aPetDef2 = mkRowAnchor(petPane, 160, -160)
     mkLabel(aPetDef2, "Esquive", 0, -2)
     petDodgeEB = mkEdit(aPetDef2, 70, 20, 60, 0, applyAllPet)
 
@@ -1968,11 +1990,11 @@ function ns.UI_Init()
     mkPetSep(-188)
     mkPetHeader("Actions", -196)
 
-    local aPetVal = mkRowAnchor(pagePetHP, 180, -214)
+    local aPetVal = mkRowAnchor(petPane, 180, -214)
     mkLabel(aPetVal, "Valeur", 0, -2)
     petActionValEB = mkEdit(aPetVal, 80, 20, 56, 0)
 
-    local aPetBtns1 = mkRowAnchor(pagePetHP, 392, -240)
+    local aPetBtns1 = mkRowAnchor(petPane, 392, -240)
     petDmgArmorBtn = mkButton(aPetBtns1, "Dégâts (armure)", 190, 22, 0,   0, function()
       if Core and Core.PetDamageWithArmor then Core.PetDamageWithArmor(getNumber(petActionValEB) or 0) end
     end)
@@ -1980,7 +2002,7 @@ function ns.UI_Init()
       if Core and Core.PetDamageTrue then Core.PetDamageTrue(getNumber(petActionValEB) or 0) end
     end)
 
-    local aPetBtns2 = mkRowAnchor(pagePetHP, 392, -268)
+    local aPetBtns2 = mkRowAnchor(petPane, 392, -268)
     petHealBtn = mkButton(aPetBtns2, "Soins", 190, 22, 0, 0, function()
       if Core and Core.PetHeal then Core.PetHeal(getNumber(petActionValEB) or 0) end
     end)
@@ -1988,11 +2010,16 @@ function ns.UI_Init()
       if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
     end)
 
-    -- ── Blocage ──
-    mkPetSep(-298)
-    mkPetHeader("Blocage", -306)
+    local aPetBtns3 = mkRowAnchor(petPane, 392, -306)
+    petSurgeryBtn = mkButton(aPetBtns3, "Chirurgie (50%)", 190, 22, 0, 0, function()
+      if Core and Core.PetSurgery then Core.PetSurgery() end
+    end)
 
-    local aPetBlock = mkRowAnchor(pagePetHP, 310, -324)
+    -- ── Blocage ──
+    mkPetSep(-336)
+    mkPetHeader("Blocage", -344)
+
+    local aPetBlock = mkRowAnchor(petPane, 310, -362)
     mkLabel(aPetBlock, "Bouclier magique", 0, -2)
     petMagicBlockEB = mkEdit(aPetBlock, 70, 20, 180, 0, applyAllPet)
     mkButton(aPetBlock, "Réinit.", 70, 20, 260, 0, function()
@@ -2078,7 +2105,7 @@ function ns.UI_Init()
     petArmorEB, petTrueArmorEB, petDodgeEB,
     petMagicBlockEB, petActionValEB,
   }
-  UI.petButtons = { petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn }
+  UI.petButtons = { petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn, petSurgeryBtn }
 
   setSidebarSection(1)
 

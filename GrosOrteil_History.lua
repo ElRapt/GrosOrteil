@@ -215,6 +215,22 @@ function History.FormatEntry(e)
 				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
 			})
 		)
+	elseif e.kind == "SURGERY" then
+		return block(
+			sep({
+				prefix("Chirurgie reçue", COLORS.DIVINE),
+				"Valeur " .. fmtInt(e.gain),
+			}),
+			sep({
+				"Plafond bypassé",
+				"Max effectif " .. fmtInt((e.maxHp or 0) + (e.bonusHp or 0)),
+				"Résultat " .. colorize(fmtInt(e.gain), COLORS.RESULT),
+			}),
+			sep({
+				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+			})
+		)
 	end
 
 	return nil
