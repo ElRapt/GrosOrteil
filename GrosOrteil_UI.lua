@@ -234,6 +234,7 @@ local function mkEdit(parent, w, h, x, y, onEnter)
   eb:SetScript("OnEditFocusLost", function()
     wrap:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
     wrap:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.92)
+    if onEnter then onEnter() end
   end)
   eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
   eb:SetScript("OnEnterPressed", function(self)
