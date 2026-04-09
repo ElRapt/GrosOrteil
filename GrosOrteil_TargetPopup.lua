@@ -39,6 +39,12 @@ local currentShownSender
 local stateCache = {}
 local CACHE_TTL  = 60  -- seconds
 
+-- Hover popup forward declarations (functions defined at end of file)
+local hoverFrame
+local tryShowHover
+local hideHoverPopup
+local reanchorHover
+
 local function getCached(key)
   local e = stateCache[key]
   if not e then return nil end
@@ -664,6 +670,10 @@ function Popup:OnStateReceived(sender, state)
   -- Always refresh cache with latest data.
   setCached(toCacheKey(sender), state)
 
+  -- Refresh hover popup if it is showing for this sender, or try to show it
+  -- if the user is currently hovering this unit (state just became available).
+  if tryShowHover then tryShowHover() end
+
   -- If popup is already showing for this sender, refresh it in-place.
   local shownKey = normalizeName(currentShownSender)
   if popupFrame and popupFrame:IsShown() and shownKey and namesMatch(senderKey, shownKey) then
@@ -748,7 +758,342 @@ function Popup:Initialize()
       self:OnTargetChanged()
     end
   end)
+
+  -- Hover popup: hook GameTooltip to detect player mouseover
+  local gt = GameTooltip
+  if gt then
+    hooksecurefunc(gt, "SetUnit", function()
+      if tryShowHover and C_Timer then
+        C_Timer.After(0, tryShowHover)
+      end
+    end)
+    gt:HookScript("OnHide", function()
+      -- TRP3 may hide GameTooltip while still showing TRP3_CharacterTooltip;
+      -- in that case the hover popup should stay up (anchored to TRP3).
+      if hideHoverPopup then
+        local trpTip = rawget(_G, "TRP3_CharacterTooltip")
+        if not trpTip or not trpTip:IsShown() then
+          hideHoverPopup()
+        end
+      end
+    end)
+  end
+
+  -- Hook TRP3_CharacterTooltip; retry via ADDON_LOADED if not ready yet
+  local function hookTRP3Tooltip()
+    local trpTip = rawget(_G, "TRP3_CharacterTooltip")
+    if not trpTip then return false end
+    trpTip:HookScript("OnShow", function()
+      if C_Timer then
+        C_Timer.After(0, function()
+          if tryShowHover then tryShowHover() end
+          if reanchorHover then reanchorHover() end
+        end)
+      end
+    end)
+    trpTip:HookScript("OnHide", function()
+      if not gt or not gt:IsShown() then
+        if hideHoverPopup then hideHoverPopup() end
+      end
+    end)
+    return true
+  end
+
+  if not hookTRP3Tooltip() then
+    local trpWaitFrame = CreateFrame("Frame")
+    trpWaitFrame:RegisterEvent("ADDON_LOADED")
+    trpWaitFrame:SetScript("OnEvent", function(_, _, addonName)
+      if addonName == "totalRP3" then
+        hookTRP3Tooltip()
+        trpWaitFrame:UnregisterAllEvents()
+      end
+    end)
+  end
 end
+
+-- ============================================================
+-- Hover Popup — minimalist bars (% only), glued to TRP3 tooltip
+-- ============================================================
+
+local HOVER_BAR_W = 200
+local HOVER_BAR_H = 16
+local HOVER_PAD   = 8
+local HOVER_GAP   = 4
+
+-- positionMarkers uses bar:GetWidth() which returns 0 before first layout.
+-- Use the known constant width instead.
+local function positionHoverMarkers(markers, bar)
+  for i = 1, #markers do
+    local m = markers[i]
+    if m then
+      local x = HOVER_BAR_W * (m.pct or 0)
+      if x < 0 then x = 0 elseif x > HOVER_BAR_W then x = HOVER_BAR_W end
+      m:Show()
+      m:ClearAllPoints()
+      m:SetPoint("LEFT", bar, "LEFT", x, 0)
+    end
+  end
+end
+
+local function createHoverBar(parent)
+  local barFrame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+  barFrame:SetSize(HOVER_BAR_W, HOVER_BAR_H)
+  barFrame:SetBackdrop({
+    bgFile   = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Buttons\\WHITE8x8",
+    edgeSize = 1,
+  })
+  barFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.95)
+  barFrame:SetBackdropBorderColor(0.15, 0.15, 0.15, 0.90)
+
+  local bar = CreateFrame("StatusBar", nil, barFrame)
+  bar:SetAllPoints(barFrame)
+  bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  bar:SetMinMaxValues(0, 100)
+  bar:SetValue(0)
+
+  local label = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  label:SetAllPoints(bar)
+  label:SetJustifyH("CENTER")
+  label:SetJustifyV("MIDDLE")
+  label:SetText("")
+
+  return { frame = barFrame, bar = bar, label = label, markers = {} }
+end
+
+local function createHoverPopup()
+  if hoverFrame then return end
+
+  hoverFrame = CreateFrame("Frame", "GrosOrteilHoverPopup", UIParent, "BackdropTemplate")
+  hoverFrame:SetFrameStrata("TOOLTIP")
+  hoverFrame:SetFrameLevel(10)
+  hoverFrame:SetWidth(HOVER_BAR_W + HOVER_PAD * 2)
+  hoverFrame:SetHeight(HOVER_PAD * 2 + HOVER_BAR_H)
+  hoverFrame:SetBackdrop({
+    bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
+    tile     = true,
+    tileSize = 24,
+    edgeSize = 16,
+    insets   = { left = 4, right = 4, top = 4, bottom = 4 },
+  })
+  hoverFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.92)
+
+  -- HP bar + overlays + markers
+  hoverFrame.hpBar = createHoverBar(hoverFrame)
+
+  hoverFrame.hpBar.blockOverlay = hoverFrame.hpBar.bar:CreateTexture(nil, "OVERLAY")
+  hoverFrame.hpBar.blockOverlay:SetTexture("Interface/Buttons/WHITE8x8")
+  hoverFrame.hpBar.blockOverlay:SetColorTexture(0.65, 0.65, 0.65, 0.55)
+  hoverFrame.hpBar.blockOverlay:SetPoint("TOP",    hoverFrame.hpBar.bar, "TOP",    0, 0)
+  hoverFrame.hpBar.blockOverlay:SetPoint("BOTTOM", hoverFrame.hpBar.bar, "BOTTOM", 0, 0)
+  hoverFrame.hpBar.blockOverlay:Hide()
+
+  hoverFrame.hpBar.magicOverlay = hoverFrame.hpBar.bar:CreateTexture(nil, "OVERLAY")
+  hoverFrame.hpBar.magicOverlay:SetTexture("Interface/Buttons/WHITE8x8")
+  hoverFrame.hpBar.magicOverlay:SetColorTexture(1.0, 0.82, 0.22, 0.60)
+  hoverFrame.hpBar.magicOverlay:SetPoint("TOP",    hoverFrame.hpBar.bar, "TOP",    0, 0)
+  hoverFrame.hpBar.magicOverlay:SetPoint("BOTTOM", hoverFrame.hpBar.bar, "BOTTOM", 0, 0)
+  hoverFrame.hpBar.magicOverlay:Hide()
+
+  hoverFrame.hpMarkers = {
+    makeMarker(hoverFrame.hpBar.bar, 0.50, 1.0, 1.0, 1.0, 0.35, 2),
+    makeMarker(hoverFrame.hpBar.bar, 0.25, 1.0, 0.65, 0.10, 0.45, 2),
+    makeMarker(hoverFrame.hpBar.bar, 0.10, 1.0, 0.15, 0.15, 0.55, 2),
+  }
+  hoverFrame.hpCapMarker = makeMarker(hoverFrame.hpBar.bar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
+
+  -- Resource bars (up to 5, shown/hidden dynamically)
+  hoverFrame.resBars = {}
+  for i = 1, 5 do
+    local rb = createHoverBar(hoverFrame)
+    rb.frame:Hide()
+    hoverFrame.resBars[i] = rb
+  end
+
+  hoverFrame:Hide()
+end
+
+local function getHoverUnitName()
+  if UnitExists("mouseover") and UnitIsPlayer("mouseover") then
+    return unitTargetName("mouseover")
+  end
+  local gt = rawget(_G, "GameTooltip")
+  if gt then
+    local unit = gt.GetUnit and gt:GetUnit()
+    if unit and UnitExists(unit) and UnitIsPlayer(unit) then
+      return unitTargetName(unit)
+    end
+  end
+  return nil
+end
+
+reanchorHover = function()
+  if not hoverFrame then return end
+  local trpTip = rawget(_G, "TRP3_CharacterTooltip")
+  if trpTip and trpTip:IsShown() then
+    hoverFrame:ClearAllPoints()
+    hoverFrame:SetPoint("BOTTOMLEFT", trpTip, "TOPLEFT", 0, 2)
+    return
+  end
+  local gt = rawget(_G, "GameTooltip")
+  if gt and gt:IsShown() then
+    hoverFrame:ClearAllPoints()
+    hoverFrame:SetPoint("BOTTOMLEFT", gt, "TOPLEFT", 0, 2)
+    return
+  end
+  hoverFrame:Hide()
+end
+
+hideHoverPopup = function()
+  if hoverFrame then hoverFrame:Hide() end
+end
+
+local function showHoverForState(state)
+  createHoverPopup()
+
+  -- HP bar
+  local baseHp  = tonumber(state.maxHp)  or 0
+  local bonusHp = tonumber(state.bonusHp) or 0
+  if bonusHp < 0 then bonusHp = 0 end
+  local effMax  = baseHp + bonusHp
+  if effMax <= 0 then effMax = 1 end
+  local hp      = tonumber(state.hp) or 0
+  local hpClamp = math.max(0, math.min(hp, effMax))
+  local hpPct   = math.floor(hpClamp / effMax * 100 + 0.5)
+
+  hoverFrame.hpBar.bar:SetMinMaxValues(0, effMax)
+  hoverFrame.hpBar.bar:SetValue(hpClamp)
+  hoverFrame.hpBar.bar:SetStatusBarColor(0.85, 0.16, 0.18, 1)
+  hoverFrame.hpBar.label:SetText(string.format("PV : %d%%", hpPct))
+
+  Shared.UpdateHpShieldOverlays(
+    hoverFrame.hpBar.blockOverlay, hoverFrame.hpBar.magicOverlay,
+    hoverFrame.hpBar.bar, hp, effMax,
+    tonumber(state.tempBlock) or 0, tonumber(state.tempMagicBlock) or 0
+  )
+
+  local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
+  for i = 1, #hoverFrame.hpMarkers do
+    local m = hoverFrame.hpMarkers[i]
+    m.pct = effMax > 0 and (baseHp * HP_THRESHOLD_PCTS[i]) / effMax or 0
+  end
+  positionHoverMarkers(hoverFrame.hpMarkers, hoverFrame.hpBar.bar)
+
+  local woundCap = 1.0
+  if state.wounds and state.wounds.hit10 then woundCap = 0.25
+  elseif state.wounds and state.wounds.hit25 then woundCap = 0.50 end
+  if woundCap >= 1.0 then
+    hoverFrame.hpCapMarker:Hide()
+  else
+    hoverFrame.hpCapMarker.pct = (baseHp * woundCap) / effMax
+    positionHoverMarkers({ hoverFrame.hpCapMarker }, hoverFrame.hpBar.bar)
+  end
+
+  hoverFrame.hpBar.frame:ClearAllPoints()
+  hoverFrame.hpBar.frame:SetPoint("TOPLEFT", hoverFrame, "TOPLEFT", HOVER_PAD, -HOVER_PAD)
+
+  -- Resource bars
+  local profile  = getResProfile(state)
+  local shownRes = 0
+
+  for i = 1, 5 do
+    local row = hoverFrame.resBars[i]
+    local p   = profile[i]
+    if row and p then
+      local resKey, maxKey = getKeysForIdx(p.idx)
+      local cur     = state[resKey] or 0
+      local maxv    = state[maxKey] or 0
+      local dispMax = maxv
+
+      local isWarlockCorr = (state.classKey == "WARLOCK"      and p.idx == 2)
+      local isShadowIns   = (state.classKey == "SHADOWPRIEST" and p.idx == 2)
+      local isMageArcane  = (state.classKey == "MAGE"         and p.idx == 2)
+
+      if isWarlockCorr then dispMax = 60
+      elseif isShadowIns then dispMax = 25
+      elseif isMageArcane then dispMax = 8 end
+      if dispMax <= 0 then dispMax = 1 end
+
+      local clamped = math.max(0, math.min(cur, dispMax))
+      local pct     = math.floor(clamped / dispMax * 100 + 0.5)
+
+      row.bar:SetMinMaxValues(0, dispMax)
+      row.bar:SetValue(clamped)
+      row.bar:SetStatusBarColor(p.r, p.g, p.b, 1)
+      row.label:SetText(string.format("%s : %d%%", p.label or "Ressource", pct))
+
+      hideMarkers(row.markers)
+      if isWarlockCorr then
+        if #row.markers == 0 then
+          row.markers[1] = makeMarker(row.bar, 10/60, 0.65, 0.95, 0.65, 0.55, 2)
+          row.markers[2] = makeMarker(row.bar, 25/60, 1.00, 0.82, 0.22, 0.55, 2)
+          row.markers[3] = makeMarker(row.bar, 45/60, 1.00, 0.25, 0.25, 0.65, 3)
+        end
+        positionHoverMarkers(row.markers, row.bar)
+      elseif isShadowIns then
+        if #row.markers == 0 then
+          row.markers[1] = makeMarker(row.bar, 4/25,  0.65, 0.95, 0.65, 0.45, 2)
+          row.markers[2] = makeMarker(row.bar, 12/25, 1.00, 0.82, 0.22, 0.55, 2)
+          row.markers[3] = makeMarker(row.bar, 20/25, 1.00, 0.55, 0.10, 0.60, 2)
+          row.markers[4] = makeMarker(row.bar, 25/25, 1.00, 0.25, 0.25, 0.70, 3)
+        end
+        positionHoverMarkers(row.markers, row.bar)
+      elseif isMageArcane then
+        if #row.markers == 0 then
+          row.markers[1] = makeMarker(row.bar, 4/8, 1.00, 0.82, 0.22, 0.65, 2)
+          row.markers[2] = makeMarker(row.bar, 8/8, 0.75, 0.30, 1.00, 0.80, 3)
+        end
+        positionHoverMarkers(row.markers, row.bar)
+      end
+
+      local yOff = -(HOVER_PAD + HOVER_BAR_H + HOVER_GAP + shownRes * (HOVER_BAR_H + HOVER_GAP))
+      row.frame:ClearAllPoints()
+      row.frame:SetPoint("TOPLEFT", hoverFrame, "TOPLEFT", HOVER_PAD, yOff)
+      row.frame:Show()
+      shownRes = shownRes + 1
+    elseif row then
+      row.frame:Hide()
+      hideMarkers(row.markers)
+    end
+  end
+
+  local totalH = HOVER_PAD * 2 + HOVER_BAR_H + shownRes * (HOVER_BAR_H + HOVER_GAP)
+  hoverFrame:SetHeight(totalH)
+
+  reanchorHover()
+  hoverFrame:Show()
+end
+
+tryShowHover = function()
+  local settings = getSettings()
+  if settings.popupOnTarget == false then return end
+
+  local unitName = getHoverUnitName()
+  if not unitName then
+    hideHoverPopup()
+    return
+  end
+
+  local state = getCached(toCacheKey(unitName))
+
+  -- Fallback for the local player: use ns.Core.state directly (never cached).
+  if not state and UnitName then
+    local playerName = UnitName("player")
+    if playerName and namesMatch(unitName, playerName) then
+      state = ns.Core and ns.Core.state
+    end
+  end
+
+  if not state then
+    hideHoverPopup()
+    return
+  end
+
+  showHoverForState(state)
+end
+
+-- ============================================================
 
 function ns.TargetPopup_Init()
   Popup:Initialize()
