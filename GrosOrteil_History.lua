@@ -123,7 +123,7 @@ function History.FormatEntry(e)
 				sep({
 					"Esquive " .. fmtInt(e.dodge),
 					"Blocage -",
-					"Blocage magique -",
+					"Bouclier magique -",
 				}),
 				sep({
 					"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
@@ -140,7 +140,7 @@ function History.FormatEntry(e)
 			sep({
 				"Esquive " .. fmtInt(e.dodge or 0),
 				"Blocage " .. fmtInt(e.absorbedBlock),
-				"Blocage magique " .. fmtInt(e.absorbedMagic),
+				"Bouclier magique " .. fmtInt(e.absorbedMagic),
 				"Réduction " .. fmtInt(e.mitigation),
 			}),
 			sep({
@@ -158,7 +158,7 @@ function History.FormatEntry(e)
 				}),
 				sep({
 					"Esquive " .. fmtInt(e.dodge),
-					"Blocage magique -",
+					"Bouclier magique -",
 					"Réduction -",
 				}),
 				sep({
@@ -175,7 +175,7 @@ function History.FormatEntry(e)
 			}),
 			sep({
 				"Esquive " .. fmtInt(e.dodge or 0),
-				"Blocage magique " .. fmtInt(e.absorbedMagic),
+				"Bouclier magique " .. fmtInt(e.absorbedMagic),
 				"Réduction " .. fmtInt(e.mitigation),
 			}),
 			sep({

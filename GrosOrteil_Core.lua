@@ -882,7 +882,7 @@ function Core.DamageWithArmor(amount)
     amount = amount - absorbedBlock
   end
 
-  -- Blocage magique : comme le blocage, mais fonctionne aussi sur dégâts bruts.
+  -- Bouclier magique : comme le blocage, mais fonctionne aussi sur dégâts bruts.
   local mblock = math.max(0, s.tempMagicBlock or 0)
   if mblock > 0 and amount > 0 then
     absorbedMagic = math.min(mblock, amount)
@@ -966,7 +966,7 @@ function Core.DamageTrue(amount)
 
   local absorbedMagic = 0
 
-  -- Blocage magique : s'applique aux dégâts bruts (contrairement au blocage normal).
+  -- Bouclier magique : s'applique aux dégâts bruts (contrairement au blocage normal).
   local mblock = math.max(0, s.tempMagicBlock or 0)
   if mblock > 0 and amount > 0 then
     absorbedMagic = math.min(mblock, amount)

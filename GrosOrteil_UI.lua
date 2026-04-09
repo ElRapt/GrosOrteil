@@ -1739,7 +1739,7 @@ function ns.UI_Init()
     mkSectionHeader("Blocage", -414)
 
     lbl("Blocage",         0, -440)
-    lbl("Blocage magique", 0, -474)
+    lbl("Bouclier magique", 0, -474)
     blockEB     = edt(110, 162, -438, applyAllArmor)
     magicBlockEB = edt(110, 162, -472, applyAllArmor)
     btn("Réinit.", 100, 284, -438, function() Core.ResetTempBlock() end)
