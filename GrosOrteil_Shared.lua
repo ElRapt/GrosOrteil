@@ -29,6 +29,7 @@ Shared.RES_PROFILES_BY_CLASS = {
   WARRIOR = {},
   MEDIC = {
     { idx = 1, label = "Fournitures", r = 0.85, g = 0.12, b = 0.12 },
+    { idx = 2, label = "Seringues",   r = 0.20, g = 0.75, b = 0.85 },
   },
   WARLOCK = {
     { idx = 1, label = "Énergie gangrénée", r = 0.20, g = 0.85, b = 0.25 },
