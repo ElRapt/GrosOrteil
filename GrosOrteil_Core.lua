@@ -119,9 +119,17 @@ local function deepCopyState(s)
   c.res4 = s.res4; c.maxRes4 = s.maxRes4
   c.auth = s.auth; c.maxAuth = s.maxAuth
   c.armor = s.armor; c.trueArmor = s.trueArmor
+  c.tempArmor = s.tempArmor
   c.dodge = s.dodge
   c.tempBlock = s.tempBlock
-  c.tempMagicBlock = s.tempMagicBlock
+  local ms = s.magicShield
+  c.magicShield = ms and {
+    hp = ms.hp, maxHp = ms.maxHp, armor = ms.armor,
+  } or nil
+  local mns = s.manaShield
+  c.manaShield = mns and {
+    active = mns.active, armor = mns.armor,
+  } or nil
   c.rev = s.rev
   c.shamanPosture = s.shamanPosture
   c.shamanPostureDmgBonus = s.shamanPostureDmgBonus
@@ -154,9 +162,24 @@ local function restoreSnapshot(snap)
   s.res4 = snap.res4; s.maxRes4 = snap.maxRes4
   s.auth = snap.auth; s.maxAuth = snap.maxAuth
   s.armor = snap.armor; s.trueArmor = snap.trueArmor
+  s.tempArmor = snap.tempArmor or 0
   s.dodge = snap.dodge
   s.tempBlock = snap.tempBlock
-  s.tempMagicBlock = snap.tempMagicBlock
+  if snap.magicShield then
+    s.magicShield = s.magicShield or {}
+    s.magicShield.hp    = snap.magicShield.hp    or 0
+    s.magicShield.maxHp = snap.magicShield.maxHp or 0
+    s.magicShield.armor = snap.magicShield.armor or 0
+  else
+    s.magicShield = { hp = 0, maxHp = 0, armor = 0 }
+  end
+  if snap.manaShield then
+    s.manaShield = s.manaShield or {}
+    s.manaShield.active = snap.manaShield.active and true or false
+    s.manaShield.armor  = snap.manaShield.armor or 0
+  else
+    s.manaShield = { active = false, armor = 0 }
+  end
   s.shamanPosture = snap.shamanPosture
   s.shamanPostureDmgBonus = snap.shamanPostureDmgBonus or 0
   local spb = snap.shamanPostureBase
@@ -440,10 +463,11 @@ function ns.Core_Init()
     res3 = 0, maxRes3 = 20,
     res4 = 0, maxRes4 = 20,
     auth = 0, maxAuth = 5,
-    armor = 0, trueArmor = 0,
+    armor = 0, trueArmor = 0, tempArmor = 0,
     dodge = 0,
     tempBlock = 0,
-    tempMagicBlock = 0,
+    magicShield = { hp = 0, maxHp = 0, armor = 0 },
+    manaShield  = { active = false, armor = 25 },
 
     wounds = { hit25 = false, hit10 = false },
 
@@ -492,7 +516,23 @@ function ns.Core_Init()
   end
 
   if db.state.dodge == nil then db.state.dodge = 0 end
-  if db.state.tempMagicBlock == nil then db.state.tempMagicBlock = 0 end
+  if db.state.tempArmor == nil then db.state.tempArmor = 0 end
+  -- Migration: tempMagicBlock -> magicShield.hp
+  if type(db.state.magicShield) ~= "table" then
+    local legacy = tonumber(db.state.tempMagicBlock) or 0
+    db.state.magicShield = { hp = legacy, maxHp = legacy, armor = 0 }
+  else
+    if type(db.state.magicShield.hp)    ~= "number" then db.state.magicShield.hp    = 0 end
+    if type(db.state.magicShield.maxHp) ~= "number" then db.state.magicShield.maxHp = db.state.magicShield.hp or 0 end
+    if type(db.state.magicShield.armor) ~= "number" then db.state.magicShield.armor = 0 end
+  end
+  db.state.tempMagicBlock = nil
+  if type(db.state.manaShield) ~= "table" then
+    db.state.manaShield = { active = false, armor = 25 }
+  else
+    db.state.manaShield.active = db.state.manaShield.active and true or false
+    if type(db.state.manaShield.armor) ~= "number" then db.state.manaShield.armor = 25 end
+  end
   ensureHistory(db.state)
   ensurePet(db.state)
 
@@ -794,6 +834,20 @@ function Core.SetArmor(armor, trueArmor)
   bump(); notify()
 end
 
+function Core.SetTempArmor(v)
+  local s = Core.state
+  if not s then return end
+  v = clampNumber(v, 0, 1e9)
+  if v then s.tempArmor = v end
+  bump(); notify()
+end
+
+function Core.ResetTempArmor()
+  if not Core.state then return end
+  Core.state.tempArmor = 0
+  bump(); notify()
+end
+
 function Core.SetTempBlock(v)
   local s = Core.state
   if not s then return end
@@ -802,11 +856,92 @@ function Core.SetTempBlock(v)
   bump(); notify()
 end
 
-function Core.SetTempMagicBlock(v)
+-- Bouclier magique générique
+function Core.SetMagicShield(hp, maxHp, armor)
   local s = Core.state
   if not s then return end
+  s.magicShield = s.magicShield or { hp = 0, maxHp = 0, armor = 0 }
+  hp    = clampNumber(hp,    0, 1e9)
+  maxHp = clampNumber(maxHp, 0, 1e9)
+  armor = clampNumber(armor, 0, 1e9)
+  if maxHp then s.magicShield.maxHp = maxHp end
+  if hp then
+    local cap = s.magicShield.maxHp or 0
+    if cap > 0 and hp > cap then hp = cap end
+    s.magicShield.hp = hp
+  end
+  if armor then s.magicShield.armor = armor end
+  bump(); notify()
+end
+
+function Core.ResetMagicShield()
+  local s = Core.state
+  if not s then return end
+  s.magicShield = { hp = 0, maxHp = 0, armor = 0 }
+  bump(); notify()
+end
+
+-- Bouclier de mana (mage uniquement)
+
+-- Interne : change l'état actif du bouclier de mana et synchronise tempArmor.
+local function applyManaShieldActive(s, newActive)
+  local mns = s.manaShield
+  if not mns then return end
+  local wasActive = mns.active
+  mns.active = newActive
+  if newActive ~= wasActive then
+    local a = mns.armor or 0
+    if newActive then
+      s.tempArmor = math.max(0, (s.tempArmor or 0) + a)
+    else
+      s.tempArmor = math.max(0, (s.tempArmor or 0) - a)
+    end
+  end
+end
+
+function Core.SetManaShieldArmor(v)
+  local s = Core.state
+  if not s then return end
+  s.manaShield = s.manaShield or { active = false, armor = 25 }
   v = clampNumber(v, 0, 1e9)
-  if v then s.tempMagicBlock = v end
+  if v then
+    if s.manaShield.active then
+      local oldArmor = s.manaShield.armor or 0
+      s.manaShield.armor = v
+      s.tempArmor = math.max(0, (s.tempArmor or 0) - oldArmor + v)
+    else
+      s.manaShield.armor = v
+    end
+  end
+  bump(); notify()
+end
+
+function Core.ToggleManaShield()
+  local s = Core.state
+  if not s then return end
+  s.manaShield = s.manaShield or { active = false, armor = 25 }
+  if s.classKey ~= "MAGE" then
+    applyManaShieldActive(s, false)
+  else
+    local wantActive = not s.manaShield.active
+    -- Refuse activation sans mana.
+    if wantActive and (s.res or 0) <= 0 then wantActive = false end
+    applyManaShieldActive(s, wantActive)
+  end
+  bump(); notify()
+end
+
+function Core.SetManaShieldActive(active)
+  local s = Core.state
+  if not s then return end
+  s.manaShield = s.manaShield or { active = false, armor = 25 }
+  if s.classKey ~= "MAGE" then
+    applyManaShieldActive(s, false)
+  else
+    local wantActive = active and true or false
+    if wantActive and (s.res or 0) <= 0 then wantActive = false end
+    applyManaShieldActive(s, wantActive)
+  end
   bump(); notify()
 end
 
@@ -830,10 +965,58 @@ function Core.ResetTempBlock()
   bump(); notify()
 end
 
-function Core.ResetTempMagicBlock()
-  if not Core.state then return end
-  Core.state.tempMagicBlock = 0
-  bump(); notify()
+-- Helpers boucliers magiques
+
+-- Absorbe `amount` via le bouclier magique et renvoie (reste, absorbéTotal).
+-- L'armure du bouclier réduit les dégâts AVANT qu'ils n'entament les PV du bouclier.
+-- L'armure du joueur s'applique ensuite uniquement sur le surplus qui dépasse le bouclier.
+local function consumeMagicShield(s, amount)
+  local ms = s.magicShield
+  if not ms or amount <= 0 then return amount, 0 end
+  local cur = math.max(0, ms.hp or 0)
+  if cur <= 0 then return amount, 0 end
+
+  -- 1. L'armure du bouclier réduit les dégâts entrants.
+  local shieldArmor = math.max(0, ms.armor or 0)
+  local afterArmor  = math.max(0, amount - shieldArmor)
+
+  -- 2. Les PV du bouclier absorbent ce qui reste.
+  local absorbed = math.min(cur, afterArmor)
+  ms.hp = cur - absorbed
+
+  if ms.hp <= 0 then
+    ms.hp    = 0
+    ms.armor = 0
+    ms.maxHp = 0
+  end
+
+  local overflow    = afterArmor - absorbed
+  local totalEaten  = amount - overflow   -- armor reduction + hp absorbed
+  return overflow, totalEaten
+end
+
+-- Redirige les dégâts vers le mana (mage) ; renvoie le surplus à infliger aux PV
+local function applyManaShield(s, dmg)
+  if dmg <= 0 then return 0, 0, false end
+  local mns = s.manaShield
+  if not mns or not mns.active or s.classKey ~= "MAGE" then
+    return dmg, 0, false
+  end
+  local mana = math.max(0, s.res or 0)
+  if mana <= 0 then
+    mns.active = false
+    return dmg, 0, true
+  end
+  local drained = math.min(mana, dmg)
+  s.res = mana - drained
+  local remaining = dmg - drained
+  local broke = false
+  if (s.res or 0) <= 0 then
+    s.res = 0
+    applyManaShieldActive(s, false)
+    broke = true
+  end
+  return remaining, drained, broke
 end
 
 -- Actions
@@ -846,12 +1029,14 @@ function Core.DamageWithArmor(amount)
     amount = amount + (s.shamanPostureDmgBonus or 10)
   end
 
-  local hpBefore = (s.hp or 0)
-  local baseMaxBefore = (s.maxHp or 0)
-  local bonusBefore = math.max(0, s.bonusHp or 0)
-  local armorBefore = (s.armor or 0)
+  local hpBefore        = (s.hp or 0)
+  local baseMaxBefore   = (s.maxHp or 0)
+  local bonusBefore     = math.max(0, s.bonusHp or 0)
+  local armorBefore     = (s.armor or 0)
   local trueArmorBefore = (s.trueArmor or 0)
-  local dodgeBefore = math.max(0, s.dodge or 0)
+  local tempArmorBefore = math.max(0, s.tempArmor or 0)
+  local dodgeBefore     = math.max(0, s.dodge or 0)
+  local manaBefore      = (s.res or 0)
 
   -- Esquive : si les dégâts sont <= au seuil, ils sont entièrement ignorés.
   if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
@@ -863,6 +1048,7 @@ function Core.DamageWithArmor(amount)
       dodge = dodgeBefore,
       armor = armorBefore,
       trueArmor = trueArmorBefore,
+      tempArmor = tempArmorBefore,
       hpBefore = hpBefore,
       hpAfter = hpBefore,
       maxHp = baseMaxBefore,
@@ -873,7 +1059,6 @@ function Core.DamageWithArmor(amount)
   end
 
   local absorbedBlock = 0
-  local absorbedMagic = 0
 
   local block = math.max(0, s.tempBlock or 0)
   if block > 0 and amount > 0 then
@@ -882,13 +1067,9 @@ function Core.DamageWithArmor(amount)
     amount = amount - absorbedBlock
   end
 
-  -- Bouclier magique : comme le blocage, mais fonctionne aussi sur dégâts bruts.
-  local mblock = math.max(0, s.tempMagicBlock or 0)
-  if mblock > 0 and amount > 0 then
-    absorbedMagic = math.min(mblock, amount)
-    s.tempMagicBlock = mblock - absorbedMagic
-    amount = amount - absorbedMagic
-  end
+  -- Bouclier magique (PV) : absorbe avant l'application de la mitigation.
+  local absorbedMagic
+  amount, absorbedMagic = consumeMagicShield(s, amount)
 
   -- SFX (une seule par "coup") : magic > block > damage
   if absorbedMagic > 0 then
@@ -899,11 +1080,15 @@ function Core.DamageWithArmor(amount)
     sfxDamage()
   end
 
-  local mit = armorBefore + trueArmorBefore
+  local mit = armorBefore + trueArmorBefore + tempArmorBefore
 
   local afterAbsorb = amount
-
   local dmg = effDmg(amount, mit)
+
+  local manaAbsorbed, manaBroke = 0, false
+  if dmg > 0 then
+    dmg, manaAbsorbed, manaBroke = applyManaShield(s, dmg)
+  end
   if dmg > 0 then
     s.hp = (s.hp or 0) - dmg
   end
@@ -915,10 +1100,15 @@ function Core.DamageWithArmor(amount)
     afterAbsorb = afterAbsorb,
     absorbedBlock = absorbedBlock,
     absorbedMagic = absorbedMagic,
+    manaAbsorbed = manaAbsorbed,
+    manaBroke = manaBroke,
+    manaBefore = manaBefore,
+    manaAfter = (s.res or 0),
     dodge = dodgeBefore,
     dodged = false,
     armor = armorBefore,
     trueArmor = trueArmorBefore,
+    tempArmor = tempArmorBefore,
     mitigation = mit,
     damage = dmg,
     hpBefore = hpBefore,
@@ -940,11 +1130,13 @@ function Core.DamageTrue(amount)
     amount = amount + (s.shamanPostureDmgBonus or 10)
   end
 
-  local hpBefore = (s.hp or 0)
-  local baseMaxBefore = (s.maxHp or 0)
-  local bonusBefore = math.max(0, s.bonusHp or 0)
+  local hpBefore        = (s.hp or 0)
+  local baseMaxBefore   = (s.maxHp or 0)
+  local bonusBefore     = math.max(0, s.bonusHp or 0)
   local trueArmorBefore = (s.trueArmor or 0)
-  local dodgeBefore = math.max(0, s.dodge or 0)
+  local tempArmorBefore = math.max(0, s.tempArmor or 0)
+  local dodgeBefore     = math.max(0, s.dodge or 0)
+  local manaBefore      = (s.res or 0)
 
   -- Esquive : s'applique aussi aux dégâts bruts.
   if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
@@ -955,6 +1147,7 @@ function Core.DamageTrue(amount)
       dodged = true,
       dodge = dodgeBefore,
       trueArmor = trueArmorBefore,
+      tempArmor = tempArmorBefore,
       hpBefore = hpBefore,
       hpAfter = hpBefore,
       maxHp = baseMaxBefore,
@@ -964,15 +1157,9 @@ function Core.DamageTrue(amount)
     return
   end
 
-  local absorbedMagic = 0
-
-  -- Bouclier magique : s'applique aux dégâts bruts (contrairement au blocage normal).
-  local mblock = math.max(0, s.tempMagicBlock or 0)
-  if mblock > 0 and amount > 0 then
-    absorbedMagic = math.min(mblock, amount)
-    s.tempMagicBlock = mblock - absorbedMagic
-    amount = amount - absorbedMagic
-  end
+  -- Bouclier magique (PV) : s'applique aussi aux dégâts bruts.
+  local absorbedMagic
+  amount, absorbedMagic = consumeMagicShield(s, amount)
 
   if absorbedMagic > 0 then
     sfxMagicShield()
@@ -980,11 +1167,15 @@ function Core.DamageTrue(amount)
     sfxDamage()
   end
 
-  local mit = trueArmorBefore
+  local mit = trueArmorBefore + tempArmorBefore
 
   local afterAbsorb = amount
-
   local dmg = effDmg(amount, mit)
+
+  local manaAbsorbed, manaBroke = 0, false
+  if dmg > 0 then
+    dmg, manaAbsorbed, manaBroke = applyManaShield(s, dmg)
+  end
   if dmg > 0 then
     s.hp = (s.hp or 0) - dmg
   end
@@ -995,9 +1186,14 @@ function Core.DamageTrue(amount)
     input = amount + absorbedMagic,
     afterAbsorb = afterAbsorb,
     absorbedMagic = absorbedMagic,
+    manaAbsorbed = manaAbsorbed,
+    manaBroke = manaBroke,
+    manaBefore = manaBefore,
+    manaAfter = (s.res or 0),
     dodge = dodgeBefore,
     dodged = false,
     trueArmor = trueArmorBefore,
+    tempArmor = tempArmorBefore,
     mitigation = mit,
     damage = dmg,
     hpBefore = hpBefore,

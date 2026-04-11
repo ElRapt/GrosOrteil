@@ -970,7 +970,7 @@ local function showHoverForState(state)
   Shared.UpdateHpShieldOverlays(
     hoverFrame.hpBar.blockOverlay, hoverFrame.hpBar.magicOverlay,
     hoverFrame.hpBar.bar, hp, effMax,
-    tonumber(state.tempBlock) or 0, tonumber(state.tempMagicBlock) or 0
+    tonumber(state.tempBlock) or 0, (state.magicShield and state.magicShield.hp or 0)
   )
 
   local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }

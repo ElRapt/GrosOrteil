@@ -1529,7 +1529,9 @@ function ns.UI_Init()
   -- Onglet 1 : Fiche (PV + Armure & Esquive + Actions + Blocage + Ressources)
   -- Déclarations anticipées ; l'UI est construite après les ressources.
   local hpCur, hpMax, bonusHpValEB
-  local armorEB, trueArmorEB, dodgeEB, blockEB, magicBlockEB
+  local armorEB, trueArmorEB, tempArmorEB, dodgeEB, blockEB
+  local msHpEB, msMaxHpEB, msArmorEB
+  local mnsArmorEB, mnsToggleBtn, mnsLabel, mnsArmorLabel
   local actValEB
 
   local function applyAllHP()
@@ -1539,13 +1541,25 @@ function ns.UI_Init()
   local function applyAllArmor()
     local armorVal     = getNumber(armorEB)
     local trueArmorVal = getNumber(trueArmorEB)
+    local tempArmorVal = getNumber(tempArmorEB)
     local dodgeVal     = getNumber(dodgeEB)
     local blockVal     = getNumber(blockEB)
-    local magicVal     = getNumber(magicBlockEB)
     Core.SetArmor(armorVal, trueArmorVal)
+    Core.SetTempArmor(tempArmorVal)
     Core.SetDodge(dodgeVal)
     Core.SetTempBlock(blockVal)
-    Core.SetTempMagicBlock(magicVal)
+  end
+
+  local function applyAllMagicShield()
+    local hpVal    = getNumber(msHpEB)
+    local maxVal   = getNumber(msMaxHpEB)
+    local armorVal = getNumber(msArmorEB)
+    Core.SetMagicShield(hpVal, maxVal, armorVal)
+  end
+
+  local function applyAllManaShield()
+    local armorVal = getNumber(mnsArmorEB)
+    Core.SetManaShieldArmor(armorVal)
   end
 
   local function doDmgArmor() Core.DamageWithArmor(getNumber(actValEB) or 0) end
@@ -1624,13 +1638,13 @@ function ns.UI_Init()
   end
 
   -- Rows are shown/hidden based on selected class.
-  mkResRow(1, -552)
-  mkResRow(2, -580)
-  mkResRow(3, -608)
-  mkResRow(4, -636)
-  mkResRow(5, -664)
+  mkResRow(1, -658)
+  mkResRow(2, -686)
+  mkResRow(3, -714)
+  mkResRow(4, -742)
+  mkResRow(5, -770)
 
-  UI.noResHint = mkLabelCenter(cA, "Aucune ressource pour cette classe.", 0, -578)
+  UI.noResHint = mkLabelCenter(cA, "Aucune ressource pour cette classe.", 0, -684)
   UI.noResHint:Hide()
 
   -- Onglet 1 (suite) : Fiche — construction du scroll
@@ -1714,8 +1728,10 @@ function ns.UI_Init()
     armorEB     = edt(110, 66,  -142, applyAllArmor)
     trueArmorEB = edt(110, 284, -142, applyAllArmor)
 
-    lbl("Esquive", 0, -178)
-    dodgeEB = edt(110, 66, -176, applyAllArmor)
+    lbl("Esquive",        0,   -178)
+    lbl("Armure tempo.",  190, -178)
+    dodgeEB     = edt(110, 66,  -176, applyAllArmor)
+    tempArmorEB = edt(110, 284, -176, applyAllArmor)
 
     mkSep(-212)
 
@@ -1723,7 +1739,7 @@ function ns.UI_Init()
     mkSectionHeader("Actions", -224)
 
     lbl("Valeur", 0, -252)
-    actValEB = edt(120, 60, -250, doDmgArmor)
+    actValEB = edt(120, 60, -250, nil)
 
     btn("Dégâts (armure)", 210, 0,   -284, doDmgArmor)
     btn("Dégâts (bruts)",  210, 230, -284, doDmgTrue)
@@ -1738,18 +1754,46 @@ function ns.UI_Init()
     -- ── Blocage ─────────────────────────────────────────────────────
     mkSectionHeader("Blocage", -414)
 
-    lbl("Blocage",         0, -440)
-    lbl("Bouclier magique", 0, -474)
-    blockEB     = edt(110, 162, -438, applyAllArmor)
-    magicBlockEB = edt(110, 162, -472, applyAllArmor)
+    lbl("Blocage", 0, -440)
+    blockEB = edt(110, 162, -438, applyAllArmor)
     btn("Réinit.", 100, 284, -438, function() Core.ResetTempBlock() end)
-    btn("Réinit.", 100, 284, -472, function() Core.ResetTempMagicBlock() end)
 
-    mkSep(-508)
+    mkSep(-474)
+
+    -- Boucliers magiques
+    mkSectionHeader("Boucliers magiques", -486)
+
+    lbl("PV",  0,   -512)
+    lbl("/",   148, -512)
+    msHpEB    = edt(110, 26,  -510, applyAllMagicShield)
+    msMaxHpEB = edt(110, 166, -510, applyAllMagicShield)
+    btn("Réinit.", 100, 284, -510, function()
+      if Core and Core.ResetMagicShield then Core.ResetMagicShield() end
+    end)
+
+    lbl("Armure", 0, -544)
+    msArmorEB = edt(110, 162, -542, applyAllMagicShield)
+
+    -- Bouclier de mana (mage uniquement)
+    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -578, function()
+      if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
+    end)
+    UI.manaShieldToggleBtn = mnsToggleBtn
+    mnsArmorLabel = mkLabel(cA, "Armure", 250, -578 + LBL_Y)
+    UI.manaShieldArmorLabel = mnsArmorLabel
+    mnsArmorEB = edt(80, 304, -578, applyAllManaShield)
+    UI.manaShieldArmorEB = mnsArmorEB
+
+    -- Hidden by default; shown only for mages in onChangeCallback.
+    mnsToggleBtn:Hide()
+    mnsArmorLabel:Hide()
+    if mnsArmorEB._wrap then mnsArmorEB._wrap:Hide() else mnsArmorEB:Hide() end
+
+    mkSep(-614)
 
     -- ── Ressources ──────────────────────────────────────────────────
-    -- Rows (mkResRow) and noResHint are pre-built above, parented to cA at y=-552…-664.
-    mkSectionHeader("Ressources", -520)
+    -- Rows (mkResRow) and noResHint are pre-built above, parented to cA.
+    mkSectionHeader("Ressources", -626)
 
     -- ── Postures Élémentaires (Shaman uniquement) ────────────────────
     do
@@ -1770,7 +1814,7 @@ function ns.UI_Init()
 
       local postureSection = cA:CreateFontString(nil, "OVERLAY")
       postureSection:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-      postureSection:SetPoint("TOP", cA, "TOP", 0, -702)
+      postureSection:SetPoint("TOP", cA, "TOP", 0, -808)
       postureSection:SetWidth(BLOCK_W)
       postureSection:SetJustifyH("CENTER")
       postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
@@ -1781,8 +1825,8 @@ function ns.UI_Init()
 
       local postureSepLine = cA:CreateTexture(nil, "ARTWORK")
       postureSepLine:SetTexture(TEX.FLAT)
-      postureSepLine:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, -720)
-      postureSepLine:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, -720)
+      postureSepLine:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, -826)
+      postureSepLine:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, -826)
       postureSepLine:SetHeight(1)
       postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
       UI.postureSepLine = postureSepLine
@@ -1796,7 +1840,7 @@ function ns.UI_Init()
 
       for i, def in ipairs(POSTURE_DEFS) do
         local bx = startX + (i - 1) * (BTN_W + GAP)
-        local b = mkButton(cA, def.label, BTN_W, BTN_H2, bx, -730)
+        local b = mkButton(cA, def.label, BTN_W, BTN_H2, bx, -836)
         b._postureKey = def.key
         b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
 
@@ -1821,7 +1865,7 @@ function ns.UI_Init()
         UI.postureButtons[i] = b
       end
     end
-    paramChild:SetHeight(778)
+    paramChild:SetHeight(884)
   end
 
   -- Onglet 7 : Historique
@@ -2086,10 +2130,11 @@ function ns.UI_Init()
 
   UI.inputs = {
     hpCur = hpCur, hpMax = hpMax, bonusHpMax = bonusHpValEB,
-    armor = armorEB, trueArmor = trueArmorEB,
+    armor = armorEB, trueArmor = trueArmorEB, tempArmor = tempArmorEB,
     dodge = dodgeEB,
     block = blockEB,
-    magicBlock = magicBlockEB,
+    msHp = msHpEB, msMaxHp = msMaxHpEB, msArmor = msArmorEB,
+    mnsArmor = mnsArmorEB,
     petName = petNameEB,
     petHpCur = petHpCurEB,
     petHpMax = petHpMaxEB,
@@ -2280,7 +2325,7 @@ function ns.UI_Init()
       end
       Shared.UpdateHpShieldOverlays(
         UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
-        hpNow, effMaxHp, s.tempBlock or 0, s.tempMagicBlock or 0
+        hpNow, effMaxHp, s.tempBlock or 0, (s.magicShield and s.magicShield.hp or 0)
       )
       local cap
       local w2 = s.wounds
@@ -2614,9 +2659,27 @@ function ns.UI_Init()
     -- Resource inputs are handled per-row above.
     setNumber(UI.inputs.armor, s.armor)
     setNumber(UI.inputs.trueArmor, s.trueArmor)
+    setNumber(UI.inputs.tempArmor, s.tempArmor)
     setNumber(UI.inputs.dodge, s.dodge)
     setNumber(UI.inputs.block, s.tempBlock)
-    setNumber(UI.inputs.magicBlock, s.tempMagicBlock)
+    local ms = s.magicShield or {}
+    setNumber(UI.inputs.msHp,    ms.hp)
+    setNumber(UI.inputs.msMaxHp, ms.maxHp)
+    setNumber(UI.inputs.msArmor, ms.armor)
+    local mns = s.manaShield or {}
+    setNumber(UI.inputs.mnsArmor, mns.armor)
+    if UI.manaShieldToggleBtn then
+      local isMage = (s.classKey == "MAGE")
+      UI.manaShieldToggleBtn:SetShown(isMage)
+      if UI.manaShieldArmorLabel then UI.manaShieldArmorLabel:SetShown(isMage) end
+      if UI.manaShieldArmorEB then
+        local w = UI.manaShieldArmorEB._wrap
+        if w then w:SetShown(isMage) else UI.manaShieldArmorEB:SetShown(isMage) end
+      end
+      if isMage then
+        UI.manaShieldToggleBtn:SetText(mns.active and "Désactiver bouclier de mana" or "Activer bouclier de mana")
+      end
+    end
 
     local p = s.pet or {}
     local petEnabled = not not p.enabled

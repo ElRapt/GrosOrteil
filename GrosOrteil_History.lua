@@ -112,6 +112,17 @@ function History.FormatEntry(e)
 		return colorize(label, color)
 	end
 
+	local function manaLine(entry)
+		if (entry.manaAbsorbed or 0) > 0 or entry.manaBroke then
+			local txt = "Mana absorbé " .. fmtInt(entry.manaAbsorbed or 0)
+			if entry.manaBroke then
+				txt = txt .. " (bouclier brisé)"
+			end
+			return txt
+		end
+		return nil
+	end
+
 	if e.kind == "DAMAGE_ARMOR" then
 		if e.dodged then
 			return block(
@@ -131,7 +142,7 @@ function History.FormatEntry(e)
 				})
 			)
 		end
-		return block(
+		local lines = {
 			sep({
 				prefix("Dégâts subis (armure)", COLORS.DAMAGE),
 				"Valeur " .. fmtInt(e.input),
@@ -143,11 +154,14 @@ function History.FormatEntry(e)
 				"Bouclier magique " .. fmtInt(e.absorbedMagic),
 				"Réduction " .. fmtInt(e.mitigation),
 			}),
-			sep({
-				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
-				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
-			})
-		)
+		}
+		local ml = manaLine(e)
+		if ml then lines[#lines + 1] = ml end
+		lines[#lines + 1] = sep({
+			"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+			"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+		})
+		return table.concat(lines, "\n")
 	elseif e.kind == "DAMAGE_TRUE" then
 		if e.dodged then
 			return block(
@@ -167,7 +181,7 @@ function History.FormatEntry(e)
 				})
 			)
 		end
-		return block(
+		local lines = {
 			sep({
 				prefix("Dégâts subis (bruts)", COLORS.DAMAGE),
 				"Valeur " .. fmtInt(e.input),
@@ -178,11 +192,14 @@ function History.FormatEntry(e)
 				"Bouclier magique " .. fmtInt(e.absorbedMagic),
 				"Réduction " .. fmtInt(e.mitigation),
 			}),
-			sep({
-				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
-				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
-			})
-		)
+		}
+		local ml = manaLine(e)
+		if ml then lines[#lines + 1] = ml end
+		lines[#lines + 1] = sep({
+			"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+			"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+		})
+		return table.concat(lines, "\n")
 	elseif e.kind == "HEAL" then
 		return block(
 			sep({
