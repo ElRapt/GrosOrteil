@@ -828,6 +828,7 @@ local function positionHoverMarkers(markers, bar)
     if m then
       local x = HOVER_BAR_W * (m.pct or 0)
       if x < 0 then x = 0 elseif x > HOVER_BAR_W then x = HOVER_BAR_W end
+      m:SetHeight(HOVER_BAR_H)
       m:Show()
       m:ClearAllPoints()
       m:SetPoint("LEFT", bar, "LEFT", x, 0)
