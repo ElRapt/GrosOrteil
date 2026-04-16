@@ -31,6 +31,9 @@ local roundNumber      = Shared.Round
 local getClassNameFr   = Shared.GetClassNameFr
 
 local pendingTarget
+local pendingHoverUnit   -- cache key of the unit we last requested on hover
+local pendingHoverTime   = 0
+local HOVER_REQUEST_COOLDOWN = 5  -- seconds between requests for the same unit
 local popupFrame
 local currentShownSender
 
@@ -961,12 +964,10 @@ local function showHoverForState(state)
   if effMax <= 0 then effMax = 1 end
   local hp      = tonumber(state.hp) or 0
   local hpClamp = math.max(0, math.min(hp, effMax))
-  local hpPct   = math.floor(hpClamp / effMax * 100 + 0.5)
-
   hoverFrame.hpBar.bar:SetMinMaxValues(0, effMax)
   hoverFrame.hpBar.bar:SetValue(hpClamp)
   hoverFrame.hpBar.bar:SetStatusBarColor(0.85, 0.16, 0.18, 1)
-  hoverFrame.hpBar.label:SetText(string.format("PV : %d%%", hpPct))
+  hoverFrame.hpBar.label:SetText(string.format("PV : %d / %d", roundNumber(hp), roundNumber(effMax)))
 
   Shared.UpdateHpShieldOverlays(
     hoverFrame.hpBar.blockOverlay, hoverFrame.hpBar.magicOverlay,
@@ -1017,12 +1018,12 @@ local function showHoverForState(state)
       if dispMax <= 0 then dispMax = 1 end
 
       local clamped = math.max(0, math.min(cur, dispMax))
-      local pct     = math.floor(clamped / dispMax * 100 + 0.5)
 
       row.bar:SetMinMaxValues(0, dispMax)
       row.bar:SetValue(clamped)
       row.bar:SetStatusBarColor(p.r, p.g, p.b, 1)
-      row.label:SetText(string.format("%s : %d%%", p.label or "Ressource", pct))
+      local lbl = p.label or "Ressource"
+      row.label:SetText(string.format("%s : %d / %d", lbl, roundNumber(clamped), roundNumber(dispMax)))
 
       hideMarkers(row.markers)
       if isWarlockCorr then
@@ -1087,6 +1088,16 @@ tryShowHover = function()
   end
 
   if not state then
+    -- Request state from the hovered player (mirrors OnTargetChanged), rate-limited.
+    local key = toCacheKey(unitName)
+    local now = GetTime and GetTime() or 0
+    if key and not (pendingHoverUnit == key and (now - pendingHoverTime) < HOVER_REQUEST_COOLDOWN) then
+      pendingHoverUnit = key
+      pendingHoverTime = now
+      if ns.Comm and ns.Comm.RequestState then
+        ns.Comm:RequestState(unitName)
+      end
+    end
     hideHoverPopup()
     return
   end
