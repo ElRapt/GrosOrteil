@@ -145,6 +145,7 @@ end
 -- Round a fraction to an integer percentage
 ---------------------------------------------------------------------------
 function Shared.RoundPct(x)
+  if type(x) ~= "number" then return 0 end
   return math.floor(x * 100 + 0.5)
 end
 
@@ -222,6 +223,7 @@ end
 
 function Shared.UpdateHpShieldOverlays(blockOverlay, magicOverlay, bar, hpNow, maxHp, blockValue, magicValue)
   if not bar then return end
+  maxHp = tonumber(maxHp) or 0
   local wBar = bar:GetWidth() or 0
   local hpForOverlay = math.max(0, hpNow or 0)
   local block = math.max(0, blockValue or 0)
