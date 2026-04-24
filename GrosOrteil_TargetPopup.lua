@@ -15,6 +15,8 @@ local UnitIsPlayer = rawget(_G, "UnitIsPlayer")
 local UnitName = rawget(_G, "UnitName")
 local UnitFullName = rawget(_G, "UnitFullName")
 local UnitGUID = rawget(_G, "UnitGUID")
+local IsInRaid = rawget(_G, "IsInRaid")
+local IsInGroup = rawget(_G, "IsInGroup")
 local CreateFrame = rawget(_G, "CreateFrame")
 local UIParent = rawget(_G, "UIParent")
 local C_Timer = rawget(_G, "C_Timer")
@@ -115,6 +117,92 @@ local function unitTargetName(unit)
   end
 
   return nil
+end
+
+local ownerScanTooltip
+
+local function stripColorCodes(text)
+  if type(text) ~= "string" then return nil end
+  local t = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  t = t:gsub("^%s+", ""):gsub("%s+$", "")
+  if t == "" then return nil end
+  return t
+end
+
+local function extractOwnerNameFromTooltipText(text)
+  local clean = stripColorCodes(text)
+  if not clean then return nil end
+
+  -- Common localized patterns for pet ownership.
+  local owner = clean:match("^<(.+)'s Pet>$")
+    or clean:match("^<Pet de (.+)>$")
+    or clean:match("^Familier de (.+)$")
+    or clean:match("^Compagnon de (.+)$")
+  if not owner then return nil end
+  owner = owner:gsub("^%s+", ""):gsub("%s+$", "")
+  if owner == "" then return nil end
+  return owner
+end
+
+local function resolveOwnerNameFromTooltip(unit)
+  if not unit or not CreateFrame then return nil end
+  if not ownerScanTooltip then
+    ownerScanTooltip = CreateFrame("GameTooltip", "GrosOrteilOwnerScanTooltip", nil, "GameTooltipTemplate")
+    ownerScanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+  end
+
+  ownerScanTooltip:ClearLines()
+  ownerScanTooltip:SetUnit(unit)
+
+  for i = 2, 6 do
+    local left = _G["GrosOrteilOwnerScanTooltipTextLeft" .. i]
+    if left and left.GetText then
+      local owner = extractOwnerNameFromTooltipText(left:GetText())
+      if owner then return owner end
+    end
+  end
+  return nil
+end
+
+local function resolveOwnerNameFromPetUnit(unit)
+  if not unit or not UnitExists or not UnitGUID then return nil end
+  if not UnitExists(unit) then return nil end
+  local petGuid = UnitGUID(unit)
+  if not petGuid then return nil end
+
+  local function ownerByUnit(ownerUnit)
+    if not ownerUnit then return nil end
+    local petUnit = ownerUnit .. "pet"
+    if UnitExists(petUnit) and UnitGUID(petUnit) == petGuid then
+      return unitTargetName(ownerUnit)
+    end
+    return nil
+  end
+
+  local owner = ownerByUnit("player")
+  if owner then return owner end
+
+  if IsInRaid and IsInRaid() then
+    for i = 1, 40 do
+      owner = ownerByUnit("raid" .. i)
+      if owner then return owner end
+    end
+  elseif IsInGroup and IsInGroup() then
+    for i = 1, 4 do
+      owner = ownerByUnit("party" .. i)
+      if owner then return owner end
+    end
+  end
+
+  return resolveOwnerNameFromTooltip(unit)
+end
+
+local function resolveStateNameForUnit(unit)
+  if not unit or not UnitExists or not UnitExists(unit) then return nil end
+  if UnitIsPlayer and UnitIsPlayer(unit) then
+    return unitTargetName(unit)
+  end
+  return resolveOwnerNameFromPetUnit(unit)
 end
 
 
@@ -718,11 +806,11 @@ function Popup:OnTargetChanged()
     return
   end
 
-  if not UnitExists("target") or not UnitIsPlayer("target") then
+  if not UnitExists("target") then
     return
   end
 
-  local targetName = unitTargetName("target")
+  local targetName = resolveStateNameForUnit("target")
   if not targetName then
     return
   end
@@ -919,14 +1007,16 @@ local function createHoverPopup()
 end
 
 local function getHoverUnitName()
-  if UnitExists("mouseover") and UnitIsPlayer("mouseover") then
-    return unitTargetName("mouseover")
+  if UnitExists("mouseover") then
+    local name = resolveStateNameForUnit("mouseover")
+    if name then return name end
   end
   local gt = rawget(_G, "GameTooltip")
   if gt then
     local unit = gt.GetUnit and gt:GetUnit()
-    if unit and UnitExists(unit) and UnitIsPlayer(unit) then
-      return unitTargetName(unit)
+    if unit and UnitExists(unit) then
+      local name = resolveStateNameForUnit(unit)
+      if name then return name end
     end
   end
   return nil
