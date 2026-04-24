@@ -143,6 +143,7 @@ local function deepCopyState(s)
   local pw = p.wounds or {}
   c.pet = {
     enabled = p.enabled, name = p.name,
+    authorityEnabled = p.authorityEnabled,
     hp = p.hp, maxHp = p.maxHp,
     armor = p.armor, trueArmor = p.trueArmor,
     dodge = p.dodge, tempMagicBlock = p.tempMagicBlock,
@@ -191,6 +192,7 @@ local function restoreSnapshot(snap)
   s.wounds.hit10 = snap.wounds.hit10
   local p = s.pet; local sp = snap.pet
   p.enabled = sp.enabled; p.name = sp.name
+  p.authorityEnabled = sp.authorityEnabled and true or false
   p.hp = sp.hp; p.maxHp = sp.maxHp
   p.armor = sp.armor; p.trueArmor = sp.trueArmor
   p.dodge = sp.dodge; p.tempMagicBlock = sp.tempMagicBlock

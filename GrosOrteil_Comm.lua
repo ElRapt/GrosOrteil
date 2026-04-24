@@ -23,6 +23,10 @@ local math = math
 
 local AceSerializer = LibStub and LibStub("AceSerializer-3.0", true)
 local LibDeflate = LibStub and LibStub("LibDeflate", true)
+local MAX_PARTS = 64
+local MAX_PART_BYTES = 220
+local MAX_TOTAL_BYTES = 14000
+local PARTIAL_TTL = 30
 
 -- Debug logging (no-op in release; replace body with print() for development)
 ---@diagnostic disable-next-line: unused-vararg
@@ -47,6 +51,26 @@ local function sendAddonMessage(prefix, msg, channel, target)
     return
   end
   dbg("ERROR: no addon message transport available")
+end
+
+local function splitMessage(msg, delimiter)
+  if type(strsplit) == "function" then
+    return strsplit(delimiter, msg or "", 2)
+  end
+  if type(msg) ~= "string" then return nil, nil end
+  local first = string.find(msg, delimiter, 1, true)
+  if not first then return msg, nil end
+  return string.sub(msg, 1, first - 1), string.sub(msg, first + #delimiter)
+end
+
+local function isValidSenderName(v)
+  return type(v) == "string" and v ~= "" and #v <= 64
+end
+
+local function sanitizeClassKey(v)
+  if type(v) ~= "string" or #v > 32 then return nil end
+  if not v:match("^[A-Z_]+$") then return nil end
+  return v
 end
 
 local function packStatePayload(s)
@@ -172,7 +196,7 @@ function Comm:DeserializeState(cmd, payload, sender)
         hit25 = not not (decoded.wounds and decoded.wounds.hit25),
         hit10 = not not (decoded.wounds and decoded.wounds.hit10),
       },
-      classKey = type(decoded.classKey) == "string" and decoded.classKey or nil,
+      classKey = sanitizeClassKey(decoded.classKey),
       pet = {
         enabled = not not (decoded.pet and decoded.pet.enabled),
         name = decoded.pet and type(decoded.pet.name) == "string" and decoded.pet.name or "Familier",
@@ -198,6 +222,18 @@ function Comm:DeserializeState(cmd, payload, sender)
       dbg("Invalid multipart payload from %s", tostring(sender))
       return nil
     end
+    if totalParts < 1 or totalParts > MAX_PARTS then
+      dbg("Multipart total out of bounds from %s total=%s", tostring(sender), tostring(totalParts))
+      return nil
+    end
+    if index < 1 or index > totalParts then
+      dbg("Multipart index out of bounds from %s index=%s total=%s", tostring(sender), tostring(index), tostring(totalParts))
+      return nil
+    end
+    if type(part) ~= "string" or #part > MAX_PART_BYTES then
+      dbg("Multipart chunk invalid from %s bytes=%s", tostring(sender), tostring(type(part) == "string" and #part or -1))
+      return nil
+    end
 
     local key = (sender or "?")
     local entry = self.partialMessages[key]
@@ -206,7 +242,9 @@ function Comm:DeserializeState(cmd, payload, sender)
         total = totalParts,
         parts = {},
         isCompressed = (cmd == "STATE_DATA_COMPRESSED_PART"),
-        start = GetTime(),
+        start = GetTime and GetTime() or 0,
+        receivedCount = 0,
+        bytes = 0,
       }
       self.partialMessages[key] = entry
       dbg(
@@ -223,23 +261,26 @@ function Comm:DeserializeState(cmd, payload, sender)
       return nil
     end
 
+    if not entry.parts[index] then
+      entry.receivedCount = (entry.receivedCount or 0) + 1
+      entry.bytes = (entry.bytes or 0) + #part
+    end
     entry.parts[index] = part
     dbg("Multipart part from %s index=%d/%d", tostring(sender), index, entry.total)
+    if (entry.bytes or 0) > MAX_TOTAL_BYTES then
+      dbg("Multipart too large from %s bytes=%d", tostring(sender), entry.bytes or 0)
+      self.partialMessages[key] = nil
+      return nil
+    end
 
-    if GetTime() - entry.start > 30 then
+    local now = GetTime and GetTime() or 0
+    if (now - (entry.start or now)) > PARTIAL_TTL then
       dbg("Multipart timeout from %s", tostring(sender))
       self.partialMessages[key] = nil
       return nil
     end
 
-    local received = 0
-    for i = 1, entry.total do
-      if entry.parts[i] then
-        received = received + 1
-      end
-    end
-
-    if received == entry.total then
+    if (entry.receivedCount or 0) == entry.total then
       local combined = table.concat(entry.parts)
       self.partialMessages[key] = nil
       local nextCmd = entry.isCompressed and "STATE_DATA_COMPRESSED" or "STATE_DATA"
@@ -319,6 +360,16 @@ function Comm:RequestState(targetPlayer)
   sendAddonMessage(self.PREFIX, "REQUEST_STATE", "WHISPER", targetPlayer)
 end
 
+function Comm:PrunePartialMessages()
+  local now = GetTime and GetTime() or 0
+  self.partialMessages = self.partialMessages or {}
+  for key, entry in pairs(self.partialMessages) do
+    if type(entry) ~= "table" or not entry.start or (now - entry.start) > PARTIAL_TTL then
+      self.partialMessages[key] = nil
+    end
+  end
+end
+
 function Comm:HandleStateData(sender, cmd, rest)
   dbg("HandleStateData cmd=%s sender=%s restBytes=%d", tostring(cmd), tostring(sender), #(rest or ""))
   if cmd == "STATE_DATA" or cmd == "STATE_DATA_COMPRESSED" then
@@ -333,7 +384,8 @@ function Comm:HandleStateData(sender, cmd, rest)
   end
 
   if cmd == "STATE_DATA_PART" or cmd == "STATE_DATA_COMPRESSED_PART" then
-    local total, index, part = strsplit(":", rest or "", 3)
+    local total, tail = splitMessage(rest or "", ":")
+    local index, part = splitMessage(tail or "", ":")
     local state = self:DeserializeState(cmd, {
       total = tonumber(total),
       index = tonumber(index),
@@ -359,6 +411,10 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
   if prefixMsg ~= self.PREFIX then
     return
   end
+  if not isValidSenderName(sender) then
+    return
+  end
+  self:PrunePartialMessages()
 
   if msg == "REQUEST_STATE" then
     dbg("Received REQUEST_STATE from %s", tostring(sender))
@@ -366,7 +422,7 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
     return
   end
 
-  local cmd, rest = strsplit(":", msg or "", 2)
+  local cmd, rest = splitMessage(msg or "", ":")
   if not cmd then
     dbg("Message parse failed from %s", tostring(sender))
     return
