@@ -1,4 +1,4 @@
-## Interface: 120001
+## Interface: 120005
 ## Title: GrosOrteil
 ## Notes: Système de la Compagnie Infortune
 ## ICONTEXTURE: Interface\\Icons\\INV_MISC_HERB_GOLDCLOVER
