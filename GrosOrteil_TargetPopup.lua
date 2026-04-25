@@ -33,11 +33,13 @@ local roundNumber      = Shared.Round
 local getClassNameFr   = Shared.GetClassNameFr
 
 local pendingTarget
+local pendingTargetIsPet = false
 local pendingHoverUnit   -- cache key of the unit we last requested on hover
 local pendingHoverTime   = 0
 local HOVER_REQUEST_COOLDOWN = 5  -- seconds between requests for the same unit
 local popupFrame
 local currentShownSender
+local currentShownIsPet  = false
 
 -- State cache: normalizedName → { state, t }
 -- Allows instant popup display on re-target; fresh data still fetched in background.
@@ -285,6 +287,7 @@ local function hidePopup()
     popupFrame:Hide()
   end
   currentShownSender = nil
+  currentShownIsPet  = false
 end
 
 local function getSettings()
@@ -543,9 +546,78 @@ local function applyPopupTitle(rpName, rpColor)
   end
 end
 
-local function showForState(targetName, state)
+local function showForState(targetName, state, petOnly)
   createPopup()
   currentShownSender = targetName
+
+  -- Resolve petOnly: if enabled flag absent, fall back to owner view.
+  if petOnly then
+    local pet = type(state.pet) == "table" and state.pet
+    if not pet or not pet.enabled then
+      petOnly = false
+    end
+  end
+  currentShownIsPet = petOnly and true or false
+
+  if petOnly then
+    local pet = state.pet
+    local petName = (type(pet.name) == "string" and pet.name ~= "") and pet.name or "Familier"
+    popupFrame.title:SetText(petName)
+    popupFrame.classText:SetText("Familier")
+    applyClassIcon(nil)
+
+    local petArmor     = tonumber(pet.armor)     or 0
+    local petTrueArmor = tonumber(pet.trueArmor) or 0
+    local petDodge     = tonumber(pet.dodge)     or 0
+    local petMaxHp     = math.max(1, tonumber(pet.maxHp) or 1)
+    local petHp        = tonumber(pet.hp)        or 0
+
+    popupFrame.armorText:SetText(string.format("Armure: %d (+%d)", roundNumber(petArmor), roundNumber(petTrueArmor)))
+    popupFrame.dodgeText:SetText(string.format("Esquive: %d", roundNumber(petDodge)))
+
+    setBarValue(popupFrame.hpRow, "PV", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
+    updateHpShieldOverlays(popupFrame.hpRow, petHp, petMaxHp, 0, tonumber(pet.tempMagicBlock) or 0)
+
+    local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
+    for i = 1, #popupFrame.hpMarkers do
+      popupFrame.hpMarkers[i].pct = HP_THRESHOLD_PCTS[i]
+    end
+    positionMarkers(popupFrame.hpMarkers, popupFrame.hpRow.bar)
+
+    local petWoundCap = 1.0
+    if pet.wounds and pet.wounds.hit10 then petWoundCap = 0.25
+    elseif pet.wounds and pet.wounds.hit25 then petWoundCap = 0.50 end
+    if petWoundCap >= 1.0 then
+      popupFrame.hpCapMarker:Hide()
+    else
+      popupFrame.hpCapMarker.pct = petWoundCap
+      positionMarkers({ popupFrame.hpCapMarker }, popupFrame.hpRow.bar)
+    end
+
+    for i = 1, 5 do
+      local row = popupFrame.resRows[i]
+      if row then row.holder:Hide(); hideMarkers(row.markers) end
+    end
+
+    popupFrame.petNameText:Hide()
+    popupFrame.petArmorIcon:Hide()
+    popupFrame.petArmorText:Hide()
+    popupFrame.petDodgeIcon:Hide()
+    popupFrame.petDodgeText:Hide()
+    popupFrame.petHpRow.holder:Hide()
+    hideMarkers(popupFrame.petHpMarkers)
+    if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
+    hideOverlay(popupFrame.petHpRow.blockOverlay)
+    hideOverlay(popupFrame.petHpRow.magicOverlay)
+
+    local dynamicHeight = 140
+    if dynamicHeight < 180 then dynamicHeight = 180 end
+    popupFrame:SetHeight(dynamicHeight)
+    popupFrame:Show()
+    return
+  end
+
+  -- Owner-only view: RP name + owner stats, pet section always suppressed.
 
   -- Clear LibRPNames cache so we always get a fresh TRP3 lookup rather than
   -- a stale "character name" result from a previous failed attempt.
@@ -672,7 +744,7 @@ local function showForState(targetName, state)
 
   local dynamicHeight = 140 + (shownRes * 34)
   local pet = state.pet
-  local hasPet = type(pet) == "table" and pet.enabled
+  local hasPet = false  -- pet is shown only when targeted directly
   if hasPet then
     local petY = -128 - (shownRes * 34) - 10
 
@@ -768,7 +840,7 @@ function Popup:OnStateReceived(sender, state)
   -- If popup is already showing for this sender, refresh it in-place.
   local shownKey = normalizeName(currentShownSender)
   if popupFrame and popupFrame:IsShown() and shownKey and namesMatch(senderKey, shownKey) then
-    showForState(sender, state)
+    showForState(sender, state, currentShownIsPet)
     pendingTarget = nil
     return
   end
@@ -779,18 +851,20 @@ function Popup:OnStateReceived(sender, state)
   if targetKey and namesMatch(senderKey, targetKey) then
     local settings = getSettings()
     if settings.popupOnTarget ~= false then
-      showForState(sender, state)
+      showForState(sender, state, pendingTargetIsPet)
     end
     pendingTarget = nil
+    pendingTargetIsPet = false
     return
   end
 
   if pendingKey and namesMatch(senderKey, pendingKey) then
     local settings = getSettings()
     if settings.popupOnTarget ~= false then
-      showForState(sender, state)
+      showForState(sender, state, pendingTargetIsPet)
     end
     pendingTarget = nil
+    pendingTargetIsPet = false
   end
 end
 
@@ -800,6 +874,7 @@ function Popup:OnTargetChanged()
     hidePopup()
   end
   pendingTarget = nil
+  pendingTargetIsPet = false
 
   local settings = getSettings()
   if settings.popupOnTarget == false then
@@ -810,15 +885,18 @@ function Popup:OnTargetChanged()
     return
   end
 
+  local isPet = not (UnitIsPlayer and UnitIsPlayer("target"))
   local targetName = resolveStateNameForUnit("target")
   if not targetName then
     return
   end
 
+  pendingTargetIsPet = isPet
+
   -- Show cached state instantly; fresh data will arrive and refresh via OnStateReceived.
   local cached = getCached(toCacheKey(targetName))
   if cached then
-    showForState(targetName, cached)
+    showForState(targetName, cached, isPet)
   else
     -- No cache: wait for the network response before showing.
     pendingTarget = targetName
@@ -826,6 +904,7 @@ function Popup:OnTargetChanged()
       C_Timer.After(5, function()
         if pendingTarget and normalizeName(pendingTarget) == normalizeName(targetName) then
           pendingTarget = nil
+          pendingTargetIsPet = false
         end
       end)
     end
@@ -1006,21 +1085,6 @@ local function createHoverPopup()
   hoverFrame:Hide()
 end
 
-local function getHoverUnitName()
-  if UnitExists("mouseover") then
-    local name = resolveStateNameForUnit("mouseover")
-    if name then return name end
-  end
-  local gt = rawget(_G, "GameTooltip")
-  if gt then
-    local unit = gt.GetUnit and gt:GetUnit()
-    if unit and UnitExists(unit) then
-      local name = resolveStateNameForUnit(unit)
-      if name then return name end
-    end
-  end
-  return nil
-end
 
 reanchorHover = function()
   if not hoverFrame then return end
@@ -1043,8 +1107,62 @@ hideHoverPopup = function()
   if hoverFrame then hoverFrame:Hide() end
 end
 
-local function showHoverForState(state)
+local function showHoverForState(state, petOnly)
   createHoverPopup()
+
+  if petOnly then
+    local pet = type(state.pet) == "table" and state.pet
+    if not pet or not pet.enabled then
+      petOnly = false
+    end
+  end
+
+  if petOnly then
+    local pet = state.pet
+    local petMaxHp = math.max(1, tonumber(pet.maxHp) or 1)
+    local petHp    = tonumber(pet.hp) or 0
+    local hpClamp  = math.max(0, math.min(petHp, petMaxHp))
+
+    hoverFrame.hpBar.bar:SetMinMaxValues(0, petMaxHp)
+    hoverFrame.hpBar.bar:SetValue(hpClamp)
+    hoverFrame.hpBar.bar:SetStatusBarColor(0.95, 0.62, 0.18, 1)
+    hoverFrame.hpBar.label:SetText(string.format("PV : %d / %d", roundNumber(petHp), roundNumber(petMaxHp)))
+
+    Shared.UpdateHpShieldOverlays(
+      hoverFrame.hpBar.blockOverlay, hoverFrame.hpBar.magicOverlay,
+      hoverFrame.hpBar.bar, petHp, petMaxHp, 0, tonumber(pet.tempMagicBlock) or 0
+    )
+
+    local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
+    for i = 1, #hoverFrame.hpMarkers do
+      hoverFrame.hpMarkers[i].pct = HP_THRESHOLD_PCTS[i]
+    end
+    positionHoverMarkers(hoverFrame.hpMarkers, hoverFrame.hpBar.bar)
+
+    local petWoundCap = 1.0
+    if pet.wounds and pet.wounds.hit10 then petWoundCap = 0.25
+    elseif pet.wounds and pet.wounds.hit25 then petWoundCap = 0.50 end
+    if petWoundCap >= 1.0 then
+      hoverFrame.hpCapMarker:Hide()
+    else
+      hoverFrame.hpCapMarker.pct = petWoundCap
+      positionHoverMarkers({ hoverFrame.hpCapMarker }, hoverFrame.hpBar.bar)
+    end
+
+    for i = 1, 5 do
+      local rb = hoverFrame.resBars[i]
+      if rb then rb.frame:Hide(); hideMarkers(rb.markers) end
+    end
+
+    hoverFrame.hpBar.frame:ClearAllPoints()
+    hoverFrame.hpBar.frame:SetPoint("TOPLEFT", hoverFrame, "TOPLEFT", HOVER_PAD, -HOVER_PAD)
+    hoverFrame:SetHeight(HOVER_PAD * 2 + HOVER_BAR_H)
+    reanchorHover()
+    hoverFrame:Show()
+    return
+  end
+
+  -- Owner-only hover: HP bar + resources, no pet section.
 
   -- HP bar
   local baseHp  = tonumber(state.maxHp)  or 0
@@ -1161,7 +1279,27 @@ tryShowHover = function()
   local settings = getSettings()
   if settings.popupOnTarget == false then return end
 
-  local unitName = getHoverUnitName()
+  -- Resolve hovered unit name and detect whether it is a pet.
+  local unitName, isPet
+  if UnitExists("mouseover") then
+    unitName = resolveStateNameForUnit("mouseover")
+    if unitName then
+      isPet = not (UnitIsPlayer and UnitIsPlayer("mouseover"))
+    end
+  end
+  if not unitName then
+    local gt = rawget(_G, "GameTooltip")
+    if gt then
+      local unit = gt.GetUnit and gt:GetUnit()
+      if unit and UnitExists(unit) then
+        unitName = resolveStateNameForUnit(unit)
+        if unitName then
+          isPet = not (UnitIsPlayer and UnitIsPlayer(unit))
+        end
+      end
+    end
+  end
+
   if not unitName then
     hideHoverPopup()
     return
@@ -1192,7 +1330,7 @@ tryShowHover = function()
     return
   end
 
-  showHoverForState(state)
+  showHoverForState(state, isPet)
 end
 
 -- ============================================================
