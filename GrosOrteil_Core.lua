@@ -483,6 +483,10 @@ function ns.Core_Init()
       wounds = { hit25 = false, hit10 = false },
     },
 
+    attaqueMelee = 0, attaqueDistance = 0,
+    chance = 0, maxChance = 10,
+    perception = 0,
+
     history = {},
 
     rev = 0,
@@ -555,6 +559,11 @@ function ns.Core_Init()
   if db.state.bonusHpMax == nil then
     db.state.bonusHpMax = db.state.bonusHp or 0
   end
+  if db.state.attaqueMelee    == nil then db.state.attaqueMelee    = 0  end
+  if db.state.attaqueDistance == nil then db.state.attaqueDistance = 0  end
+  if db.state.chance          == nil then db.state.chance          = 0  end
+  if db.state.maxChance       == nil then db.state.maxChance       = 10 end
+  if db.state.perception      == nil then db.state.perception      = 0  end
   clampHpToEffectiveMax(db.state)
 
   -- Popup settings defaults.
@@ -956,6 +965,38 @@ end
 function Core.ResetDodge()
   if not Core.state then return end
   Core.state.dodge = 0
+  bump(); notify()
+end
+
+function Core.SetAttaque(melee, dist)
+  local s = Core.state
+  if not s then return end
+  melee = clampNumber(melee, 0, 1e9)
+  dist  = clampNumber(dist,  0, 1e9)
+  if melee then s.attaqueMelee    = melee end
+  if dist  then s.attaqueDistance = dist  end
+  bump(); notify()
+end
+
+function Core.SetChance(cur, maxv)
+  local s = Core.state
+  if not s then return end
+  cur  = clampNumber(cur,  0, 1e9)
+  maxv = clampNumber(maxv, 0, 1e9)
+  if maxv then s.maxChance = maxv end
+  if cur then
+    local cap = s.maxChance or 0
+    if cap > 0 and cur > cap then cur = cap end
+    s.chance = cur
+  end
+  bump(); notify()
+end
+
+function Core.SetPerception(v)
+  local s = Core.state
+  if not s then return end
+  v = clampNumber(v, 0, 1e9)
+  if v then s.perception = v end
   bump(); notify()
 end
 

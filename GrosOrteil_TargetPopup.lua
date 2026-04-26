@@ -447,6 +447,39 @@ local function createPopup()
   popupFrame.dodgeText:SetJustifyH("LEFT")
   popupFrame.dodgeText:SetText("Esquive: 0")
 
+  -- Attaque (row 1: combined or C-C)
+  popupFrame.attaqueIcon = popupFrame:CreateTexture(nil, "ARTWORK")
+  popupFrame.attaqueIcon:SetSize(14, 14)
+  popupFrame.attaqueIcon:SetTexture("Interface\\Icons\\INV_Sword_04")
+  popupFrame.attaqueIcon:Hide()
+
+  popupFrame.attaqueText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  popupFrame.attaqueText:SetPoint("LEFT", popupFrame.attaqueIcon, "RIGHT", 4, 0)
+  popupFrame.attaqueText:SetJustifyH("LEFT")
+  popupFrame.attaqueText:Hide()
+
+  -- Perception (right side of attaque row)
+  popupFrame.perceptionIcon = popupFrame:CreateTexture(nil, "ARTWORK")
+  popupFrame.perceptionIcon:SetSize(14, 14)
+  popupFrame.perceptionIcon:SetTexture("Interface\\Icons\\Spell_Holy_MindVision")
+  popupFrame.perceptionIcon:Hide()
+
+  popupFrame.perceptionText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  popupFrame.perceptionText:SetPoint("LEFT", popupFrame.perceptionIcon, "RIGHT", 4, 0)
+  popupFrame.perceptionText:SetJustifyH("LEFT")
+  popupFrame.perceptionText:Hide()
+
+  -- Chance (icon + text, below HP bar)
+  popupFrame.chanceIcon = popupFrame:CreateTexture(nil, "ARTWORK")
+  popupFrame.chanceIcon:SetSize(14, 14)
+  popupFrame.chanceIcon:SetTexture("Interface\\Icons\\inv_misc_herb_goldclover")
+  popupFrame.chanceIcon:Hide()
+
+  popupFrame.chanceText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  popupFrame.chanceText:SetPoint("LEFT", popupFrame.chanceIcon, "RIGHT", 4, 0)
+  popupFrame.chanceText:SetJustifyH("LEFT")
+  popupFrame.chanceText:Hide()
+
   popupFrame.classIcon = popupFrame:CreateTexture(nil, "ARTWORK")
   popupFrame.classIcon:SetSize(28, 28)
   popupFrame.classIcon:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -26, -24)
@@ -599,6 +632,17 @@ local function showForState(targetName, state, petOnly)
       if row then row.holder:Hide(); hideMarkers(row.markers) end
     end
 
+    popupFrame.attaqueIcon:Hide()
+    popupFrame.attaqueText:Hide()
+    popupFrame.perceptionIcon:Hide()
+    popupFrame.perceptionText:Hide()
+    popupFrame.chanceIcon:Hide()
+    popupFrame.chanceText:Hide()
+
+    -- Restore hpRow to its original position for petOnly layout.
+    popupFrame.hpRow.holder:ClearAllPoints()
+    popupFrame.hpRow.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -92)
+
     popupFrame.petNameText:Hide()
     popupFrame.petArmorIcon:Hide()
     popupFrame.petArmorText:Hide()
@@ -649,6 +693,46 @@ local function showForState(targetName, state, petOnly)
   local dodge = tonumber(state.dodge) or 0
   popupFrame.armorText:SetText(string.format("Armure: %d (+%d)", roundNumber(armor), roundNumber(trueArmor)))
   popupFrame.dodgeText:SetText(string.format("Esquive: %d", roundNumber(dodge)))
+
+  -- Attaque / Perception / Chance
+  local attM  = tonumber(state.attaqueMelee)    or 0
+  local attD  = tonumber(state.attaqueDistance) or 0
+  local perc  = tonumber(state.perception)      or 0
+  local chCur = tonumber(state.chance)          or 0
+  local chMax = tonumber(state.maxChance)       or 0
+
+  -- Attaque row at Y=-92: C-C and Dist on one line; Perception on right side
+  popupFrame.attaqueIcon:ClearAllPoints()
+  popupFrame.attaqueIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -92)
+  popupFrame.attaqueText:SetText(string.format("CaC: %d | Dist: %d", roundNumber(attM), roundNumber(attD)))
+  popupFrame.attaqueIcon:Show()
+  popupFrame.attaqueText:Show()
+
+  popupFrame.perceptionIcon:ClearAllPoints()
+  popupFrame.perceptionIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 170, -92)
+  popupFrame.perceptionText:SetText(string.format("Perception: %d", roundNumber(perc)))
+  popupFrame.perceptionIcon:Show()
+  popupFrame.perceptionText:Show()
+
+  -- HP bar shifted down 22px to make room for attaque/perception row
+  popupFrame.hpRow.holder:ClearAllPoints()
+  popupFrame.hpRow.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -114)
+
+  -- Chance as icon+text below HP bar (hp holder 34px, bottom at -148, 4px gap)
+  popupFrame.chanceIcon:ClearAllPoints()
+  popupFrame.chanceIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -152)
+  popupFrame.chanceText:SetText(string.format("PC: %d / %d", roundNumber(chCur), roundNumber(chMax)))
+  popupFrame.chanceIcon:Show()
+  popupFrame.chanceText:Show()
+
+  -- Reposition resource rows (chance icon 14px + 4px gap = 18px: -152-18=-170)
+  for i = 1, 5 do
+    local row = popupFrame.resRows[i]
+    if row then
+      row.holder:ClearAllPoints()
+      row.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -170 - (i - 1) * 34)
+    end
+  end
 
   local baseHp = tonumber(state.maxHp) or 0
   local bonusHp = tonumber(state.bonusHp) or 0
@@ -742,11 +826,11 @@ local function showForState(targetName, state, petOnly)
     end
   end
 
-  local dynamicHeight = 140 + (shownRes * 34)
+  local dynamicHeight = 184 + (shownRes * 34)
   local pet = state.pet
   local hasPet = false  -- pet is shown only when targeted directly
   if hasPet then
-    local petY = -128 - (shownRes * 34) - 10
+    local petY = -170 - (shownRes * 34) - 10
 
     popupFrame.petNameText:ClearAllPoints()
     popupFrame.petNameText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, petY)
@@ -813,7 +897,7 @@ local function showForState(targetName, state, petOnly)
     hideOverlay(popupFrame.petHpRow.magicOverlay)
   end
 
-  if dynamicHeight < 180 then dynamicHeight = 180 end
+  if dynamicHeight < 184 then dynamicHeight = 184 end
   popupFrame:SetHeight(dynamicHeight)
 
   popupFrame:Show()

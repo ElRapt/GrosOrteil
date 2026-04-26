@@ -79,6 +79,11 @@ local function packStatePayload(s)
     maxRes4 = s.maxRes4 or 0,
     auth = s.auth or 0,
     maxAuth = s.maxAuth or 5,
+    attaqueMelee    = s.attaqueMelee    or 0,
+    attaqueDistance = s.attaqueDistance or 0,
+    chance          = s.chance          or 0,
+    maxChance       = s.maxChance       or 0,
+    perception      = s.perception      or 0,
     wounds = {
       hit25 = not not (s.wounds and s.wounds.hit25),
       hit10 = not not (s.wounds and s.wounds.hit10),
@@ -168,6 +173,11 @@ function Comm:DeserializeState(cmd, payload, sender)
       maxRes4 = tonumber(decoded.maxRes4) or 0,
       auth = tonumber(decoded.auth) or 0,
       maxAuth = tonumber(decoded.maxAuth) or 5,
+      attaqueMelee    = tonumber(decoded.attaqueMelee)    or 0,
+      attaqueDistance = tonumber(decoded.attaqueDistance) or 0,
+      chance          = tonumber(decoded.chance)          or 0,
+      maxChance       = tonumber(decoded.maxChance)       or 0,
+      perception      = tonumber(decoded.perception)      or 0,
       wounds = {
         hit25 = not not (decoded.wounds and decoded.wounds.hit25),
         hit10 = not not (decoded.wounds and decoded.wounds.hit10),
