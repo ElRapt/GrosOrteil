@@ -88,6 +88,7 @@ local function packStatePayload(s)
       hit25 = not not (s.wounds and s.wounds.hit25),
       hit10 = not not (s.wounds and s.wounds.hit10),
     },
+    stabilise = s.stabilise and true or false,
     classKey = classKey,
     pet = {
       enabled = not not p.enabled,
@@ -182,6 +183,7 @@ function Comm:DeserializeState(cmd, payload, sender)
         hit25 = not not (decoded.wounds and decoded.wounds.hit25),
         hit10 = not not (decoded.wounds and decoded.wounds.hit10),
       },
+      stabilise = decoded.stabilise and true or false,
       classKey = type(decoded.classKey) == "string" and decoded.classKey or nil,
       pet = {
         enabled = not not (decoded.pet and decoded.pet.enabled),

@@ -112,6 +112,7 @@ local function deepCopyState(s)
   local c = {}
   c.hp = s.hp; c.maxHp = s.maxHp
   c.bonusHp = s.bonusHp; c.bonusHpMax = s.bonusHpMax
+  c.stabilise = s.stabilise
   c.classKey = s.classKey
   c.res = s.res; c.maxRes = s.maxRes
   c.res2 = s.res2; c.maxRes2 = s.maxRes2
@@ -155,6 +156,7 @@ local function restoreSnapshot(snap)
   local s = Core.state
   s.hp = snap.hp; s.maxHp = snap.maxHp
   s.bonusHp = snap.bonusHp; s.bonusHpMax = snap.bonusHpMax
+  s.stabilise = snap.stabilise
   s.classKey = snap.classKey
   s.res = snap.res; s.maxRes = snap.maxRes
   s.res2 = snap.res2; s.maxRes2 = snap.maxRes2
@@ -564,6 +566,8 @@ function ns.Core_Init()
   if db.state.chance          == nil then db.state.chance          = 1 end
   if db.state.maxChance       == nil then db.state.maxChance       = 1 end
   if db.state.perception      == nil then db.state.perception      = 0 end
+  -- stabilise is only valid when hp == 0; clear it on load if hp > 0.
+  if (db.state.hp or 0) > 0 then db.state.stabilise = nil end
   clampHpToEffectiveMax(db.state)
 
   -- Popup settings defaults.
@@ -709,6 +713,15 @@ function Core.SetHP(hp, maxHp)
 
   clampHpToEffectiveMax(s)
   recomputeWounds(s)
+  if (s.hp or 0) > 0 then s.stabilise = nil end
+  bump(); notify()
+end
+
+function Core.SetStabilise(v)
+  local s = Core.state
+  if not s then return end
+  if (s.hp or 0) > 0 then return end
+  s.stabilise = v and true or false
   bump(); notify()
 end
 
@@ -1311,6 +1324,7 @@ function Core.Heal(amount)
 
   -- IMPORTANT: les soins normaux ne lèvent jamais un seuil
   updateWoundsSticky(s)
+  if (s.hp or 0) > 0 then s.stabilise = nil end
   bump(); notify()
 end
 
@@ -1343,6 +1357,7 @@ function Core.DivineHeal()
 
   -- DivineHeal est un bypass : on recalcule les seuils depuis l'état actuel
   recomputeWounds(s)
+  if (s.hp or 0) > 0 then s.stabilise = nil end
   bump(); notify()
 end
 
@@ -1374,6 +1389,7 @@ function Core.Surgery()
   })
 
   recomputeWounds(s)
+  if (s.hp or 0) > 0 then s.stabilise = nil end
   bump(); notify()
 end
 
@@ -1462,6 +1478,7 @@ function Core.RestoreHP()
   s.hp = baseMax + bonus
   clampHpToEffectiveMax(s)
   recomputeWounds(s)
+  s.stabilise = nil
   bump(); notify()
 end
 
@@ -1476,6 +1493,7 @@ function Core.DailyRegenHP()
   s.hp = math.min((s.hp or 0) + gain, effMax)
   clampHpToEffectiveMax(s)
   recomputeWounds(s)
+  if (s.hp or 0) > 0 then s.stabilise = nil end
   bump(); notify()
 end
 

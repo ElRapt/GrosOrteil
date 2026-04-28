@@ -619,6 +619,15 @@ local function createPopup()
   popupFrame.closeButton = CreateFrame("Button", nil, popupFrame, "UIPanelCloseButton")
   popupFrame.closeButton:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -3, -2)
   popupFrame.closeButton:SetScript("OnClick", hidePopup)
+
+  -- Stabilisé/Agonie banner (shown only when HP == 0)
+  popupFrame.statusBanner = popupFrame:CreateFontString(nil, "OVERLAY")
+  popupFrame.statusBanner:SetFont("Fonts\\FRIZQT__.TTF", 15, "OUTLINE")
+  popupFrame.statusBanner:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -36, -22)
+  popupFrame.statusBanner:SetJustifyH("RIGHT")
+  popupFrame.statusBanner:SetShadowOffset(1, -1)
+  popupFrame.statusBanner:SetShadowColor(0, 0, 0, 1)
+  popupFrame.statusBanner:Hide()
 end
 
 local function applyPopupTitle(rpName, rpColor)
@@ -702,6 +711,7 @@ local function showForState(targetName, state, petOnly)
     if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
     hideOverlay(popupFrame.petHpRow.blockOverlay)
     hideOverlay(popupFrame.petHpRow.magicOverlay)
+    if popupFrame.statusBanner then popupFrame.statusBanner:Hide() end
 
     local dynamicHeight = 140
     if dynamicHeight < 180 then dynamicHeight = 180 end
@@ -810,6 +820,21 @@ local function showForState(targetName, state, petOnly)
   if bonusHp < 0 then bonusHp = 0 end
   local effMaxHp = baseHp + bonusHp
   if effMaxHp <= 0 then effMaxHp = 1 end
+
+  -- Stabilisé/Agonie banner
+  if popupFrame.statusBanner then
+    local isDead = (tonumber(state.hp) or 0) == 0
+    if isDead then
+      if state.stabilise then
+        popupFrame.statusBanner:SetText("|cff44ee44** STABILISE **|r")
+      else
+        popupFrame.statusBanner:SetText("|cffee2222** EN AGONIE **|r")
+      end
+      popupFrame.statusBanner:Show()
+    else
+      popupFrame.statusBanner:Hide()
+    end
+  end
 
   setBarValue(popupFrame.hpRow, "PV", state.hp, effMaxHp, { 0.85, 0.16, 0.18 })
   updateHpShieldOverlays(
@@ -1241,6 +1266,14 @@ local function createHoverPopup()
   hoverFrame.chanceBar = createHoverBar(hoverFrame)
   hoverFrame.chanceBar.frame:Hide()
 
+  -- Stabilisé/Agonie status label (shown below HP bar when HP == 0)
+  hoverFrame.statusLabel = hoverFrame:CreateFontString(nil, "OVERLAY")
+  hoverFrame.statusLabel:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+  hoverFrame.statusLabel:SetShadowOffset(1, -1)
+  hoverFrame.statusLabel:SetShadowColor(0, 0, 0, 1)
+  hoverFrame.statusLabel:SetJustifyH("CENTER")
+  hoverFrame.statusLabel:Hide()
+
   hoverFrame:Hide()
 end
 
@@ -1313,6 +1346,7 @@ local function showHoverForState(state, petOnly)
       if rb then rb.frame:Hide(); hideMarkers(rb.markers) end
     end
     if hoverFrame.chanceBar then hoverFrame.chanceBar.frame:Hide() end
+    if hoverFrame.statusLabel then hoverFrame.statusLabel:Hide() end
 
     hoverFrame.hpBar.frame:ClearAllPoints()
     hoverFrame.hpBar.frame:SetPoint("TOPLEFT", hoverFrame, "TOPLEFT", HOVER_PAD, -HOVER_PAD)
@@ -1447,9 +1481,32 @@ local function showHoverForState(state, petOnly)
   end
 
   local extraRows = showChance and 1 or 0
+
+  -- Stabilisé/Agonie status label when HP == 0
+  local showStatus = (tonumber(state.hp) or 0) == 0
+  local STATUS_H = 16
+  if showStatus and hoverFrame.statusLabel then
+    local yOff = -(HOVER_PAD + HOVER_BAR_H + HOVER_GAP
+      + shownRes * (HOVER_BAR_H + HOVER_GAP)
+      + (showChance and (HOVER_BAR_H + HOVER_GAP + HOVER_GAP) or 0)
+      + HOVER_GAP)
+    hoverFrame.statusLabel:ClearAllPoints()
+    hoverFrame.statusLabel:SetPoint("TOPLEFT",  hoverFrame, "TOPLEFT",  HOVER_PAD, yOff)
+    hoverFrame.statusLabel:SetPoint("TOPRIGHT", hoverFrame, "TOPRIGHT", -HOVER_PAD, yOff)
+    if state.stabilise then
+      hoverFrame.statusLabel:SetText("|cff44ee44** STABILISE **|r")
+    else
+      hoverFrame.statusLabel:SetText("|cffee2222** EN AGONIE **|r")
+    end
+    hoverFrame.statusLabel:Show()
+  elseif hoverFrame.statusLabel then
+    hoverFrame.statusLabel:Hide()
+  end
+
   local totalH = HOVER_PAD * 2 + HOVER_BAR_H
     + shownRes * (HOVER_BAR_H + HOVER_GAP)
     + extraRows * (HOVER_BAR_H + HOVER_GAP)
+    + (showStatus and (STATUS_H + HOVER_GAP * 2) or 0)
   hoverFrame:SetHeight(totalH)
 
   reanchorHover()

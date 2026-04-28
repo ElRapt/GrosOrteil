@@ -1693,13 +1693,13 @@ function ns.UI_Init()
   end
 
   -- Rows are shown/hidden based on selected class.
-  mkResRow(1, -798)
-  mkResRow(2, -826)
-  mkResRow(3, -854)
-  mkResRow(4, -882)
-  mkResRow(5, -910)
+  mkResRow(1, -836)
+  mkResRow(2, -864)
+  mkResRow(3, -892)
+  mkResRow(4, -920)
+  mkResRow(5, -948)
 
-  UI.noResHint = mkLabelCenter(cA, "Aucune ressource pour cette classe.", 0, -824)
+  UI.noResHint = mkLabelCenter(cA, "Aucune ressource pour cette classe.", 0, -862)
   UI.noResHint:Hide()
 
   -- Onglet 1 (suite) : Fiche — construction du scroll
@@ -1776,6 +1776,14 @@ function ns.UI_Init()
       if Core and Core.ToggleBonusHP then Core.ToggleBonusHP() end
     end)
 
+    -- Row 2b: Stabilisé/Agonie — shown only when HP == 0
+    UI.stabiliseBtn = btn("Stabilisé", 330, 55, -140, function()
+      if Core and Core.SetStabilise and Core.state then
+        Core.SetStabilise(not Core.state.stabilise)
+      end
+    end)
+    UI.stabiliseBtn:Hide()
+
     -- Row 3: Points de Chance — compact cur/max with stepper buttons
     lbl("PC", 0, -106)
     chanceCurEB = edt(48, 26, -104, applyAllChance)
@@ -1788,83 +1796,83 @@ function ns.UI_Init()
       if Core and Core.AddChance then Core.AddChance(1) end
     end)
 
-    mkSep(-140)
+    mkSep(-178)
 
     -- ── Armure & Esquive ────────────────────────────────────────────
-    mkSectionHeader("Armure & Esquive", -152)
+    mkSectionHeader("Armure & Esquive", -190)
 
-    lbl("Armure",       0,   -178)
-    lbl("Armure invul", 190, -178)
-    armorEB     = edt(110, 66,  -176, applyAllArmor)
-    trueArmorEB = edt(110, 284, -176, applyAllArmor)
+    lbl("Armure",       0,   -216)
+    lbl("Armure invul", 190, -216)
+    armorEB     = edt(110, 66,  -214, applyAllArmor)
+    trueArmorEB = edt(110, 284, -214, applyAllArmor)
 
-    lbl("Esquive",        0,   -212)
-    lbl("Armure tempo.",  190, -212)
-    dodgeEB     = edt(110, 66,  -210, applyAllArmor)
-    tempArmorEB = edt(110, 284, -210, applyAllArmor)
+    lbl("Esquive",        0,   -250)
+    lbl("Armure tempo.",  190, -250)
+    dodgeEB     = edt(110, 66,  -248, applyAllArmor)
+    tempArmorEB = edt(110, 284, -248, applyAllArmor)
 
-    mkSep(-246)
+    mkSep(-284)
 
     -- ── Attaque & Perception ────────────────────────────────────────
-    mkSectionHeader("Attaque & Perception", -258)
+    mkSectionHeader("Attaque & Perception", -296)
 
-    lbl("CaC",      0,   -284)
-    lbl("Distance", 190, -284)
-    attaqueMeleeEB    = edt(110, 66,  -282, applyAllAttaque)
-    attaqueDistanceEB = edt(110, 284, -282, applyAllAttaque)
+    lbl("CaC",      0,   -322)
+    lbl("Distance", 190, -322)
+    attaqueMeleeEB    = edt(110, 66,  -320, applyAllAttaque)
+    attaqueDistanceEB = edt(110, 284, -320, applyAllAttaque)
 
-    lbl("Perception", 0, -318)
-    perceptionEB = edt(110, 66, -316, applyAllPerception)
+    lbl("Perception", 0, -356)
+    perceptionEB = edt(110, 66, -354, applyAllPerception)
 
-    mkSep(-352)
+    mkSep(-390)
 
     -- ── Actions ─────────────────────────────────────────────────────
-    mkSectionHeader("Actions", -364)
+    mkSectionHeader("Actions", -402)
 
-    lbl("Valeur", 0, -392)
-    actValEB = edt(120, 60, -390, nil)
+    lbl("Valeur", 0, -430)
+    actValEB = edt(120, 60, -428, nil)
 
-    btn("Dégâts (armure)", 210, 0,   -424, doDmgArmor)
-    btn("Dégâts (bruts)",  210, 230, -424, doDmgTrue)
+    btn("Dégâts (armure)", 210, 0,   -462, doDmgArmor)
+    btn("Dégâts (bruts)",  210, 230, -462, doDmgTrue)
 
-    btn("Soins",              210, 0,   -462, doHeal)
-    btn("Soins divins (75%)", 210, 230, -462, function() Core.DivineHeal() end)
+    btn("Soins",              210, 0,   -500, doHeal)
+    btn("Soins divins (75%)", 210, 230, -500, function() Core.DivineHeal() end)
 
-    btn("Chirurgie (50%)",    210, 0,   -500, function() Core.Surgery() end)
+    btn("Chirurgie (50%)",    210, 0,   -538, function() Core.Surgery() end)
 
-    mkSep(-542)
+    mkSep(-580)
 
     -- ── Blocage ─────────────────────────────────────────────────────
-    mkSectionHeader("Blocage", -554)
+    mkSectionHeader("Blocage", -592)
 
-    lbl("Blocage", 0, -580)
-    blockEB = edt(110, 162, -578, applyAllArmor)
-    btn("Réinit.", 100, 284, -578, function() Core.ResetTempBlock() end)
+    lbl("Blocage", 0, -618)
+    blockEB = edt(110, 162, -616, applyAllArmor)
+    btn("Réinit.", 100, 284, -616, function() Core.ResetTempBlock() end)
 
-    mkSep(-614)
+    mkSep(-652)
 
     -- Boucliers magiques
-    mkSectionHeader("Boucliers magiques", -626)
+    mkSectionHeader("Boucliers magiques", -664)
 
-    lbl("PV",  0,   -652)
-    lbl("/",   148, -652)
-    msHpEB    = edt(110, 26,  -650, applyAllMagicShield)
-    msMaxHpEB = edt(110, 166, -650, applyAllMagicShield)
-    btn("Réinit.", 100, 284, -650, function()
+    lbl("PV",  0,   -690)
+    lbl("/",   148, -690)
+    msHpEB    = edt(110, 26,  -688, applyAllMagicShield)
+    msMaxHpEB = edt(110, 166, -688, applyAllMagicShield)
+    btn("Réinit.", 100, 284, -688, function()
       if Core and Core.ResetMagicShield then Core.ResetMagicShield() end
     end)
 
-    lbl("Armure", 0, -684)
-    msArmorEB = edt(110, 162, -682, applyAllMagicShield)
+    lbl("Armure", 0, -722)
+    msArmorEB = edt(110, 162, -720, applyAllMagicShield)
 
     -- Bouclier de mana (mage uniquement)
-    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -718, function()
+    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -756, function()
       if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
     end)
     UI.manaShieldToggleBtn = mnsToggleBtn
-    mnsArmorLabel = mkLabel(cA, "Armure", 250, -718 + LBL_Y)
+    mnsArmorLabel = mkLabel(cA, "Armure", 250, -756 + LBL_Y)
     UI.manaShieldArmorLabel = mnsArmorLabel
-    mnsArmorEB = edt(80, 304, -718, applyAllManaShield)
+    mnsArmorEB = edt(80, 304, -756, applyAllManaShield)
     UI.manaShieldArmorEB = mnsArmorEB
 
     -- Hidden by default; shown only for mages in onChangeCallback.
@@ -1872,11 +1880,11 @@ function ns.UI_Init()
     mnsArmorLabel:Hide()
     if mnsArmorEB._wrap then mnsArmorEB._wrap:Hide() else mnsArmorEB:Hide() end
 
-    mkSep(-754)
+    mkSep(-792)
 
     -- ── Ressources ──────────────────────────────────────────────────
     -- Rows (mkResRow) and noResHint are pre-built above, parented to cA.
-    mkSectionHeader("Ressources", -766)
+    mkSectionHeader("Ressources", -804)
 
     -- ── Postures Élémentaires (Shaman uniquement) ────────────────────
     do
@@ -1897,7 +1905,7 @@ function ns.UI_Init()
 
       local postureSection = cA:CreateFontString(nil, "OVERLAY")
       postureSection:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-      postureSection:SetPoint("TOP", cA, "TOP", 0, -948)
+      postureSection:SetPoint("TOP", cA, "TOP", 0, -986)
       postureSection:SetWidth(BLOCK_W)
       postureSection:SetJustifyH("CENTER")
       postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
@@ -1908,8 +1916,8 @@ function ns.UI_Init()
 
       local postureSepLine = cA:CreateTexture(nil, "ARTWORK")
       postureSepLine:SetTexture(TEX.FLAT)
-      postureSepLine:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, -966)
-      postureSepLine:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, -966)
+      postureSepLine:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, -1004)
+      postureSepLine:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, -1004)
       postureSepLine:SetHeight(1)
       postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
       UI.postureSepLine = postureSepLine
@@ -1923,7 +1931,7 @@ function ns.UI_Init()
 
       for i, def in ipairs(POSTURE_DEFS) do
         local bx = startX + (i - 1) * (BTN_W + GAP)
-        local b = mkButton(cA, def.label, BTN_W, BTN_H2, bx, -976)
+        local b = mkButton(cA, def.label, BTN_W, BTN_H2, bx, -1014)
         b._postureKey = def.key
         b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
 
@@ -1949,7 +1957,7 @@ function ns.UI_Init()
       end
     end
 
-      paramChild:SetHeight(1040)
+      paramChild:SetHeight(1078)
     end
 
   -- Onglet 7 : Historique
@@ -2742,6 +2750,21 @@ function ns.UI_Init()
     setNumber(UI.inputs.bonusHpMax, s.bonusHpMax)
     if UI.bonusHpToggleBtn then
       UI.bonusHpToggleBtn:SetText((s.bonusHp or 0) > 0 and "Désactiver PV bonus" or "Activer PV bonus")
+    end
+    if UI.stabiliseBtn then
+      local isDead = (s.hp or 0) == 0
+      UI.stabiliseBtn:SetShown(isDead)
+      if isDead then
+        if s.stabilise then
+          UI.stabiliseBtn:SetText("Stabilisé")
+          UI.stabiliseBtn:SetBackdropColor(0.05, 0.25, 0.05, 0.95)
+          UI.stabiliseBtn:SetBackdropBorderColor(0.20, 0.80, 0.20, 1.0)
+        else
+          UI.stabiliseBtn:SetText("En agonie")
+          UI.stabiliseBtn:SetBackdropColor(0.25, 0.03, 0.03, 0.95)
+          UI.stabiliseBtn:SetBackdropBorderColor(0.85, 0.12, 0.12, 1.0)
+        end
+      end
     end
     -- Resource inputs are handled per-row above.
     setNumber(UI.inputs.armor, s.armor)
