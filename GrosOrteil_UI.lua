@@ -6,6 +6,21 @@ local Shared = ns.Shared
 local UI = {}
 ns.UI = UI
 
+-- Confirmation popup for the reset-to-defaults button.
+StaticPopupDialogs = StaticPopupDialogs or {}
+StaticPopupDialogs["GROSORTEIL_RESET_DEFAULTS"] = {
+  text = "Réinitialiser tous les paramètres aux valeurs par défaut ?\nCette action est irréversible.",
+  button1 = "Réinitialiser",
+  button2 = "Annuler",
+  OnAccept = function()
+    if Core and Core.ResetToDefaults then Core.ResetToDefaults() end
+  end,
+  timeout = 0,
+  whileDead = true,
+  hideOnEscape = true,
+  preferredIndex = 3,
+}
+
 local getResProfile        = Shared.GetResProfile
 local getKeysForIdx        = Shared.GetKeysForIdx
 local hideMarkers          = Shared.HideMarkers
@@ -57,8 +72,8 @@ local TEX = {
 local BACKDROP_BUTTON = {
   bgFile   = TEX.TOOLTIP_BG,
   edgeFile = TEX.FLAT,
-  edgeSize = 1,
-  insets   = { left = 1, right = 1, top = 1, bottom = 1 },
+  edgeSize = 2,
+  insets   = { left = 2, right = 2, top = 2, bottom = 2 },
 }
 local BACKDROP_EDITBOX = {
   bgFile   = TEX.TOOLTIP_BG,
@@ -210,11 +225,17 @@ local function mkLabelCenter(parent, text, x, y)
 end
 
 -- Styled edit box with warm dark backdrop and gold focus highlight.
+-- Uses edgeSize=2 so borders never vanish due to subpixel rounding on resize.
 local function mkEdit(parent, w, h, x, y, onEnter)
   local wrap = CreateFrame("Frame", nil, parent, "BackdropTemplate")
   wrap:SetSize(w, h)
   wrap:SetPoint("TOPLEFT", x, y)
-  wrap:SetBackdrop(BACKDROP_EDITBOX)
+  wrap:SetBackdrop({
+    bgFile   = TEX.FLAT,
+    edgeFile = TEX.FLAT,
+    edgeSize = 2,
+    insets   = { left = 2, right = 2, top = 2, bottom = 2 },
+  })
   wrap:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.92)
   wrap:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
 
@@ -226,7 +247,6 @@ local function mkEdit(parent, w, h, x, y, onEnter)
   eb:SetNumeric(true)
   eb:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
 
-  -- Gold border glow on focus.
   eb:SetScript("OnEditFocusGained", function()
     wrap:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 0.90)
     wrap:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.95)
@@ -242,7 +262,6 @@ local function mkEdit(parent, w, h, x, y, onEnter)
     if onEnter then onEnter() end
   end)
 
-  -- Proxy size/position APIs so callers that adjust the edit box get the wrapper.
   eb._wrap = wrap
   eb.SetSize_orig = eb.SetSize
   return eb
@@ -686,6 +705,22 @@ function ns.UI_Init()
       "Restaure 20 % de la ressource principale (mana, énergie, etc.).",
       function() Core.DailyRegenRes() end)
     iconRegenRes:SetPoint("RIGHT", iconRegenHP, "LEFT", -ICON_GAP, 0)
+
+    local iconReset = mkActionIcon(frame,
+      "Interface/Icons/Spell_Holy_Redemption",
+      "Réinitialiser les paramètres",
+      "Restaure toutes les valeurs aux valeurs par défaut.",
+      function()
+        if StaticPopup_Show then StaticPopup_Show("GROSORTEIL_RESET_DEFAULTS") end
+      end)
+    iconReset:SetPoint("RIGHT", iconRegenRes, "LEFT", -ICON_GAP, 0)
+    local iconResetEnter = iconReset:GetScript("OnEnter")
+    iconReset:SetScript("OnEnter", function(self)
+      iconResetEnter(self)
+      GameTooltip:AddLine("Cette action est irréversible.", 1, 0.4, 0.3, true)
+      GameTooltip:Show()
+    end)
+    UI.resetBtn = iconReset
   end
 
   -- Main body: sidebar (left) + content (right)
@@ -721,6 +756,7 @@ function ns.UI_Init()
   sidebarBotGrad:SetTexture(TEX.FLAT)
   sidebarBotGrad:SetColorTexture(0, 0, 0, 0.15)
   sidebarBotGrad:SetGradient("VERTICAL", CreateColor(0, 0, 0, 1), CreateColor(0, 0, 0, 0))
+
 
   -- Gold vertical divider (double line for depth).
   local sidebarDiv = body:CreateTexture(nil, "ARTWORK")
@@ -1682,7 +1718,7 @@ function ns.UI_Init()
     local function syncParamWidth()
       local w = paramSF:GetWidth() or 0
       if w <= 0 then return end
-      paramChild:SetWidth(math.max(200, w - 20))
+      paramChild:SetWidth(math.max(200, math.floor(w - 20)))
     end
     paramSF:SetScript("OnSizeChanged", syncParamWidth)
     paramChild:SetScript("OnSizeChanged", centerContent)
@@ -1720,27 +1756,37 @@ function ns.UI_Init()
     local function lbl(text, x, y)  mkLabel(cA, text, x, y + LBL_Y)  end
     local function edt(w, x, y, fn) return mkEdit(cA, w, INPUT_H, x, y, fn) end
     local function btn(text, w, x, y, fn) return mkButton(cA, text, w, BTN_H, x, y, fn) end
+    local function smallBtn(text, w, x, y, fn) return mkButton(cA, text, w, INPUT_H, x, y, fn) end
 
     -- ── Points de vie ───────────────────────────────────────────────
     mkSectionHeader("Points de vie", -10)
 
+    -- Row 1: PV current / max
     lbl("PV",  0,   -38)
     lbl("/",   148, -38)
     hpCur = edt(110, 26,  -36, applyAllHP)
     hpMax = edt(110, 166, -36, applyAllHP)
 
-    UI.bonusHpToggleBtn = btn("Activer PV bonus", 172, 0, -70, function()
-      if Core and Core.ToggleBonusHP then Core.ToggleBonusHP() end
-    end)
-    lbl("Valeur", 186, -72)
-    bonusHpValEB = edt(110, 234, -70, function()
+    -- Row 2: Bonus PV (label + value left-aligned with PV row, toggle on the right)
+    lbl("Bonus PV", 0, -72)
+    bonusHpValEB = edt(110, 66, -70, function()
       if Core and Core.SetBonusHP then Core.SetBonusHP(getNumber(bonusHpValEB) or 0) end
     end)
+    UI.bonusHpToggleBtn = btn("Activer", 110, 200, -70, function()
+      if Core and Core.ToggleBonusHP then Core.ToggleBonusHP() end
+    end)
 
-    lbl("PC",   0,   -106)
-    lbl("/",  148,   -106)
-    chanceCurEB = edt(110, 26,  -104, applyAllChance)
-    chanceMaxEB = edt(110, 166, -104, applyAllChance)
+    -- Row 3: Points de Chance — compact cur/max with stepper buttons
+    lbl("PC", 0, -106)
+    chanceCurEB = edt(48, 26, -104, applyAllChance)
+    lbl("/",  80, -106)
+    chanceMaxEB = edt(48, 92, -104, applyAllChance)
+    smallBtn("-", 22, 148, -104, function()
+      if Core and Core.AddChance then Core.AddChance(-1) end
+    end)
+    smallBtn("+", 22, 174, -104, function()
+      if Core and Core.AddChance then Core.AddChance(1) end
+    end)
 
     mkSep(-140)
 
@@ -1759,72 +1805,72 @@ function ns.UI_Init()
 
     mkSep(-246)
 
+    -- ── Attaque & Perception ────────────────────────────────────────
+    mkSectionHeader("Attaque & Perception", -258)
+
+    lbl("CaC",      0,   -284)
+    lbl("Distance", 190, -284)
+    attaqueMeleeEB    = edt(110, 66,  -282, applyAllAttaque)
+    attaqueDistanceEB = edt(110, 284, -282, applyAllAttaque)
+
+    lbl("Perception", 0, -318)
+    perceptionEB = edt(110, 66, -316, applyAllPerception)
+
+    mkSep(-352)
+
     -- ── Actions ─────────────────────────────────────────────────────
-    mkSectionHeader("Actions", -258)
+    mkSectionHeader("Actions", -364)
 
-    lbl("Valeur", 0, -286)
-    actValEB = edt(120, 60, -284, nil)
+    lbl("Valeur", 0, -392)
+    actValEB = edt(120, 60, -390, nil)
 
-    btn("Dégâts (armure)", 210, 0,   -318, doDmgArmor)
-    btn("Dégâts (bruts)",  210, 230, -318, doDmgTrue)
+    btn("Dégâts (armure)", 210, 0,   -424, doDmgArmor)
+    btn("Dégâts (bruts)",  210, 230, -424, doDmgTrue)
 
-    btn("Soins",              210, 0,   -356, doHeal)
-    btn("Soins divins (75%)", 210, 230, -356, function() Core.DivineHeal() end)
+    btn("Soins",              210, 0,   -462, doHeal)
+    btn("Soins divins (75%)", 210, 230, -462, function() Core.DivineHeal() end)
 
-    btn("Chirurgie (50%)",    210, 0,   -394, function() Core.Surgery() end)
+    btn("Chirurgie (50%)",    210, 0,   -500, function() Core.Surgery() end)
 
-    mkSep(-436)
+    mkSep(-542)
 
     -- ── Blocage ─────────────────────────────────────────────────────
-    mkSectionHeader("Blocage", -448)
+    mkSectionHeader("Blocage", -554)
 
-    lbl("Blocage", 0, -474)
-    blockEB = edt(110, 162, -472, applyAllArmor)
-    btn("Réinit.", 100, 284, -472, function() Core.ResetTempBlock() end)
+    lbl("Blocage", 0, -580)
+    blockEB = edt(110, 162, -578, applyAllArmor)
+    btn("Réinit.", 100, 284, -578, function() Core.ResetTempBlock() end)
 
-    mkSep(-508)
+    mkSep(-614)
 
     -- Boucliers magiques
-    mkSectionHeader("Boucliers magiques", -520)
+    mkSectionHeader("Boucliers magiques", -626)
 
-    lbl("PV",  0,   -546)
-    lbl("/",   148, -546)
-    msHpEB    = edt(110, 26,  -544, applyAllMagicShield)
-    msMaxHpEB = edt(110, 166, -544, applyAllMagicShield)
-    btn("Réinit.", 100, 284, -544, function()
+    lbl("PV",  0,   -652)
+    lbl("/",   148, -652)
+    msHpEB    = edt(110, 26,  -650, applyAllMagicShield)
+    msMaxHpEB = edt(110, 166, -650, applyAllMagicShield)
+    btn("Réinit.", 100, 284, -650, function()
       if Core and Core.ResetMagicShield then Core.ResetMagicShield() end
     end)
 
-    lbl("Armure", 0, -578)
-    msArmorEB = edt(110, 162, -576, applyAllMagicShield)
+    lbl("Armure", 0, -684)
+    msArmorEB = edt(110, 162, -682, applyAllMagicShield)
 
     -- Bouclier de mana (mage uniquement)
-    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -612, function()
+    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -718, function()
       if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
     end)
     UI.manaShieldToggleBtn = mnsToggleBtn
-    mnsArmorLabel = mkLabel(cA, "Armure", 250, -612 + LBL_Y)
+    mnsArmorLabel = mkLabel(cA, "Armure", 250, -718 + LBL_Y)
     UI.manaShieldArmorLabel = mnsArmorLabel
-    mnsArmorEB = edt(80, 304, -612, applyAllManaShield)
+    mnsArmorEB = edt(80, 304, -718, applyAllManaShield)
     UI.manaShieldArmorEB = mnsArmorEB
 
     -- Hidden by default; shown only for mages in onChangeCallback.
     mnsToggleBtn:Hide()
     mnsArmorLabel:Hide()
     if mnsArmorEB._wrap then mnsArmorEB._wrap:Hide() else mnsArmorEB:Hide() end
-
-    mkSep(-648)
-
-    -- ── Attaque & Perception ────────────────────────────────────────
-    mkSectionHeader("Attaque & Perception", -660)
-
-    lbl("CaC",   0,   -686)
-    lbl("Distance",        190, -686)
-    attaqueMeleeEB    = edt(110, 66,  -684, applyAllAttaque)
-    attaqueDistanceEB = edt(110, 284, -684, applyAllAttaque)
-
-    lbl("Perception",   0,   -720)
-    perceptionEB = edt(110, 66, -718, applyAllPerception)
 
     mkSep(-754)
 

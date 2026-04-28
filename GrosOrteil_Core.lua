@@ -484,7 +484,7 @@ function ns.Core_Init()
     },
 
     attaqueMelee = 0, attaqueDistance = 0,
-    chance = 0, maxChance = 10,
+    chance = 1, maxChance = 1,
     perception = 0,
 
     history = {},
@@ -559,11 +559,11 @@ function ns.Core_Init()
   if db.state.bonusHpMax == nil then
     db.state.bonusHpMax = db.state.bonusHp or 0
   end
-  if db.state.attaqueMelee    == nil then db.state.attaqueMelee    = 0  end
-  if db.state.attaqueDistance == nil then db.state.attaqueDistance = 0  end
-  if db.state.chance          == nil then db.state.chance          = 0  end
-  if db.state.maxChance       == nil then db.state.maxChance       = 10 end
-  if db.state.perception      == nil then db.state.perception      = 0  end
+  if db.state.attaqueMelee    == nil then db.state.attaqueMelee    = 0 end
+  if db.state.attaqueDistance == nil then db.state.attaqueDistance = 0 end
+  if db.state.chance          == nil then db.state.chance          = 1 end
+  if db.state.maxChance       == nil then db.state.maxChance       = 1 end
+  if db.state.perception      == nil then db.state.perception      = 0 end
   clampHpToEffectiveMax(db.state)
 
   -- Popup settings defaults.
@@ -998,6 +998,25 @@ function Core.SetPerception(v)
   v = clampNumber(v, 0, 1e9)
   if v then s.perception = v end
   bump(); notify()
+end
+
+function Core.AddChance(delta)
+  local s = Core.state
+  if not s then return end
+  delta = tonumber(delta) or 0
+  local cur = (tonumber(s.chance) or 0) + delta
+  local cap = tonumber(s.maxChance) or 0
+  if cur < 0 then cur = 0 end
+  if cap > 0 and cur > cap then cur = cap end
+  s.chance = cur
+  bump(); notify()
+end
+
+function Core.ResetToDefaults()
+  local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB")
+  if not db then return end
+  db.state = nil
+  if ns.Core_Init then ns.Core_Init() end
 end
 
 function Core.ResetTempBlock()

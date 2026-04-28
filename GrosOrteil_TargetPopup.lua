@@ -461,7 +461,7 @@ local function createPopup()
   -- Perception (right side of attaque row)
   popupFrame.perceptionIcon = popupFrame:CreateTexture(nil, "ARTWORK")
   popupFrame.perceptionIcon:SetSize(14, 14)
-  popupFrame.perceptionIcon:SetTexture("Interface\\Icons\\Spell_Holy_MindVision")
+  popupFrame.perceptionIcon:SetTexture("Interface\\Icons\\Spell_Nature_Sleep")
   popupFrame.perceptionIcon:Hide()
 
   popupFrame.perceptionText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -469,16 +469,66 @@ local function createPopup()
   popupFrame.perceptionText:SetJustifyH("LEFT")
   popupFrame.perceptionText:Hide()
 
-  -- Chance (icon + text, below HP bar)
-  popupFrame.chanceIcon = popupFrame:CreateTexture(nil, "ARTWORK")
-  popupFrame.chanceIcon:SetSize(14, 14)
-  popupFrame.chanceIcon:SetTexture("Interface\\Icons\\inv_misc_herb_goldclover")
-  popupFrame.chanceIcon:Hide()
+  -- Points de Chance: distinct compact bar (gold theme, segmented per point) with clover icon.
+  -- Built smaller than resource bars to avoid being mistaken for a resource.
+  popupFrame.chanceHolder = CreateFrame("Frame", nil, popupFrame)
+  popupFrame.chanceHolder:SetSize(304, 18)
+  popupFrame.chanceHolder:Hide()
 
-  popupFrame.chanceText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  popupFrame.chanceText:SetPoint("LEFT", popupFrame.chanceIcon, "RIGHT", 4, 0)
-  popupFrame.chanceText:SetJustifyH("LEFT")
-  popupFrame.chanceText:Hide()
+  popupFrame.chanceIcon = popupFrame.chanceHolder:CreateTexture(nil, "ARTWORK")
+  popupFrame.chanceIcon:SetSize(16, 16)
+  popupFrame.chanceIcon:SetTexture("Interface\\Icons\\inv_misc_herb_goldclover")
+  popupFrame.chanceIcon:SetPoint("LEFT", popupFrame.chanceHolder, "LEFT", 0, 0)
+
+  local chanceBarFrame = CreateFrame("Frame", nil, popupFrame.chanceHolder, "BackdropTemplate")
+  chanceBarFrame:SetPoint("LEFT", popupFrame.chanceIcon, "RIGHT", 6, 0)
+  chanceBarFrame:SetPoint("RIGHT", popupFrame.chanceHolder, "RIGHT", 0, 0)
+  chanceBarFrame:SetHeight(12)
+  chanceBarFrame:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Buttons\\WHITE8x8",
+    edgeSize = 1,
+  })
+  chanceBarFrame:SetBackdropColor(0.05, 0.04, 0.02, 0.95)
+  chanceBarFrame:SetBackdropBorderColor(0.85, 0.65, 0.18, 0.85)
+  popupFrame.chanceBarFrame = chanceBarFrame
+
+  local chanceBar = CreateFrame("StatusBar", nil, chanceBarFrame)
+  chanceBar:SetPoint("TOPLEFT", chanceBarFrame, "TOPLEFT", 1, -1)
+  chanceBar:SetPoint("BOTTOMRIGHT", chanceBarFrame, "BOTTOMRIGHT", -1, 1)
+  chanceBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+  chanceBar:SetStatusBarColor(0.95, 0.78, 0.20, 1)
+  chanceBar:SetMinMaxValues(0, 1)
+  chanceBar:SetValue(0)
+  popupFrame.chanceBar = chanceBar
+
+  -- Subtle shimmer overlay to set it apart from flat resource bars.
+  local chanceSheen = chanceBar:CreateTexture(nil, "OVERLAY")
+  chanceSheen:SetTexture("Interface\\Buttons\\WHITE8x8")
+  chanceSheen:SetVertexColor(1, 1, 1, 0.18)
+  chanceSheen:SetPoint("TOPLEFT", chanceBar, "TOPLEFT", 0, 0)
+  chanceSheen:SetPoint("TOPRIGHT", chanceBar, "TOPRIGHT", 0, 0)
+  chanceSheen:SetHeight(5)
+
+  popupFrame.chanceText = popupFrame.chanceHolder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  popupFrame.chanceText:SetPoint("CENTER", chanceBarFrame, "CENTER", 0, 0)
+  popupFrame.chanceText:SetTextColor(1, 0.96, 0.82, 1)
+  popupFrame.chanceText:SetShadowOffset(1, -1)
+  popupFrame.chanceText:SetShadowColor(0, 0, 0, 0.95)
+
+  -- Pre-create up to 20 segment dividers to mark each integer point boundary.
+  -- 2px wide and high-contrast so they clearly separate pips.
+  popupFrame.chanceSegments = {}
+  for i = 1, 20 do
+    local seg = chanceBar:CreateTexture(nil, "OVERLAY")
+    seg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    seg:SetColorTexture(0, 0, 0, 0.90)
+    seg:SetWidth(2)
+    seg:SetPoint("TOP",    chanceBar, "TOP",    0, 1)
+    seg:SetPoint("BOTTOM", chanceBar, "BOTTOM", 0, -1)
+    seg:Hide()
+    popupFrame.chanceSegments[i] = seg
+  end
 
   popupFrame.classIcon = popupFrame:CreateTexture(nil, "ARTWORK")
   popupFrame.classIcon:SetSize(28, 28)
@@ -636,8 +686,7 @@ local function showForState(targetName, state, petOnly)
     popupFrame.attaqueText:Hide()
     popupFrame.perceptionIcon:Hide()
     popupFrame.perceptionText:Hide()
-    popupFrame.chanceIcon:Hide()
-    popupFrame.chanceText:Hide()
+    popupFrame.chanceHolder:Hide()
 
     -- Restore hpRow to its original position for petOnly layout.
     popupFrame.hpRow.holder:ClearAllPoints()
@@ -718,19 +767,41 @@ local function showForState(targetName, state, petOnly)
   popupFrame.hpRow.holder:ClearAllPoints()
   popupFrame.hpRow.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -114)
 
-  -- Chance as icon+text below HP bar (hp holder 34px, bottom at -148, 4px gap)
-  popupFrame.chanceIcon:ClearAllPoints()
-  popupFrame.chanceIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -152)
-  popupFrame.chanceText:SetText(string.format("PC: %d / %d", roundNumber(chCur), roundNumber(chMax)))
-  popupFrame.chanceIcon:Show()
-  popupFrame.chanceText:Show()
+  -- Chance bar below HP bar (hp holder 34px, bottom at -148, 4px gap)
+  popupFrame.chanceHolder:ClearAllPoints()
+  popupFrame.chanceHolder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -152)
+  do
+    local maxv = chMax > 0 and chMax or 1
+    local cur  = chCur < 0 and 0 or chCur
+    if cur > maxv then cur = maxv end
+    popupFrame.chanceBar:SetMinMaxValues(0, maxv)
+    popupFrame.chanceBar:SetValue(cur)
+    popupFrame.chanceText:SetText(string.format("PC : %d / %d", roundNumber(chCur), roundNumber(chMax)))
 
-  -- Reposition resource rows (chance icon 14px + 4px gap = 18px: -152-18=-170)
+    -- Position segment dividers at integer boundaries when 2..20 points.
+    local segCount = math.min(20, math.max(0, maxv - 1))
+    local barWidth = popupFrame.chanceBar:GetWidth() or 0
+    if barWidth <= 0 then barWidth = 280 end
+    for i = 1, #popupFrame.chanceSegments do
+      local seg = popupFrame.chanceSegments[i]
+      if i <= segCount and maxv > 1 then
+        seg:ClearAllPoints()
+        seg:SetPoint("TOP", popupFrame.chanceBar, "TOPLEFT", math.floor(barWidth * (i / maxv)), 0)
+        seg:SetPoint("BOTTOM", popupFrame.chanceBar, "BOTTOMLEFT", math.floor(barWidth * (i / maxv)), 0)
+        seg:Show()
+      else
+        seg:Hide()
+      end
+    end
+  end
+  popupFrame.chanceHolder:Show()
+
+  -- Reposition resource rows (chance holder 18px + 4px gap = 22px: -152-22=-174)
   for i = 1, 5 do
     local row = popupFrame.resRows[i]
     if row then
       row.holder:ClearAllPoints()
-      row.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -170 - (i - 1) * 34)
+      row.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -174 - (i - 1) * 34)
     end
   end
 
@@ -826,11 +897,11 @@ local function showForState(targetName, state, petOnly)
     end
   end
 
-  local dynamicHeight = 184 + (shownRes * 34)
+  local dynamicHeight = 188 + (shownRes * 34)
   local pet = state.pet
   local hasPet = false  -- pet is shown only when targeted directly
   if hasPet then
-    local petY = -170 - (shownRes * 34) - 10
+    local petY = -174 - (shownRes * 34) - 10
 
     popupFrame.petNameText:ClearAllPoints()
     popupFrame.petNameText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, petY)
@@ -897,7 +968,7 @@ local function showForState(targetName, state, petOnly)
     hideOverlay(popupFrame.petHpRow.magicOverlay)
   end
 
-  if dynamicHeight < 184 then dynamicHeight = 184 end
+  if dynamicHeight < 188 then dynamicHeight = 188 end
   popupFrame:SetHeight(dynamicHeight)
 
   popupFrame:Show()
@@ -1166,6 +1237,10 @@ local function createHoverPopup()
     hoverFrame.resBars[i] = rb
   end
 
+  -- PC bar (gold, shown only when maxChance > 0)
+  hoverFrame.chanceBar = createHoverBar(hoverFrame)
+  hoverFrame.chanceBar.frame:Hide()
+
   hoverFrame:Hide()
 end
 
@@ -1237,6 +1312,7 @@ local function showHoverForState(state, petOnly)
       local rb = hoverFrame.resBars[i]
       if rb then rb.frame:Hide(); hideMarkers(rb.markers) end
     end
+    if hoverFrame.chanceBar then hoverFrame.chanceBar.frame:Hide() end
 
     hoverFrame.hpBar.frame:ClearAllPoints()
     hoverFrame.hpBar.frame:SetPoint("TOPLEFT", hoverFrame, "TOPLEFT", HOVER_PAD, -HOVER_PAD)
@@ -1352,7 +1428,28 @@ local function showHoverForState(state, petOnly)
     end
   end
 
-  local totalH = HOVER_PAD * 2 + HOVER_BAR_H + shownRes * (HOVER_BAR_H + HOVER_GAP)
+  -- PC bar (gold, below resources, only when maxChance > 0)
+  local chCur = tonumber(state.chance) or 0
+  local chMax = tonumber(state.maxChance) or 0
+  local showChance = chMax > 0
+  if showChance and hoverFrame.chanceBar then
+    local cb = hoverFrame.chanceBar
+    cb.bar:SetMinMaxValues(0, chMax)
+    cb.bar:SetValue(math.min(chCur, chMax))
+    cb.bar:SetStatusBarColor(0.95, 0.78, 0.20, 1)
+    cb.label:SetText(string.format("PC : %d / %d", roundNumber(chCur), roundNumber(chMax)))
+    local yOff = -(HOVER_PAD + HOVER_BAR_H + HOVER_GAP + shownRes * (HOVER_BAR_H + HOVER_GAP) + HOVER_GAP)
+    cb.frame:ClearAllPoints()
+    cb.frame:SetPoint("TOPLEFT", hoverFrame, "TOPLEFT", HOVER_PAD, yOff)
+    cb.frame:Show()
+  elseif hoverFrame.chanceBar then
+    hoverFrame.chanceBar.frame:Hide()
+  end
+
+  local extraRows = showChance and 1 or 0
+  local totalH = HOVER_PAD * 2 + HOVER_BAR_H
+    + shownRes * (HOVER_BAR_H + HOVER_GAP)
+    + extraRows * (HOVER_BAR_H + HOVER_GAP)
   hoverFrame:SetHeight(totalH)
 
   reanchorHover()
