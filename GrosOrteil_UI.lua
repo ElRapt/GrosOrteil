@@ -7,8 +7,7 @@ local UI = {}
 ns.UI = UI
 
 -- Confirmation popup for the reset-to-defaults button.
-StaticPopupDialogs = StaticPopupDialogs or {}
-StaticPopupDialogs["GROSORTEIL_RESET_DEFAULTS"] = {
+_G.StaticPopupDialogs["GROSORTEIL_RESET_DEFAULTS"] = {
   text = "Réinitialiser tous les paramètres aux valeurs par défaut ?\nCette action est irréversible.",
   button1 = "Réinitialiser",
   button2 = "Annuler",
