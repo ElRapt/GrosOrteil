@@ -614,15 +614,22 @@ function ns.UI_Init()
   end)
 
   -- ── Keyboard shortcuts ────────────────────────────────────────────
+  -- Always-enabled with full propagation: OnKeyUp and OnChar always
+  -- pass through so other panels (Collections, etc.) are never blocked.
+  -- OnKeyDown only consumes Ctrl+Z/Y when the mouse is actually over
+  -- the addon, so the check works even when mouse is over child frames.
   frame:EnableKeyboard(true)
+  local function propagate(self) self:SetPropagateKeyboardInput(true) end
+  frame:SetScript("OnKeyUp", propagate)
+  frame:SetScript("OnChar",  propagate)
   frame:SetScript("OnKeyDown", function(self, key)
-    if IsControlKeyDown() and (key == "z" or key == "Z") then
+    if IsControlKeyDown() and (key == "z" or key == "Z") and self:IsMouseOver() then
       self:SetPropagateKeyboardInput(false)
       if Core and Core.Undo then
         Core.Undo()
         if UI.refreshUndoRedo then UI.refreshUndoRedo() end
       end
-    elseif IsControlKeyDown() and (key == "y" or key == "Y") then
+    elseif IsControlKeyDown() and (key == "y" or key == "Y") and self:IsMouseOver() then
       self:SetPropagateKeyboardInput(false)
       if Core and Core.Redo then
         Core.Redo()
@@ -705,22 +712,6 @@ function ns.UI_Init()
       "Restaure 20 % de la ressource principale (mana, énergie, etc.).",
       function() Core.DailyRegenRes() end)
     iconRegenRes:SetPoint("RIGHT", iconRegenHP, "LEFT", -ICON_GAP, 0)
-
-    local iconReset = mkActionIcon(frame,
-      "Interface/Icons/Spell_Holy_Redemption",
-      "Réinitialiser les paramètres",
-      "Restaure toutes les valeurs aux valeurs par défaut.",
-      function()
-        if StaticPopup_Show then StaticPopup_Show("GROSORTEIL_RESET_DEFAULTS") end
-      end)
-    iconReset:SetPoint("RIGHT", iconRegenRes, "LEFT", -ICON_GAP, 0)
-    local iconResetEnter = iconReset:GetScript("OnEnter")
-    iconReset:SetScript("OnEnter", function(self)
-      iconResetEnter(self)
-      GameTooltip:AddLine("Cette action est irréversible.", 1, 0.4, 0.3, true)
-      GameTooltip:Show()
-    end)
-    UI.resetBtn = iconReset
   end
 
   -- Main body: sidebar (left) + content (right)
@@ -1546,6 +1537,27 @@ function ns.UI_Init()
 
   refreshPopupToggleBtn()
 
+  -- Reset-to-defaults button: text button centred in the sidebar.
+  local resetBtn = mkButton(sidebar, "Réinitialiser", SIDEBAR_W - (NAV_PAD * 2), 24, 0, 0, function()
+    if StaticPopup_Show then StaticPopup_Show("GROSORTEIL_RESET_DEFAULTS") end
+  end)
+  resetBtn:ClearAllPoints()
+  resetBtn:SetPoint("BOTTOM", popupToggleBtn, "TOP", 0, 8)
+  resetBtn:SetBackdropBorderColor(0.85, 0.30, 0.20, 0.80)
+  if resetBtn._fs then
+    resetBtn._fs:SetTextColor(1.00, 0.55, 0.40, 1)
+  end
+  resetBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("Réinitialiser les paramètres", 1.00, 0.55, 0.40)
+    GameTooltip:AddLine("Restaure toutes les valeurs aux valeurs par défaut.", 1, 1, 1, true)
+    GameTooltip:AddLine("Cette action est irréversible.", 1, 0.4, 0.3, true)
+    GameTooltip:Show()
+  end)
+  resetBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  UI.resetBtn = resetBtn
+
   -- Decorative separator above section switcher.
   local sectSep = sidebar:CreateTexture(nil, "ARTWORK")
   sectSep:SetTexture(TEX.FLAT)
@@ -1564,7 +1576,7 @@ function ns.UI_Init()
 
   -- Onglet 1 : Fiche (PV + Armure & Esquive + Actions + Blocage + Ressources)
   -- Déclarations anticipées ; l'UI est construite après les ressources.
-  local hpCur, hpMax, bonusHpValEB
+  local hpCur, hpMax
   local armorEB, trueArmorEB, tempArmorEB, dodgeEB, blockEB
   local msHpEB, msMaxHpEB, msArmorEB
   local mnsArmorEB, mnsToggleBtn, mnsLabel, mnsArmorLabel
@@ -1767,17 +1779,8 @@ function ns.UI_Init()
     hpCur = edt(110, 26,  -36, applyAllHP)
     hpMax = edt(110, 166, -36, applyAllHP)
 
-    -- Row 2: Bonus PV (label + value left-aligned with PV row, toggle on the right)
-    lbl("Bonus PV", 0, -72)
-    bonusHpValEB = edt(110, 66, -70, function()
-      if Core and Core.SetBonusHP then Core.SetBonusHP(getNumber(bonusHpValEB) or 0) end
-    end)
-    UI.bonusHpToggleBtn = btn("Activer", 110, 200, -70, function()
-      if Core and Core.ToggleBonusHP then Core.ToggleBonusHP() end
-    end)
-
     -- Row 2b: Stabilisé/Agonie — shown only when HP == 0
-    UI.stabiliseBtn = btn("Stabilisé", 330, 55, -140, function()
+    UI.stabiliseBtn = btn("Stabilisé", 330, 55, -106, function()
       if Core and Core.SetStabilise and Core.state then
         Core.SetStabilise(not Core.state.stabilise)
       end
@@ -1785,14 +1788,14 @@ function ns.UI_Init()
     UI.stabiliseBtn:Hide()
 
     -- Row 3: Points de Chance — compact cur/max with stepper buttons
-    lbl("PC", 0, -106)
-    chanceCurEB = edt(48, 26, -104, applyAllChance)
-    lbl("/",  80, -106)
-    chanceMaxEB = edt(48, 92, -104, applyAllChance)
-    smallBtn("-", 22, 148, -104, function()
+    lbl("PC", 0, -72)
+    chanceCurEB = edt(48, 26, -70, applyAllChance)
+    lbl("/",  80, -72)
+    chanceMaxEB = edt(48, 92, -70, applyAllChance)
+    smallBtn("-", 22, 148, -70, function()
       if Core and Core.AddChance then Core.AddChance(-1) end
     end)
-    smallBtn("+", 22, 174, -104, function()
+    smallBtn("+", 22, 174, -70, function()
       if Core and Core.AddChance then Core.AddChance(1) end
     end)
 
@@ -2221,7 +2224,7 @@ function ns.UI_Init()
   end
 
   UI.inputs = {
-    hpCur = hpCur, hpMax = hpMax, bonusHpMax = bonusHpValEB,
+    hpCur = hpCur, hpMax = hpMax,
     armor = armorEB, trueArmor = trueArmorEB, tempArmor = tempArmorEB,
     dodge = dodgeEB,
     block = blockEB,
@@ -2408,19 +2411,13 @@ function ns.UI_Init()
       -- Character section: show character HP.
       updateWindowTitle()
       local baseMaxHp = (s.maxHp or 0)
-      local bonusHp   = math.max(0, s.bonusHp or 0)
-      local effMaxHp  = baseMaxHp + bonusHp
       local hpNow     = (s.hp or 0)
-      local hpPct     = (effMaxHp > 0) and (hpNow / effMaxHp) or 0
+      local hpPct     = (baseMaxHp > 0) and (hpNow / baseMaxHp) or 0
       hpBar:SetValue(math.max(0, math.min(1, hpPct)))
-      if bonusHp > 0 then
-        hpText:SetText(string.format("PV : %d / %d (+%d bonus, %d%%)", hpNow, effMaxHp, bonusHp, roundPct(hpPct)))
-      else
-        hpText:SetText(string.format("PV : %d / %d (%d%%)", hpNow, baseMaxHp, roundPct(hpPct)))
-      end
+      hpText:SetText(string.format("PV : %d / %d (%d%%)", hpNow, baseMaxHp, roundPct(hpPct)))
       Shared.UpdateHpShieldOverlays(
         UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
-        hpNow, effMaxHp, s.tempBlock or 0, (s.magicShield and s.magicShield.hp or 0)
+        hpNow, baseMaxHp, s.tempBlock or 0, (s.magicShield and s.magicShield.hp or 0)
       )
       local cap
       local w2 = s.wounds
@@ -2428,7 +2425,7 @@ function ns.UI_Init()
       elseif w2 and w2.hit25 then cap = 0.50
       else cap = 1.0 end
       UI.hpMarkerCache.baseMaxHp = baseMaxHp
-      UI.hpMarkerCache.effMaxHp  = effMaxHp
+      UI.hpMarkerCache.effMaxHp  = baseMaxHp
       UI.hpMarkerCache.cap       = cap
       UI.repositionHpMarkers()
       if cap >= 0.999 then
@@ -2747,10 +2744,6 @@ function ns.UI_Init()
     -- Inputs : on reflète la state (pratique MVP)
     setNumber(UI.inputs.hpCur, s.hp)
     setNumber(UI.inputs.hpMax, s.maxHp)
-    setNumber(UI.inputs.bonusHpMax, s.bonusHpMax)
-    if UI.bonusHpToggleBtn then
-      UI.bonusHpToggleBtn:SetText((s.bonusHp or 0) > 0 and "Désactiver PV bonus" or "Activer PV bonus")
-    end
     if UI.stabiliseBtn then
       local isDead = (s.hp or 0) == 0
       UI.stabiliseBtn:SetShown(isDead)

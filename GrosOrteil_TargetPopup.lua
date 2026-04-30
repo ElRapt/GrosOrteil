@@ -815,10 +815,7 @@ local function showForState(targetName, state, petOnly)
     end
   end
 
-  local baseHp = tonumber(state.maxHp) or 0
-  local bonusHp = tonumber(state.bonusHp) or 0
-  if bonusHp < 0 then bonusHp = 0 end
-  local effMaxHp = baseHp + bonusHp
+  local effMaxHp = tonumber(state.maxHp) or 0
   if effMaxHp <= 0 then effMaxHp = 1 end
 
   -- Stabilisé/Agonie banner
@@ -848,8 +845,7 @@ local function showForState(targetName, state, petOnly)
   local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
   for i = 1, #popupFrame.hpMarkers do
     local m = popupFrame.hpMarkers[i]
-    local thresholdHp = baseHp * (HP_THRESHOLD_PCTS[i] or 0)
-    m.pct = (effMaxHp > 0) and (thresholdHp / effMaxHp) or 0
+    m.pct = (HP_THRESHOLD_PCTS[i] or 0)
   end
   positionMarkers(popupFrame.hpMarkers, popupFrame.hpRow.bar)
 
@@ -862,7 +858,7 @@ local function showForState(targetName, state, petOnly)
   if woundCap >= 1.0 then
     popupFrame.hpCapMarker:Hide()
   else
-    popupFrame.hpCapMarker.pct = (baseHp * woundCap) / effMaxHp
+    popupFrame.hpCapMarker.pct = woundCap
     positionMarkers({ popupFrame.hpCapMarker }, popupFrame.hpRow.bar)
   end
 
@@ -1359,10 +1355,7 @@ local function showHoverForState(state, petOnly)
   -- Owner-only hover: HP bar + resources, no pet section.
 
   -- HP bar
-  local baseHp  = tonumber(state.maxHp)  or 0
-  local bonusHp = tonumber(state.bonusHp) or 0
-  if bonusHp < 0 then bonusHp = 0 end
-  local effMax  = baseHp + bonusHp
+  local effMax  = tonumber(state.maxHp) or 0
   if effMax <= 0 then effMax = 1 end
   local hp      = tonumber(state.hp) or 0
   local hpClamp = math.max(0, math.min(hp, effMax))
@@ -1380,7 +1373,7 @@ local function showHoverForState(state, petOnly)
   local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
   for i = 1, #hoverFrame.hpMarkers do
     local m = hoverFrame.hpMarkers[i]
-    m.pct = effMax > 0 and (baseHp * HP_THRESHOLD_PCTS[i]) / effMax or 0
+    m.pct = HP_THRESHOLD_PCTS[i] or 0
   end
   positionHoverMarkers(hoverFrame.hpMarkers, hoverFrame.hpBar.bar)
 
@@ -1390,7 +1383,7 @@ local function showHoverForState(state, petOnly)
   if woundCap >= 1.0 then
     hoverFrame.hpCapMarker:Hide()
   else
-    hoverFrame.hpCapMarker.pct = (baseHp * woundCap) / effMax
+    hoverFrame.hpCapMarker.pct = woundCap
     positionHoverMarkers({ hoverFrame.hpCapMarker }, hoverFrame.hpBar.bar)
   end
 

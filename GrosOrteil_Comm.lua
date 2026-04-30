@@ -63,7 +63,6 @@ local function packStatePayload(s)
   return {
     hp = s.hp or 0,
     maxHp = s.maxHp or 0,
-    bonusHp = s.bonusHp or 0,
     armor = s.armor or 0,
     trueArmor = s.trueArmor or 0,
     dodge = s.dodge or 0,
@@ -158,7 +157,6 @@ function Comm:DeserializeState(cmd, payload, sender)
     return {
       hp = tonumber(decoded.hp) or 0,
       maxHp = tonumber(decoded.maxHp) or 0,
-      bonusHp = tonumber(decoded.bonusHp) or 0,
       armor = tonumber(decoded.armor) or 0,
       trueArmor = tonumber(decoded.trueArmor) or 0,
       dodge = tonumber(decoded.dodge) or 0,

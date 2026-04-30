@@ -111,7 +111,6 @@ local prevSnapshot = nil
 local function deepCopyState(s)
   local c = {}
   c.hp = s.hp; c.maxHp = s.maxHp
-  c.bonusHp = s.bonusHp; c.bonusHpMax = s.bonusHpMax
   c.stabilise = s.stabilise
   c.classKey = s.classKey
   c.res = s.res; c.maxRes = s.maxRes
@@ -155,7 +154,6 @@ end
 local function restoreSnapshot(snap)
   local s = Core.state
   s.hp = snap.hp; s.maxHp = snap.maxHp
-  s.bonusHp = snap.bonusHp; s.bonusHpMax = snap.bonusHpMax
   s.stabilise = snap.stabilise
   s.classKey = snap.classKey
   s.res = snap.res; s.maxRes = snap.maxRes
@@ -302,8 +300,6 @@ local function updateWoundsSticky(s)
     return
   end
 
-  -- IMPORTANT: wounds thresholds are based on base max HP only.
-  -- Bonus HP must not change the threshold values.
   local p = (s.hp or 0) / s.maxHp
   if p < 0 then p = 0 elseif p > 1 then p = 1 end
   local hit25, hit10 = woundsFromPct(p)
@@ -338,10 +334,8 @@ local function clampHpToEffectiveMax(s)
   end
   local baseMax = s.maxHp
   if type(baseMax) ~= "number" or baseMax <= 0 then return end
-  local bonus = math.max(0, s.bonusHp or 0)
-  local effMax = baseMax + bonus
-  if type(s.hp) == "number" and s.hp > effMax then
-    s.hp = effMax
+  if type(s.hp) == "number" and s.hp > baseMax then
+    s.hp = baseMax
   end
 end
 
@@ -458,7 +452,6 @@ function ns.Core_Init()
 
   db.state = db.state or {
     hp = 50, maxHp = 50,
-    bonusHp = 0, bonusHpMax = 0,
     classKey = nil,
     res = 20, maxRes = 20,
     res2 = 0, maxRes2 = 20,
@@ -552,15 +545,10 @@ function ns.Core_Init()
   if db.state.auth == nil then db.state.auth = 0 end
   if db.state.maxAuth == nil then db.state.maxAuth = 5 end
   if db.state.shamanPostureDmgBonus == nil then db.state.shamanPostureDmgBonus = 0 end
-  -- Migration: tempHp -> bonusHp
-  if db.state.bonusHp == nil then
-    db.state.bonusHp = db.state.tempHp or 0
-  end
+  -- Migration: drop legacy bonus HP fields (feature removed).
   db.state.tempHp = nil
-  -- Migration: bonusHpMax (new field; seed from current bonusHp if missing)
-  if db.state.bonusHpMax == nil then
-    db.state.bonusHpMax = db.state.bonusHp or 0
-  end
+  db.state.bonusHp = nil
+  db.state.bonusHpMax = nil
   if db.state.attaqueMelee    == nil then db.state.attaqueMelee    = 0 end
   if db.state.attaqueDistance == nil then db.state.attaqueDistance = 0 end
   if db.state.chance          == nil then db.state.chance          = 1 end
@@ -722,45 +710,6 @@ function Core.SetStabilise(v)
   if not s then return end
   if (s.hp or 0) > 0 then return end
   s.stabilise = v and true or false
-  bump(); notify()
-end
-
--- Sets the configured bonus HP maximum. If bonus HP is currently active,
--- also updates the live pool to match.
-function Core.SetBonusHP(v)
-  local s = Core.state
-  if not s then return end
-  v = clampNumber(v, 0, 1e9) or 0
-  s.bonusHpMax = v
-  if (s.bonusHp or 0) > 0 then
-    s.bonusHp = v
-  end
-  clampHpToEffectiveMax(s)
-  recomputeWounds(s)
-  bump(); notify()
-end
-
--- Toggles bonus HP on (adds the pool and fills HP by that amount) or off (removes the pool).
-function Core.ToggleBonusHP()
-  local s = Core.state
-  if not s then return end
-  if (s.bonusHp or 0) > 0 then
-    s.bonusHp = 0
-  else
-    local amount = (s.bonusHpMax or 0)
-    s.bonusHp = amount
-    s.hp = (s.hp or 0) + amount
-  end
-  clampHpToEffectiveMax(s)
-  recomputeWounds(s)
-  bump(); notify()
-end
-
-function Core.ResetBonusHP()
-  if not Core.state then return end
-  Core.state.bonusHp = 0
-  clampHpToEffectiveMax(Core.state)
-  recomputeWounds(Core.state)
   bump(); notify()
 end
 
@@ -1104,7 +1053,6 @@ function Core.DamageWithArmor(amount)
 
   local hpBefore        = (s.hp or 0)
   local baseMaxBefore   = (s.maxHp or 0)
-  local bonusBefore     = math.max(0, s.bonusHp or 0)
   local armorBefore     = (s.armor or 0)
   local trueArmorBefore = (s.trueArmor or 0)
   local tempArmorBefore = math.max(0, s.tempArmor or 0)
@@ -1125,7 +1073,6 @@ function Core.DamageWithArmor(amount)
       hpBefore = hpBefore,
       hpAfter = hpBefore,
       maxHp = baseMaxBefore,
-      bonusHp = bonusBefore,
     })
     bump(); notify()
     return
@@ -1187,7 +1134,6 @@ function Core.DamageWithArmor(amount)
     hpBefore = hpBefore,
     hpAfter = (s.hp or 0),
     maxHp = baseMaxBefore,
-    bonusHp = bonusBefore,
   })
 
   updateWoundsSticky(s)
@@ -1205,7 +1151,6 @@ function Core.DamageTrue(amount)
 
   local hpBefore        = (s.hp or 0)
   local baseMaxBefore   = (s.maxHp or 0)
-  local bonusBefore     = math.max(0, s.bonusHp or 0)
   local trueArmorBefore = (s.trueArmor or 0)
   local tempArmorBefore = math.max(0, s.tempArmor or 0)
   local dodgeBefore     = math.max(0, s.dodge or 0)
@@ -1224,7 +1169,6 @@ function Core.DamageTrue(amount)
       hpBefore = hpBefore,
       hpAfter = hpBefore,
       maxHp = baseMaxBefore,
-      bonusHp = bonusBefore,
     })
     bump(); notify()
     return
@@ -1272,7 +1216,6 @@ function Core.DamageTrue(amount)
     hpBefore = hpBefore,
     hpAfter = (s.hp or 0),
     maxHp = baseMaxBefore,
-    bonusHp = bonusBefore,
   })
 
   updateWoundsSticky(s)
@@ -1286,7 +1229,6 @@ function Core.Heal(amount)
 
   local hpBefore = (s.hp or 0)
   local baseMaxBefore = (s.maxHp or 0)
-  local bonusBefore = math.max(0, s.bonusHp or 0)
 
   if amount > 0 then sfxHealLight() end
 
@@ -1295,14 +1237,11 @@ function Core.Heal(amount)
 
   -- Cap selon l'état courant (seuils dynamiques)
   local baseMax = (s.maxHp or 0)
-  local bonus = math.max(0, s.bonusHp or 0)
-  -- Wound cap is based on base max HP only; bonus HP does not extend the threshold.
   local capMax = (baseMax * getWoundCap(s))
-  local effMax = baseMax + bonus
 
   -- Soins normaux : ne dépassent pas le cap (s'il existe)
   -- Never reduce HP if current HP is already above the cap.
-  local healed = math.min(proposed, capMax, effMax)
+  local healed = math.min(proposed, capMax, baseMax)
   s.hp = math.max(current, healed)
 
   clampHpToEffectiveMax(s)
@@ -1313,12 +1252,11 @@ function Core.Heal(amount)
     current = current,
     proposed = proposed,
     capMax = capMax,
-    effMax = effMax,
+    effMax = baseMax,
     applied = (s.hp or 0) - hpBefore,
     hpBefore = hpBefore,
     hpAfter = (s.hp or 0),
     maxHp = baseMaxBefore,
-    bonusHp = bonusBefore,
     woundCap = getWoundCap(s),
   })
 
@@ -1334,16 +1272,12 @@ function Core.DivineHeal()
 
   local hpBefore = (s.hp or 0)
   local baseMaxBefore = (s.maxHp or 0)
-  local bonusBefore = math.max(0, s.bonusHp or 0)
 
   sfxLayOnHands()
-  -- Bypass plafond : +75% du total (pas "fixé" à 75%)
   local baseMax = (s.maxHp or 0)
-  local bonus = math.max(0, s.bonusHp or 0)
-  local maxHp = baseMax + bonus
   local current = (s.hp or 0)
   local gain = (baseMax * 0.75)
-  s.hp = math.min(current + gain, maxHp)
+  s.hp = math.min(current + gain, baseMax)
   clampHpToEffectiveMax(s)
 
   pushHistory({
@@ -1352,7 +1286,6 @@ function Core.DivineHeal()
     hpBefore = hpBefore,
     hpAfter = (s.hp or 0),
     maxHp = baseMaxBefore,
-    bonusHp = bonusBefore,
   })
 
   -- DivineHeal est un bypass : on recalcule les seuils depuis l'état actuel
@@ -1367,16 +1300,12 @@ function Core.Surgery()
 
   local hpBefore = (s.hp or 0)
   local baseMaxBefore = (s.maxHp or 0)
-  local bonusBefore = math.max(0, s.bonusHp or 0)
 
   sfxLayOnHands()
-  -- Bypass plafond : +50% du total
   local baseMax = (s.maxHp or 0)
-  local bonus = math.max(0, s.bonusHp or 0)
-  local maxHp = baseMax + bonus
   local current = (s.hp or 0)
   local gain = (baseMax * 0.50)
-  s.hp = math.min(current + gain, maxHp)
+  s.hp = math.min(current + gain, baseMax)
   clampHpToEffectiveMax(s)
 
   pushHistory({
@@ -1385,7 +1314,6 @@ function Core.Surgery()
     hpBefore = hpBefore,
     hpAfter = (s.hp or 0),
     maxHp = baseMaxBefore,
-    bonusHp = bonusBefore,
   })
 
   recomputeWounds(s)
@@ -1469,13 +1397,12 @@ function Core.SetShamanPosture(posture)
   bump(); notify()
 end
 
--- Restaure les PV au maximum (PV de base + bonus actif).
+-- Restaure les PV au maximum.
 function Core.RestoreHP()
   local s = Core.state
   if not s then return end
-  local bonus  = math.max(0, s.bonusHp or 0)
   local baseMax = math.max(1, s.maxHp or 1)
-  s.hp = baseMax + bonus
+  s.hp = baseMax
   clampHpToEffectiveMax(s)
   recomputeWounds(s)
   s.stabilise = nil
@@ -1486,11 +1413,9 @@ end
 function Core.DailyRegenHP()
   local s = Core.state
   if not s then return end
-  local bonus   = math.max(0, s.bonusHp or 0)
   local baseMax = math.max(1, s.maxHp or 1)
-  local effMax  = baseMax + bonus
   local gain    = math.floor(baseMax * 0.10 + 0.5)
-  s.hp = math.min((s.hp or 0) + gain, effMax)
+  s.hp = math.min((s.hp or 0) + gain, baseMax)
   clampHpToEffectiveMax(s)
   recomputeWounds(s)
   if (s.hp or 0) > 0 then s.stabilise = nil end
@@ -1531,7 +1456,6 @@ function Core.PetDamageWithArmor(amount)
       hpBefore = hpBefore,
       hpAfter = hpBefore,
       maxHp = maxBefore,
-      bonusHp = 0,
     })
     bump(); notify()
     return
@@ -1574,7 +1498,6 @@ function Core.PetDamageWithArmor(amount)
     hpBefore = hpBefore,
     hpAfter = (p.hp or 0),
     maxHp = maxBefore,
-    bonusHp = 0,
   })
 
   updatePetWoundsSticky(p)
@@ -1605,7 +1528,6 @@ function Core.PetDamageTrue(amount)
       hpBefore = hpBefore,
       hpAfter = hpBefore,
       maxHp = maxBefore,
-      bonusHp = 0,
     })
     bump(); notify()
     return
@@ -1646,7 +1568,6 @@ function Core.PetDamageTrue(amount)
     hpBefore = hpBefore,
     hpAfter = (p.hp or 0),
     maxHp = maxBefore,
-    bonusHp = 0,
   })
 
   updatePetWoundsSticky(p)
@@ -1682,7 +1603,6 @@ function Core.PetHeal(amount)
     hpBefore = hpBefore,
     hpAfter = (p.hp or 0),
     maxHp = maxBefore,
-    bonusHp = 0,
     woundCap = getPetWoundCap(p),
   })
 
@@ -1710,7 +1630,6 @@ function Core.PetDivineHeal()
     hpBefore = hpBefore,
     hpAfter = (p.hp or 0),
     maxHp = maxBefore,
-    bonusHp = 0,
   })
 
   recomputePetWounds(p)
@@ -1737,7 +1656,6 @@ function Core.PetSurgery()
     hpBefore = hpBefore,
     hpAfter = (p.hp or 0),
     maxHp = maxBefore,
-    bonusHp = 0,
   })
 
   recomputePetWounds(p)

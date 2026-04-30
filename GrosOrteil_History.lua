@@ -224,7 +224,7 @@ function History.FormatEntry(e)
 			}),
 			sep({
 				"Plafond bypassé",
-				"Max effectif " .. fmtInt((e.maxHp or 0) + (e.bonusHp or 0)),
+				"Max effectif " .. fmtInt(e.maxHp or 0),
 				"Résultat " .. colorize(fmtInt(e.gain), COLORS.RESULT),
 			}),
 			sep({
@@ -240,7 +240,7 @@ function History.FormatEntry(e)
 			}),
 			sep({
 				"Plafond bypassé",
-				"Max effectif " .. fmtInt((e.maxHp or 0) + (e.bonusHp or 0)),
+				"Max effectif " .. fmtInt(e.maxHp or 0),
 				"Résultat " .. colorize(fmtInt(e.gain), COLORS.RESULT),
 			}),
 			sep({
