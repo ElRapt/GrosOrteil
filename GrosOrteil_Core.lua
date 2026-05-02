@@ -257,12 +257,6 @@ local function pushHistory(entry)
   end
 end
 
-local function ensureWounds(s)
-  if not s.wounds then
-    s.wounds = { hit25 = false, hit10 = false }
-  end
-end
-
 local function getWoundCap(s)
   local w = s and s.wounds
   if w and w.hit10 then return 0.25 end
@@ -276,41 +270,33 @@ local function woundsFromPct(p)
   return false, false
 end
 
-local function updateWoundsSticky(s)
-  ensureWounds(s)
-
-  if not s.maxHp or s.maxHp <= 0 then
-    s.wounds.hit25 = false
-    s.wounds.hit10 = false
-    return
-  end
-
-  local p = (s.hp or 0) / s.maxHp
-  if p < 0 then p = 0 elseif p > 1 then p = 1 end
-  local hit25, hit10 = woundsFromPct(p)
-  if hit10 then
-    s.wounds.hit10 = true
-    s.wounds.hit25 = true
-  elseif hit25 then
-    s.wounds.hit25 = true
+local function ensureWoundsTable(t)
+  if type(t.wounds) ~= "table" then
+    t.wounds = { hit25 = false, hit10 = false }
   end
 end
 
-local function recomputeWounds(s)
-  ensureWounds(s)
-  s.wounds.hit25 = false
-  s.wounds.hit10 = false
-
-  if not s.maxHp or s.maxHp <= 0 then
+-- sticky=true: only upgrades wound flags (never clears them)
+local function applyWounds(t, sticky)
+  ensureWoundsTable(t)
+  if not t.maxHp or t.maxHp <= 0 then
+    if not sticky then t.wounds.hit25 = false; t.wounds.hit10 = false end
     return
   end
-
-  local p = (s.hp or 0) / s.maxHp
+  local p = (t.hp or 0) / t.maxHp
   if p < 0 then p = 0 elseif p > 1 then p = 1 end
   local hit25, hit10 = woundsFromPct(p)
-  s.wounds.hit10 = hit10
-  s.wounds.hit25 = hit25
+  if sticky then
+    if hit10 then t.wounds.hit10 = true; t.wounds.hit25 = true
+    elseif hit25 then t.wounds.hit25 = true end
+  else
+    t.wounds.hit10 = hit10
+    t.wounds.hit25 = hit25
+  end
 end
+
+local function updateWoundsSticky(t) applyWounds(t, true) end
+local function recomputeWounds(t)    applyWounds(t, false) end
 
 local function clampHpToEffectiveMax(s)
   if not s then return end
@@ -364,48 +350,8 @@ local function getPetWoundCap(p)
   return 1.0
 end
 
-local function updatePetWoundsSticky(p)
-  if not p then return end
-  if type(p.wounds) ~= "table" then
-    p.wounds = { hit25 = false, hit10 = false }
-  end
-
-  if not p.maxHp or p.maxHp <= 0 then
-    p.wounds.hit25 = false
-    p.wounds.hit10 = false
-    return
-  end
-
-  local pct = (p.hp or 0) / p.maxHp
-  if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
-  local hit25, hit10 = woundsFromPct(pct)
-  if hit10 then
-    p.wounds.hit10 = true
-    p.wounds.hit25 = true
-  elseif hit25 then
-    p.wounds.hit25 = true
-  end
-end
-
-local function recomputePetWounds(p)
-  if not p then return end
-  if type(p.wounds) ~= "table" then
-    p.wounds = { hit25 = false, hit10 = false }
-  else
-    p.wounds.hit25 = false
-    p.wounds.hit10 = false
-  end
-
-  if not p.maxHp or p.maxHp <= 0 then
-    return
-  end
-
-  local pct = (p.hp or 0) / p.maxHp
-  if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
-  local hit25, hit10 = woundsFromPct(pct)
-  p.wounds.hit10 = hit10
-  p.wounds.hit25 = hit25
-end
+local function updatePetWoundsSticky(p) if p then applyWounds(p, true)  end end
+local function recomputePetWounds(p)    if p then applyWounds(p, false) end end
 
 local WARLOCK_CORRUPTION_MAX  = 60
 local MAGE_ARCANE_CHARGE_MAX  = 8
@@ -1019,284 +965,206 @@ local function applyManaShield(s, dmg)
   return remaining, drained, broke
 end
 
--- Actions
-function Core.DamageWithArmor(amount)
-  local s = Core.state
-  if not s then return end
-  amount = clampNumber(amount, 0, 1e9) or 0
+-- opts: { armor=bool, isPet=bool, historyKind=str, subject=str|nil }
+-- For player targets `t` is Core.state; for pet targets `t` is Core.state.pet.
+-- Player-only features (Shaman posture, mana shield) are skipped when isPet=true.
+local function applyHit(s, t, rawAmount, opts)
+  rawAmount = clampNumber(rawAmount, 0, 1e9) or 0
 
-  if s.shamanPosture == "FEU" then
-    amount = amount + (s.shamanPostureDmgBonus or 10)
+  if not opts.isPet and s.shamanPosture == "FEU" then
+    rawAmount = rawAmount + (s.shamanPostureDmgBonus or 10)
   end
 
-  local hpBefore        = (s.hp or 0)
-  local baseMaxBefore   = (s.maxHp or 0)
-  local armorBefore     = (s.armor or 0)
-  local trueArmorBefore = (s.trueArmor or 0)
-  local tempArmorBefore = math.max(0, s.tempArmor or 0)
-  local dodgeBefore     = math.max(0, s.dodge or 0)
-  local manaBefore      = (s.res or 0)
+  local hpBefore    = t.hp or 0
+  local maxBefore   = t.maxHp or 0
+  local dodgeBefore = math.max(0, t.dodge or 0)
+  local manaBefore  = (not opts.isPet) and (s.res or 0) or nil
 
-  -- Esquive : si les dégâts sont <= au seuil, ils sont entièrement ignorés.
-  if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
+  -- Dodge
+  if rawAmount > 0 and dodgeBefore > 0 and rawAmount <= dodgeBefore then
     sfxDodge()
     pushHistory({
-      kind = "DAMAGE_ARMOR",
-      input = amount,
-      dodged = true,
-      dodge = dodgeBefore,
-      armor = armorBefore,
-      trueArmor = trueArmorBefore,
-      tempArmor = tempArmorBefore,
-      hpBefore = hpBefore,
-      hpAfter = hpBefore,
-      maxHp = baseMaxBefore,
+      kind      = opts.historyKind,
+      subject   = opts.subject,
+      input     = rawAmount,
+      dodged    = true,
+      dodge     = dodgeBefore,
+      armor     = opts.armor and (t.armor or 0) or nil,
+      trueArmor = t.trueArmor or 0,
+      tempArmor = opts.armor and math.max(0, t.tempArmor or 0) or nil,
+      hpBefore  = hpBefore,
+      hpAfter   = hpBefore,
+      maxHp     = maxBefore,
     })
     bump(); notify()
     return
   end
 
+  local amount = rawAmount
   local absorbedBlock = 0
+  local absorbedMagic = 0
 
-  local block = math.max(0, s.tempBlock or 0)
-  if block > 0 and amount > 0 then
-    absorbedBlock = math.min(block, amount)
-    s.tempBlock = block - absorbedBlock
-    amount = amount - absorbedBlock
+  -- Block (player DamageWithArmor only)
+  if opts.armor and not opts.isPet then
+    local block = math.max(0, s.tempBlock or 0)
+    if block > 0 and amount > 0 then
+      absorbedBlock = math.min(block, amount)
+      s.tempBlock = block - absorbedBlock
+      amount = amount - absorbedBlock
+    end
   end
 
-  -- Bouclier magique (PV) : absorbe avant l'application de la mitigation.
-  local absorbedMagic
-  amount, absorbedMagic = consumeMagicShield(s, amount)
-
-  -- SFX (une seule par "coup") : magic > block > damage
-  if absorbedMagic > 0 then
-    sfxMagicShield()
-  elseif absorbedBlock > 0 then
-    sfxBlock()
-  elseif amount > 0 then
-    sfxDamage()
+  -- Magic absorption
+  if opts.isPet then
+    local mblock = math.max(0, t.tempMagicBlock or 0)
+    if mblock > 0 and amount > 0 then
+      absorbedMagic = math.min(mblock, amount)
+      t.tempMagicBlock = mblock - absorbedMagic
+      amount = amount - absorbedMagic
+    end
+  else
+    amount, absorbedMagic = consumeMagicShield(s, amount)
   end
 
-  local mit = armorBefore + trueArmorBefore + tempArmorBefore
+  -- SFX
+  if absorbedMagic > 0 then sfxMagicShield()
+  elseif absorbedBlock > 0 then sfxBlock()
+  elseif amount > 0 then sfxDamage() end
+
+  -- Mitigation
+  local mit
+  if opts.isPet then
+    mit = math.max(0, (t.armor or 0) + (t.trueArmor or 0))
+    if not opts.armor then mit = math.max(0, t.trueArmor or 0) end
+  else
+    local armorVal = opts.armor and ((t.armor or 0) + (t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
+                                 or ((t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
+    mit = armorVal
+  end
 
   local afterAbsorb = amount
   local dmg = effDmg(amount, mit)
 
   local manaAbsorbed, manaBroke = 0, false
-  if dmg > 0 then
+  if not opts.isPet and dmg > 0 then
     dmg, manaAbsorbed, manaBroke = applyManaShield(s, dmg)
   end
-  if dmg > 0 then
-    s.hp = (s.hp or 0) - dmg
-  end
-  clampHpToEffectiveMax(s)
 
-  pushHistory({
-    kind = "DAMAGE_ARMOR",
-    input = amount + absorbedBlock + absorbedMagic,
-    afterAbsorb = afterAbsorb,
+  if dmg > 0 then
+    if opts.isPet then
+      t.hp = math.max(0, (t.hp or 0) - dmg)
+    else
+      t.hp = (t.hp or 0) - dmg
+      clampHpToEffectiveMax(s)
+    end
+  end
+
+  local entry = {
+    kind          = opts.historyKind,
+    subject       = opts.subject,
+    input         = rawAmount,   -- original after posture bonus, before absorptions
+    afterAbsorb   = afterAbsorb,
     absorbedBlock = absorbedBlock,
     absorbedMagic = absorbedMagic,
-    manaAbsorbed = manaAbsorbed,
-    manaBroke = manaBroke,
-    manaBefore = manaBefore,
-    manaAfter = (s.res or 0),
-    dodge = dodgeBefore,
-    dodged = false,
-    armor = armorBefore,
-    trueArmor = trueArmorBefore,
-    tempArmor = tempArmorBefore,
-    mitigation = mit,
-    damage = dmg,
-    hpBefore = hpBefore,
-    hpAfter = (s.hp or 0),
-    maxHp = baseMaxBefore,
-  })
+    dodge         = dodgeBefore,
+    dodged        = false,
+    armor         = opts.armor and (not opts.isPet) and (s.armor or 0) or nil,
+    trueArmor     = t.trueArmor or 0,
+    tempArmor     = opts.armor and (not opts.isPet) and math.max(0, t.tempArmor or 0) or nil,
+    mitigation    = mit,
+    damage        = dmg,
+    hpBefore      = hpBefore,
+    hpAfter       = t.hp or 0,
+    maxHp         = maxBefore,
+  }
+  if not opts.isPet then
+    entry.input       = amount + absorbedBlock + absorbedMagic
+    entry.manaAbsorbed = manaAbsorbed
+    entry.manaBroke    = manaBroke
+    entry.manaBefore   = manaBefore
+    entry.manaAfter    = s.res or 0
+  end
+  pushHistory(entry)
 
-  updateWoundsSticky(s)
+  if opts.isPet then
+    updatePetWoundsSticky(t)
+  else
+    updateWoundsSticky(s)
+  end
   bump(); notify()
+end
+
+-- Actions
+function Core.DamageWithArmor(amount)
+  local s = Core.state
+  if not s then return end
+  applyHit(s, s, amount, { armor = true,  historyKind = "DAMAGE_ARMOR" })
 end
 
 function Core.DamageTrue(amount)
   local s = Core.state
   if not s then return end
+  applyHit(s, s, amount, { armor = false, historyKind = "DAMAGE_TRUE" })
+end
+
+-- opts: { kind=str, isPet=bool, gainRatio=number|nil, woundCapFn=fn|nil, subject=str|nil }
+-- gainRatio: fixed fraction of maxHp (DivineHeal=0.75, Surgery=0.50); nil = normal heal with cap
+local function applyHeal(s, t, amount, opts)
   amount = clampNumber(amount, 0, 1e9) or 0
 
-  if s.shamanPosture == "FEU" then
-    amount = amount + (s.shamanPostureDmgBonus or 10)
+  local hpBefore  = t.hp or 0
+  local maxBefore = t.maxHp or 0
+
+  local woundCapFn = opts.woundCapFn or (opts.isPet and getPetWoundCap or getWoundCap)
+  local target = opts.isPet and t or s  -- woundCapFn expects the wounds-bearing table
+
+  if opts.gainRatio then
+    -- Bypass heal: fixed ratio, ignores wound cap
+    sfxLayOnHands()
+    local gain = maxBefore * opts.gainRatio
+    t.hp = math.min((t.hp or 0) + gain, maxBefore)
+    if not opts.isPet then clampHpToEffectiveMax(s) end
+    pushHistory({ kind = opts.kind, subject = opts.subject, gain = gain,
+                  hpBefore = hpBefore, hpAfter = t.hp or 0, maxHp = maxBefore })
+    recomputeWounds(t)
+  else
+    -- Normal heal: capped by wound threshold
+    if amount > 0 then sfxHealLight() end
+    local current  = t.hp or 0
+    local proposed = current + amount
+    local capMax   = maxBefore * woundCapFn(target)
+    local healed   = math.min(proposed, capMax, maxBefore)
+    t.hp = math.max(current, healed)
+    if not opts.isPet then clampHpToEffectiveMax(s) end
+    pushHistory({ kind = opts.kind, subject = opts.subject, input = amount,
+                  current = current, proposed = proposed,
+                  capMax = capMax, effMax = maxBefore,
+                  applied = (t.hp or 0) - hpBefore,
+                  hpBefore = hpBefore, hpAfter = t.hp or 0, maxHp = maxBefore,
+                  woundCap = woundCapFn(target) })
+    updateWoundsSticky(t)
   end
 
-  local hpBefore        = (s.hp or 0)
-  local baseMaxBefore   = (s.maxHp or 0)
-  local trueArmorBefore = (s.trueArmor or 0)
-  local tempArmorBefore = math.max(0, s.tempArmor or 0)
-  local dodgeBefore     = math.max(0, s.dodge or 0)
-  local manaBefore      = (s.res or 0)
-
-  -- Esquive : s'applique aussi aux dégâts bruts.
-  if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
-    sfxDodge()
-    pushHistory({
-      kind = "DAMAGE_TRUE",
-      input = amount,
-      dodged = true,
-      dodge = dodgeBefore,
-      trueArmor = trueArmorBefore,
-      tempArmor = tempArmorBefore,
-      hpBefore = hpBefore,
-      hpAfter = hpBefore,
-      maxHp = baseMaxBefore,
-    })
-    bump(); notify()
-    return
-  end
-
-  -- Bouclier magique (PV) : s'applique aussi aux dégâts bruts.
-  local absorbedMagic
-  amount, absorbedMagic = consumeMagicShield(s, amount)
-
-  if absorbedMagic > 0 then
-    sfxMagicShield()
-  elseif amount > 0 then
-    sfxDamage()
-  end
-
-  local mit = trueArmorBefore + tempArmorBefore
-
-  local afterAbsorb = amount
-  local dmg = effDmg(amount, mit)
-
-  local manaAbsorbed, manaBroke = 0, false
-  if dmg > 0 then
-    dmg, manaAbsorbed, manaBroke = applyManaShield(s, dmg)
-  end
-  if dmg > 0 then
-    s.hp = (s.hp or 0) - dmg
-  end
-  clampHpToEffectiveMax(s)
-
-  pushHistory({
-    kind = "DAMAGE_TRUE",
-    input = amount + absorbedMagic,
-    afterAbsorb = afterAbsorb,
-    absorbedMagic = absorbedMagic,
-    manaAbsorbed = manaAbsorbed,
-    manaBroke = manaBroke,
-    manaBefore = manaBefore,
-    manaAfter = (s.res or 0),
-    dodge = dodgeBefore,
-    dodged = false,
-    trueArmor = trueArmorBefore,
-    tempArmor = tempArmorBefore,
-    mitigation = mit,
-    damage = dmg,
-    hpBefore = hpBefore,
-    hpAfter = (s.hp or 0),
-    maxHp = baseMaxBefore,
-  })
-
-  updateWoundsSticky(s)
+  if (t.hp or 0) > 0 and not opts.isPet then s.stabilise = nil end
   bump(); notify()
 end
 
 function Core.Heal(amount)
   local s = Core.state
   if not s then return end
-  amount = clampNumber(amount, 0, 1e9) or 0
-
-  local hpBefore = (s.hp or 0)
-  local baseMaxBefore = (s.maxHp or 0)
-
-  if amount > 0 then sfxHealLight() end
-
-  local current = (s.hp or 0)
-  local proposed = current + amount
-
-  -- Cap selon l'état courant (seuils dynamiques)
-  local baseMax = (s.maxHp or 0)
-  local capMax = (baseMax * getWoundCap(s))
-
-  -- Soins normaux : ne dépassent pas le cap (s'il existe)
-  -- Never reduce HP if current HP is already above the cap.
-  local healed = math.min(proposed, capMax, baseMax)
-  s.hp = math.max(current, healed)
-
-  clampHpToEffectiveMax(s)
-
-  pushHistory({
-    kind = "HEAL",
-    input = amount,
-    current = current,
-    proposed = proposed,
-    capMax = capMax,
-    effMax = baseMax,
-    applied = (s.hp or 0) - hpBefore,
-    hpBefore = hpBefore,
-    hpAfter = (s.hp or 0),
-    maxHp = baseMaxBefore,
-    woundCap = getWoundCap(s),
-  })
-
-  -- IMPORTANT: les soins normaux ne lèvent jamais un seuil
-  updateWoundsSticky(s)
-  if (s.hp or 0) > 0 then s.stabilise = nil end
-  bump(); notify()
+  applyHeal(s, s, amount, { kind = "HEAL" })
 end
 
 function Core.DivineHeal()
   local s = Core.state
   if not s then return end
-
-  local hpBefore = (s.hp or 0)
-  local baseMaxBefore = (s.maxHp or 0)
-
-  sfxLayOnHands()
-  local baseMax = (s.maxHp or 0)
-  local current = (s.hp or 0)
-  local gain = (baseMax * 0.75)
-  s.hp = math.min(current + gain, baseMax)
-  clampHpToEffectiveMax(s)
-
-  pushHistory({
-    kind = "DIVINE_HEAL",
-    gain = gain,
-    hpBefore = hpBefore,
-    hpAfter = (s.hp or 0),
-    maxHp = baseMaxBefore,
-  })
-
-  -- DivineHeal est un bypass : on recalcule les seuils depuis l'état actuel
-  recomputeWounds(s)
-  if (s.hp or 0) > 0 then s.stabilise = nil end
-  bump(); notify()
+  applyHeal(s, s, 0, { kind = "DIVINE_HEAL", gainRatio = 0.75 })
 end
 
 function Core.Surgery()
   local s = Core.state
   if not s then return end
-
-  local hpBefore = (s.hp or 0)
-  local baseMaxBefore = (s.maxHp or 0)
-
-  sfxLayOnHands()
-  local baseMax = (s.maxHp or 0)
-  local current = (s.hp or 0)
-  local gain = (baseMax * 0.50)
-  s.hp = math.min(current + gain, baseMax)
-  clampHpToEffectiveMax(s)
-
-  pushHistory({
-    kind = "SURGERY",
-    gain = gain,
-    hpBefore = hpBefore,
-    hpAfter = (s.hp or 0),
-    maxHp = baseMaxBefore,
-  })
-
-  recomputeWounds(s)
-  if (s.hp or 0) > 0 then s.stabilise = nil end
-  bump(); notify()
+  applyHeal(s, s, 0, { kind = "SURGERY", gainRatio = 0.50 })
 end
 
 function Core.AddRes(amount)
@@ -1415,72 +1283,7 @@ function Core.PetDamageWithArmor(amount)
   if not s then return end
   local p = ensurePet(s)
   if not p.enabled then return end
-
-  amount = clampNumber(amount, 0, 1e9) or 0
-  local hpBefore = p.hp or 0
-  local maxBefore = p.maxHp or 0
-  local dodgeBefore = math.max(0, p.dodge or 0)
-
-  if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
-    sfxDodge()
-    pushHistory({
-      kind = "DAMAGE_ARMOR",
-      subject = "PET",
-      input = amount,
-      dodged = true,
-      dodge = dodgeBefore,
-      armor = p.armor or 0,
-      trueArmor = p.trueArmor or 0,
-      hpBefore = hpBefore,
-      hpAfter = hpBefore,
-      maxHp = maxBefore,
-    })
-    bump(); notify()
-    return
-  end
-
-  local absorbedMagic = 0
-  local mblock = math.max(0, p.tempMagicBlock or 0)
-  if mblock > 0 and amount > 0 then
-    absorbedMagic = math.min(mblock, amount)
-    p.tempMagicBlock = mblock - absorbedMagic
-    amount = amount - absorbedMagic
-  end
-
-  local mit = math.max(0, (p.armor or 0) + (p.trueArmor or 0))
-  local afterAbsorb = amount
-  local dmg = effDmg(amount, mit)
-  if dmg > 0 then
-    p.hp = math.max(0, (p.hp or 0) - dmg)
-  end
-
-  if absorbedMagic > 0 then
-    sfxMagicShield()
-  elseif amount > 0 then
-    sfxDamage()
-  end
-
-  pushHistory({
-    kind = "DAMAGE_ARMOR",
-    subject = "PET",
-    input = amount + absorbedMagic,
-    afterAbsorb = afterAbsorb,
-    absorbedBlock = 0,
-    absorbedMagic = absorbedMagic,
-    dodge = dodgeBefore,
-    dodged = false,
-    armor = p.armor or 0,
-    trueArmor = p.trueArmor or 0,
-    mitigation = mit,
-    damage = dmg,
-    hpBefore = hpBefore,
-    hpAfter = (p.hp or 0),
-    maxHp = maxBefore,
-  })
-
-  updatePetWoundsSticky(p)
-
-  bump(); notify()
+  applyHit(s, p, amount, { armor = true,  isPet = true, historyKind = "DAMAGE_ARMOR", subject = "PET" })
 end
 
 function Core.PetDamageTrue(amount)
@@ -1488,69 +1291,7 @@ function Core.PetDamageTrue(amount)
   if not s then return end
   local p = ensurePet(s)
   if not p.enabled then return end
-
-  amount = clampNumber(amount, 0, 1e9) or 0
-  local hpBefore = p.hp or 0
-  local maxBefore = p.maxHp or 0
-  local dodgeBefore = math.max(0, p.dodge or 0)
-
-  if amount > 0 and dodgeBefore > 0 and amount <= dodgeBefore then
-    sfxDodge()
-    pushHistory({
-      kind = "DAMAGE_TRUE",
-      subject = "PET",
-      input = amount,
-      dodged = true,
-      dodge = dodgeBefore,
-      trueArmor = p.trueArmor or 0,
-      hpBefore = hpBefore,
-      hpAfter = hpBefore,
-      maxHp = maxBefore,
-    })
-    bump(); notify()
-    return
-  end
-
-  local absorbedMagic = 0
-  local mblock = math.max(0, p.tempMagicBlock or 0)
-  if mblock > 0 and amount > 0 then
-    absorbedMagic = math.min(mblock, amount)
-    p.tempMagicBlock = mblock - absorbedMagic
-    amount = amount - absorbedMagic
-  end
-
-  local mit = math.max(0, p.trueArmor or 0)
-  local afterAbsorb = amount
-  local dmg = effDmg(amount, mit)
-  if dmg > 0 then
-    p.hp = math.max(0, (p.hp or 0) - dmg)
-  end
-
-  if absorbedMagic > 0 then
-    sfxMagicShield()
-  elseif amount > 0 then
-    sfxDamage()
-  end
-
-  pushHistory({
-    kind = "DAMAGE_TRUE",
-    subject = "PET",
-    input = amount + absorbedMagic,
-    afterAbsorb = afterAbsorb,
-    absorbedMagic = absorbedMagic,
-    dodge = dodgeBefore,
-    dodged = false,
-    trueArmor = p.trueArmor or 0,
-    mitigation = mit,
-    damage = dmg,
-    hpBefore = hpBefore,
-    hpAfter = (p.hp or 0),
-    maxHp = maxBefore,
-  })
-
-  updatePetWoundsSticky(p)
-
-  bump(); notify()
+  applyHit(s, p, amount, { armor = false, isPet = true, historyKind = "DAMAGE_TRUE",  subject = "PET" })
 end
 
 function Core.PetHeal(amount)
@@ -1558,35 +1299,7 @@ function Core.PetHeal(amount)
   if not s then return end
   local p = ensurePet(s)
   if not p.enabled then return end
-
-  amount = clampNumber(amount, 0, 1e9) or 0
-  local hpBefore = p.hp or 0
-  local maxBefore = p.maxHp or 0
-  if amount > 0 then sfxHealLight() end
-
-  local proposed = hpBefore + amount
-  local capMax = (maxBefore * getPetWoundCap(p))
-  local healed = math.min(proposed, capMax, maxBefore)
-  p.hp = math.max(hpBefore, healed)
-
-  pushHistory({
-    kind = "HEAL",
-    subject = "PET",
-    input = amount,
-    current = hpBefore,
-    proposed = proposed,
-    capMax = capMax,
-    effMax = maxBefore,
-    applied = (p.hp or 0) - hpBefore,
-    hpBefore = hpBefore,
-    hpAfter = (p.hp or 0),
-    maxHp = maxBefore,
-    woundCap = getPetWoundCap(p),
-  })
-
-  updatePetWoundsSticky(p)
-
-  bump(); notify()
+  applyHeal(s, p, amount, { kind = "HEAL",        isPet = true, subject = "PET" })
 end
 
 function Core.PetDivineHeal()
@@ -1594,25 +1307,7 @@ function Core.PetDivineHeal()
   if not s then return end
   local p = ensurePet(s)
   if not p.enabled then return end
-
-  local hpBefore = p.hp or 0
-  local maxBefore = p.maxHp or 0
-  local gain = (maxBefore * 0.75)
-  sfxLayOnHands()
-  p.hp = math.min(maxBefore, hpBefore + gain)
-
-  pushHistory({
-    kind = "DIVINE_HEAL",
-    subject = "PET",
-    gain = gain,
-    hpBefore = hpBefore,
-    hpAfter = (p.hp or 0),
-    maxHp = maxBefore,
-  })
-
-  recomputePetWounds(p)
-
-  bump(); notify()
+  applyHeal(s, p, 0, { kind = "DIVINE_HEAL", isPet = true, subject = "PET", gainRatio = 0.75 })
 end
 
 function Core.PetSurgery()
@@ -1620,23 +1315,5 @@ function Core.PetSurgery()
   if not s then return end
   local p = ensurePet(s)
   if not p.enabled then return end
-
-  local hpBefore = p.hp or 0
-  local maxBefore = p.maxHp or 0
-  local gain = (maxBefore * 0.50)
-  sfxLayOnHands()
-  p.hp = math.min(maxBefore, hpBefore + gain)
-
-  pushHistory({
-    kind = "SURGERY",
-    subject = "PET",
-    gain = gain,
-    hpBefore = hpBefore,
-    hpAfter = (p.hp or 0),
-    maxHp = maxBefore,
-  })
-
-  recomputePetWounds(p)
-
-  bump(); notify()
+  applyHeal(s, p, 0, { kind = "SURGERY",    isPet = true, subject = "PET", gainRatio = 0.50 })
 end
