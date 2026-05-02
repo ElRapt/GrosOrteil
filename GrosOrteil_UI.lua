@@ -692,21 +692,21 @@ function ns.UI_Init()
     end
 
     local iconRestore = mkActionIcon(frame,
-      "Interface/Icons/Spell_Holy_HealingAura",
+      "Interface/Icons/inv12_apextalent_priest_benediction",
       "Restaurer PV",
       "Remet tous les PV au maximum (bonus inclus).",
       function() Core.RestoreHP() end)
     iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -50, 20)
 
     local iconRegenHP = mkActionIcon(frame,
-      "Interface/Icons/Spell_Nature_Rejuvenation",
+      "Interface/Icons/inv12_spell_nature_rejuvenation_empowered",
       "Régénération quotidienne PV",
       "Restaure 10 % du max de PV, ignorant les seuils de blessure.",
       function() Core.DailyRegenHP() end)
     iconRegenHP:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
 
     local iconRegenRes = mkActionIcon(frame,
-      "Interface/Icons/spell_arcane_manatap",
+      "Interface/Icons/inv12_spell_nature_starfall_empowered",
       "Régénération quotidienne mystique",
       "Restaure 20 % de la ressource principale (mana, énergie, etc.).",
       function() Core.DailyRegenRes() end)

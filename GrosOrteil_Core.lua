@@ -119,6 +119,7 @@ local SNAPSHOT_SCALARS = {
 local SNAPSHOT_PET_FIELDS = {
   "enabled", "name", "hp", "maxHp",
   "armor", "trueArmor", "dodge", "tempMagicBlock",
+  "authorityEnabled",
 }
 local SNAPSHOT_POSTURE_BASE = {
   "armor", "dodge", "maxHp",
@@ -150,18 +151,10 @@ end
 
 local function restoreSnapshot(snap)
   local s = Core.state
-  s.hp = snap.hp; s.maxHp = snap.maxHp
-  s.stabilise = snap.stabilise
-  s.classKey = snap.classKey
-  s.res = snap.res; s.maxRes = snap.maxRes
-  s.res2 = snap.res2; s.maxRes2 = snap.maxRes2
-  s.res3 = snap.res3; s.maxRes3 = snap.maxRes3
-  s.res4 = snap.res4; s.maxRes4 = snap.maxRes4
-  s.auth = snap.auth; s.maxAuth = snap.maxAuth
-  s.armor = snap.armor; s.trueArmor = snap.trueArmor
-  s.tempArmor = snap.tempArmor or 0
-  s.dodge = snap.dodge
-  s.tempBlock = snap.tempBlock
+  for i = 1, #SNAPSHOT_SCALARS do
+    local k = SNAPSHOT_SCALARS[i]
+    s[k] = snap[k]
+  end
   if snap.magicShield then
     s.magicShield = s.magicShield or {}
     s.magicShield.hp    = snap.magicShield.hp    or 0
@@ -177,20 +170,15 @@ local function restoreSnapshot(snap)
   else
     s.manaShield = { active = false, armor = 0 }
   end
-  s.shamanPosture = snap.shamanPosture
-  s.shamanPostureDmgBonus = snap.shamanPostureDmgBonus or 0
   local spb = snap.shamanPostureBase
-  s.shamanPostureBase = spb and {
-    armor = spb.armor, dodge = spb.dodge, maxHp = spb.maxHp,
-    maxRes = spb.maxRes, maxRes2 = spb.maxRes2, maxRes3 = spb.maxRes3, maxRes4 = spb.maxRes4,
-  } or nil
+  s.shamanPostureBase = spb and copyKeys(spb, SNAPSHOT_POSTURE_BASE) or nil
   s.wounds.hit25 = snap.wounds.hit25
   s.wounds.hit10 = snap.wounds.hit10
   local p = s.pet; local sp = snap.pet
-  p.enabled = sp.enabled; p.name = sp.name
-  p.hp = sp.hp; p.maxHp = sp.maxHp
-  p.armor = sp.armor; p.trueArmor = sp.trueArmor
-  p.dodge = sp.dodge; p.tempMagicBlock = sp.tempMagicBlock
+  for i = 1, #SNAPSHOT_PET_FIELDS do
+    local k = SNAPSHOT_PET_FIELDS[i]
+    p[k] = sp[k]
+  end
   p.wounds.hit25 = sp.wounds.hit25; p.wounds.hit10 = sp.wounds.hit10
   s.rev = (s.rev or 0) + 1
 end

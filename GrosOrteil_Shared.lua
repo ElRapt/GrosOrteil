@@ -155,11 +155,11 @@ function Shared.SetClassIconTexCoords(tex, classKey)
   if not tex or not tex.SetTexCoord then return end
 
   if classKey == "MEDIC" then
-    tex:SetTexture("Interface\\Icons\\INV_Misc_Bandage_15")
+    tex:SetTexture("Interface\\Icons\\inv_misc_emberweavebandagelight")
     tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     return
   elseif classKey == "SHADOWPRIEST" then
-    tex:SetTexture("Interface\\Icons\\Spell_Shadow_Shadowform")
+    tex:SetTexture("Interface\\Icons\\inv12_ability_priest_powerwordmadness_eye")
     tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     return
   end

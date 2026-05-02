@@ -86,10 +86,22 @@ local function packWounds(w)
   }
 end
 
+local function buildPayload(src, petSrc, classKey)
+  local out = copyNumeric(src, NUMERIC_FIELDS)
+  out.wounds   = packWounds(src.wounds)
+  out.stabilise = src.stabilise and true or false
+  out.classKey = classKey
+  local pet = copyNumeric(petSrc, PET_NUMERIC_FIELDS)
+  pet.enabled = not not petSrc.enabled
+  pet.name    = type(petSrc.name) == "string" and petSrc.name or "Familier"
+  pet.wounds  = packWounds(petSrc.wounds)
+  out.pet = pet
+  return out
+end
+
 local function packStatePayload(s)
   s = s or {}
   local p = type(s.pet) == "table" and s.pet or {}
-
   local classKey = s.classKey
   if (type(classKey) ~= "string" or classKey == "") and UnitClass then
     local _, unitClass = UnitClass("player")
@@ -97,19 +109,7 @@ local function packStatePayload(s)
       classKey = unitClass
     end
   end
-
-  local out = copyNumeric(s, NUMERIC_FIELDS)
-  out.wounds = packWounds(s.wounds)
-  out.stabilise = s.stabilise and true or false
-  out.classKey = classKey
-
-  local pet = copyNumeric(p, PET_NUMERIC_FIELDS)
-  pet.enabled = not not p.enabled
-  pet.name = type(p.name) == "string" and p.name or "Familier"
-  pet.wounds = packWounds(p.wounds)
-  out.pet = pet
-
-  return out
+  return buildPayload(s, p, classKey)
 end
 
 function Comm.SerializeState(state)
@@ -161,18 +161,8 @@ function Comm:DeserializeState(cmd, payload, sender)
     )
 
     local decodedPet = type(decoded.pet) == "table" and decoded.pet or {}
-    local out = copyNumeric(decoded, NUMERIC_FIELDS)
-    out.wounds = packWounds(decoded.wounds)
-    out.stabilise = decoded.stabilise and true or false
-    out.classKey = type(decoded.classKey) == "string" and decoded.classKey or nil
-
-    local pet = copyNumeric(decodedPet, PET_NUMERIC_FIELDS)
-    pet.enabled = not not decodedPet.enabled
-    pet.name = type(decodedPet.name) == "string" and decodedPet.name or "Familier"
-    pet.wounds = packWounds(decodedPet.wounds)
-    out.pet = pet
-
-    return out
+    local classKey = type(decoded.classKey) == "string" and decoded.classKey or nil
+    return buildPayload(decoded, decodedPet, classKey)
   end
 
   if cmd == "STATE_DATA_PART" or cmd == "STATE_DATA_COMPRESSED_PART" then

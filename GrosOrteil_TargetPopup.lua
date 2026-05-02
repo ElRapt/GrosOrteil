@@ -489,7 +489,7 @@ local function createPopup()
 
   popupFrame.chanceIcon = popupFrame.chanceHolder:CreateTexture(nil, "ARTWORK")
   popupFrame.chanceIcon:SetSize(16, 16)
-  popupFrame.chanceIcon:SetTexture("Interface\\Icons\\inv_misc_herb_goldclover")
+  popupFrame.chanceIcon:SetTexture("Interface\\Icons\\inv12_ability_rogue_rollthebones_jackpot")
   popupFrame.chanceIcon:SetPoint("LEFT", popupFrame.chanceHolder, "LEFT", 0, 0)
 
   local chanceBarFrame = CreateFrame("Frame", nil, popupFrame.chanceHolder, "BackdropTemplate")
