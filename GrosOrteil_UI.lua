@@ -425,18 +425,18 @@ function ns.UI_Init()
   -- QoL: allow ESC to close the window.
   -- WoW closes frames listed in UISpecialFrames when pressing Escape.
   do
-    if type(UISpecialFrames) ~= "table" then
-      UISpecialFrames = {}
+    if type(_G.UISpecialFrames) ~= "table" then
+      _G.UISpecialFrames = {}
     end
     local found = false
-    for i = 1, #UISpecialFrames do
-      if UISpecialFrames[i] == "GrosOrteilFrame" then
+    for i = 1, #_G.UISpecialFrames do
+      if _G.UISpecialFrames[i] == "GrosOrteilFrame" then
         found = true
         break
       end
     end
     if not found then
-      UISpecialFrames[#UISpecialFrames + 1] = "GrosOrteilFrame"
+      _G.UISpecialFrames[#_G.UISpecialFrames + 1] = "GrosOrteilFrame"
     end
   end
 
@@ -2355,7 +2355,11 @@ function ns.UI_Init()
       GameTooltip:Show()
     end)
     b:SetScript("OnLeave", function()
-      b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
+      if lastState and b.classKey == lastState.classKey then
+        b:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
+      else
+        b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
+      end
       GameTooltip:Hide()
     end)
 

@@ -115,9 +115,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
     f:UnregisterEvent("ADDON_LOADED")
     f:UnregisterEvent("PLAYER_LOGIN")
 
-    SLASH_GROSORTEIL1 = "/grosorteil"
-    SLASH_GROSORTEIL2 = "/go"
-    SlashCmdList["GROSORTEIL"] = function(msg)
+    _G.SLASH_GROSORTEIL1 = "/grosorteil"
+    _G.SLASH_GROSORTEIL2 = "/go"
+    _G.SlashCmdList["GROSORTEIL"] = function(msg)
       local raw = (msg or "")
       local cmd, rest = raw:match("^(%S+)%s*(.-)$")
       cmd = (cmd or ""):lower()
