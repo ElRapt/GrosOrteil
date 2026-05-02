@@ -108,46 +108,43 @@ local MAX_UNDO = 50
 local undoCoalesce = false
 local prevSnapshot = nil
 
+local SNAPSHOT_SCALARS = {
+  "hp", "maxHp", "stabilise", "classKey",
+  "res", "maxRes", "res2", "maxRes2", "res3", "maxRes3", "res4", "maxRes4",
+  "auth", "maxAuth",
+  "armor", "trueArmor", "tempArmor",
+  "dodge", "tempBlock", "rev",
+  "shamanPosture", "shamanPostureDmgBonus",
+}
+local SNAPSHOT_PET_FIELDS = {
+  "enabled", "name", "hp", "maxHp",
+  "armor", "trueArmor", "dodge", "tempMagicBlock",
+}
+local SNAPSHOT_POSTURE_BASE = {
+  "armor", "dodge", "maxHp",
+  "maxRes", "maxRes2", "maxRes3", "maxRes4",
+}
+
+local function copyKeys(src, keys)
+  local out = {}
+  for i = 1, #keys do out[keys[i]] = src[keys[i]] end
+  return out
+end
+
 local function deepCopyState(s)
-  local c = {}
-  c.hp = s.hp; c.maxHp = s.maxHp
-  c.stabilise = s.stabilise
-  c.classKey = s.classKey
-  c.res = s.res; c.maxRes = s.maxRes
-  c.res2 = s.res2; c.maxRes2 = s.maxRes2
-  c.res3 = s.res3; c.maxRes3 = s.maxRes3
-  c.res4 = s.res4; c.maxRes4 = s.maxRes4
-  c.auth = s.auth; c.maxAuth = s.maxAuth
-  c.armor = s.armor; c.trueArmor = s.trueArmor
-  c.tempArmor = s.tempArmor
-  c.dodge = s.dodge
-  c.tempBlock = s.tempBlock
+  local c = copyKeys(s, SNAPSHOT_SCALARS)
   local ms = s.magicShield
-  c.magicShield = ms and {
-    hp = ms.hp, maxHp = ms.maxHp, armor = ms.armor,
-  } or nil
+  c.magicShield = ms and { hp = ms.hp, maxHp = ms.maxHp, armor = ms.armor } or nil
   local mns = s.manaShield
-  c.manaShield = mns and {
-    active = mns.active, armor = mns.armor,
-  } or nil
-  c.rev = s.rev
-  c.shamanPosture = s.shamanPosture
-  c.shamanPostureDmgBonus = s.shamanPostureDmgBonus
+  c.manaShield = mns and { active = mns.active, armor = mns.armor } or nil
   local spb = s.shamanPostureBase
-  c.shamanPostureBase = spb and {
-    armor = spb.armor, dodge = spb.dodge, maxHp = spb.maxHp,
-    maxRes = spb.maxRes, maxRes2 = spb.maxRes2, maxRes3 = spb.maxRes3, maxRes4 = spb.maxRes4,
-  } or nil
+  c.shamanPostureBase = spb and copyKeys(spb, SNAPSHOT_POSTURE_BASE) or nil
   c.wounds = { hit25 = s.wounds.hit25, hit10 = s.wounds.hit10 }
   local p = s.pet or {}
+  local pc = copyKeys(p, SNAPSHOT_PET_FIELDS)
   local pw = p.wounds or {}
-  c.pet = {
-    enabled = p.enabled, name = p.name,
-    hp = p.hp, maxHp = p.maxHp,
-    armor = p.armor, trueArmor = p.trueArmor,
-    dodge = p.dodge, tempMagicBlock = p.tempMagicBlock,
-    wounds = { hit25 = pw.hit25, hit10 = pw.hit10 },
-  }
+  pc.wounds = { hit25 = pw.hit25, hit10 = pw.hit10 }
+  c.pet = pc
   return c
 end
 
@@ -726,14 +723,7 @@ function Core.SetRes(res, maxRes)
   bump(); notify()
 end
 
-local function resKeysForIndex(i)
-  if i == 1 then return "res", "maxRes" end
-  if i == 2 then return "res2", "maxRes2" end
-  if i == 3 then return "res3", "maxRes3" end
-  if i == 4 then return "res4", "maxRes4" end
-  if i == 5 then return "auth", "maxAuth" end
-  return nil, nil
-end
+local resKeysForIndex = ns.Shared.GetKeysForIdx
 
 function Core.SetResIndex(i, res, maxRes)
   local s = Core.state

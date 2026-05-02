@@ -49,10 +49,47 @@ local function sendAddonMessage(prefix, msg, channel, target)
   dbg("ERROR: no addon message transport available")
 end
 
+-- Numeric fields shared in the addon-message payload. Each entry: { key, default }.
+local NUMERIC_FIELDS = {
+  { "hp", 0 }, { "maxHp", 0 },
+  { "armor", 0 }, { "trueArmor", 0 }, { "dodge", 0 },
+  { "tempBlock", 0 }, { "tempMagicBlock", 0 },
+  { "res", 0 }, { "maxRes", 0 },
+  { "res2", 0 }, { "maxRes2", 0 },
+  { "res3", 0 }, { "maxRes3", 0 },
+  { "res4", 0 }, { "maxRes4", 0 },
+  { "auth", 0 }, { "maxAuth", 5 },
+  { "attaqueMelee", 0 }, { "attaqueDistance", 0 },
+  { "chance", 0 }, { "maxChance", 0 },
+  { "perception", 0 },
+}
+local PET_NUMERIC_FIELDS = {
+  { "hp", 0 }, { "maxHp", 0 },
+  { "armor", 0 }, { "trueArmor", 0 }, { "dodge", 0 },
+  { "tempMagicBlock", 0 },
+}
+
+local function copyNumeric(src, fields)
+  local out = {}
+  src = src or {}
+  for i = 1, #fields do
+    local k, def = fields[i][1], fields[i][2]
+    out[k] = tonumber(src[k]) or def
+  end
+  return out
+end
+
+local function packWounds(w)
+  return {
+    hit25 = not not (w and w.hit25),
+    hit10 = not not (w and w.hit10),
+  }
+end
+
 local function packStatePayload(s)
   s = s or {}
-  local p = s.pet
-  if type(p) ~= "table" then p = {} end
+  local p = type(s.pet) == "table" and s.pet or {}
+
   local classKey = s.classKey
   if (type(classKey) ~= "string" or classKey == "") and UnitClass then
     local _, unitClass = UnitClass("player")
@@ -60,50 +97,19 @@ local function packStatePayload(s)
       classKey = unitClass
     end
   end
-  return {
-    hp = s.hp or 0,
-    maxHp = s.maxHp or 0,
-    armor = s.armor or 0,
-    trueArmor = s.trueArmor or 0,
-    dodge = s.dodge or 0,
-    tempBlock = s.tempBlock or 0,
-    tempMagicBlock = s.tempMagicBlock or 0,
-    res = s.res or 0,
-    maxRes = s.maxRes or 0,
-    res2 = s.res2 or 0,
-    maxRes2 = s.maxRes2 or 0,
-    res3 = s.res3 or 0,
-    maxRes3 = s.maxRes3 or 0,
-    res4 = s.res4 or 0,
-    maxRes4 = s.maxRes4 or 0,
-    auth = s.auth or 0,
-    maxAuth = s.maxAuth or 5,
-    attaqueMelee    = s.attaqueMelee    or 0,
-    attaqueDistance = s.attaqueDistance or 0,
-    chance          = s.chance          or 0,
-    maxChance       = s.maxChance       or 0,
-    perception      = s.perception      or 0,
-    wounds = {
-      hit25 = not not (s.wounds and s.wounds.hit25),
-      hit10 = not not (s.wounds and s.wounds.hit10),
-    },
-    stabilise = s.stabilise and true or false,
-    classKey = classKey,
-    pet = {
-      enabled = not not p.enabled,
-      name = type(p.name) == "string" and p.name or "Familier",
-      hp = tonumber(p.hp) or 0,
-      maxHp = tonumber(p.maxHp) or 0,
-      armor = tonumber(p.armor) or 0,
-      trueArmor = tonumber(p.trueArmor) or 0,
-      dodge = tonumber(p.dodge) or 0,
-      tempMagicBlock = tonumber(p.tempMagicBlock) or 0,
-      wounds = {
-        hit25 = not not (p.wounds and p.wounds.hit25),
-        hit10 = not not (p.wounds and p.wounds.hit10),
-      },
-    },
-  }
+
+  local out = copyNumeric(s, NUMERIC_FIELDS)
+  out.wounds = packWounds(s.wounds)
+  out.stabilise = s.stabilise and true or false
+  out.classKey = classKey
+
+  local pet = copyNumeric(p, PET_NUMERIC_FIELDS)
+  pet.enabled = not not p.enabled
+  pet.name = type(p.name) == "string" and p.name or "Familier"
+  pet.wounds = packWounds(p.wounds)
+  out.pet = pet
+
+  return out
 end
 
 function Comm.SerializeState(state)
@@ -154,50 +160,19 @@ function Comm:DeserializeState(cmd, payload, sender)
       tostring(decoded.maxRes)
     )
 
-    return {
-      hp = tonumber(decoded.hp) or 0,
-      maxHp = tonumber(decoded.maxHp) or 0,
-      armor = tonumber(decoded.armor) or 0,
-      trueArmor = tonumber(decoded.trueArmor) or 0,
-      dodge = tonumber(decoded.dodge) or 0,
-      tempBlock = tonumber(decoded.tempBlock) or 0,
-      tempMagicBlock = tonumber(decoded.tempMagicBlock) or 0,
-      res = tonumber(decoded.res) or 0,
-      maxRes = tonumber(decoded.maxRes) or 0,
-      res2 = tonumber(decoded.res2) or 0,
-      maxRes2 = tonumber(decoded.maxRes2) or 0,
-      res3 = tonumber(decoded.res3) or 0,
-      maxRes3 = tonumber(decoded.maxRes3) or 0,
-      res4 = tonumber(decoded.res4) or 0,
-      maxRes4 = tonumber(decoded.maxRes4) or 0,
-      auth = tonumber(decoded.auth) or 0,
-      maxAuth = tonumber(decoded.maxAuth) or 5,
-      attaqueMelee    = tonumber(decoded.attaqueMelee)    or 0,
-      attaqueDistance = tonumber(decoded.attaqueDistance) or 0,
-      chance          = tonumber(decoded.chance)          or 0,
-      maxChance       = tonumber(decoded.maxChance)       or 0,
-      perception      = tonumber(decoded.perception)      or 0,
-      wounds = {
-        hit25 = not not (decoded.wounds and decoded.wounds.hit25),
-        hit10 = not not (decoded.wounds and decoded.wounds.hit10),
-      },
-      stabilise = decoded.stabilise and true or false,
-      classKey = type(decoded.classKey) == "string" and decoded.classKey or nil,
-      pet = {
-        enabled = not not (decoded.pet and decoded.pet.enabled),
-        name = decoded.pet and type(decoded.pet.name) == "string" and decoded.pet.name or "Familier",
-        hp = decoded.pet and tonumber(decoded.pet.hp) or 0,
-        maxHp = decoded.pet and tonumber(decoded.pet.maxHp) or 0,
-        armor = decoded.pet and tonumber(decoded.pet.armor) or 0,
-        trueArmor = decoded.pet and tonumber(decoded.pet.trueArmor) or 0,
-        dodge = decoded.pet and tonumber(decoded.pet.dodge) or 0,
-        tempMagicBlock = decoded.pet and tonumber(decoded.pet.tempMagicBlock) or 0,
-        wounds = {
-          hit25 = not not (decoded.pet and decoded.pet.wounds and decoded.pet.wounds.hit25),
-          hit10 = not not (decoded.pet and decoded.pet.wounds and decoded.pet.wounds.hit10),
-        },
-      },
-    }
+    local decodedPet = type(decoded.pet) == "table" and decoded.pet or {}
+    local out = copyNumeric(decoded, NUMERIC_FIELDS)
+    out.wounds = packWounds(decoded.wounds)
+    out.stabilise = decoded.stabilise and true or false
+    out.classKey = type(decoded.classKey) == "string" and decoded.classKey or nil
+
+    local pet = copyNumeric(decodedPet, PET_NUMERIC_FIELDS)
+    pet.enabled = not not decodedPet.enabled
+    pet.name = type(decodedPet.name) == "string" and decodedPet.name or "Familier"
+    pet.wounds = packWounds(decodedPet.wounds)
+    out.pet = pet
+
+    return out
   end
 
   if cmd == "STATE_DATA_PART" or cmd == "STATE_DATA_COMPRESSED_PART" then

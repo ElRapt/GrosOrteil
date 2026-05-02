@@ -45,6 +45,7 @@ local currentShownIsPet  = false
 -- Allows instant popup display on re-target; fresh data still fetched in background.
 local stateCache = {}
 local CACHE_TTL  = 60  -- seconds
+local CACHE_MAX  = 64  -- entry cap; oldest are dropped when exceeded
 
 -- Hover popup forward declarations (functions defined at end of file)
 local hoverFrame
@@ -64,6 +65,17 @@ end
 
 local function setCached(key, state)
   stateCache[key] = { state = state, t = GetTime and GetTime() or 0 }
+  -- Enforce a soft cap: drop the oldest entry when the cache grows past CACHE_MAX.
+  local count = 0
+  for _ in pairs(stateCache) do count = count + 1 end
+  if count <= CACHE_MAX then return end
+  local oldestKey, oldestT
+  for k, v in pairs(stateCache) do
+    if not oldestT or (v.t or 0) < oldestT then
+      oldestKey, oldestT = k, v.t or 0
+    end
+  end
+  if oldestKey then stateCache[oldestKey] = nil end
 end
 
 local function normalizeName(name)
@@ -1536,7 +1548,8 @@ tryShowHover = function()
     return
   end
 
-  local state = getCached(toCacheKey(unitName))
+  local cacheKey = toCacheKey(unitName)
+  local state = getCached(cacheKey)
 
   -- Fallback for the local player: use ns.Core.state directly (never cached).
   if not state and UnitName then
@@ -1546,17 +1559,19 @@ tryShowHover = function()
     end
   end
 
-  if not state then
-    -- Request state from the hovered player (mirrors OnTargetChanged), rate-limited.
-    local key = toCacheKey(unitName)
-    local now = GetTime and GetTime() or 0
-    if key and not (pendingHoverUnit == key and (now - pendingHoverTime) < HOVER_REQUEST_COOLDOWN) then
-      pendingHoverUnit = key
-      pendingHoverTime = now
-      if ns.Comm and ns.Comm.RequestState then
-        ns.Comm:RequestState(unitName)
-      end
+  -- Always fire a background refresh (rate-limited), whether or not we have
+  -- a cached state. This keeps the hover up to date when hovering for more
+  -- than HOVER_REQUEST_COOLDOWN seconds, or when cached data is stale.
+  local now = GetTime and GetTime() or 0
+  if cacheKey and not (pendingHoverUnit == cacheKey and (now - pendingHoverTime) < HOVER_REQUEST_COOLDOWN) then
+    pendingHoverUnit = cacheKey
+    pendingHoverTime = now
+    if ns.Comm and ns.Comm.RequestState then
+      ns.Comm:RequestState(unitName)
     end
+  end
+
+  if not state then
     hideHoverPopup()
     return
   end
