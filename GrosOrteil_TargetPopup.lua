@@ -319,38 +319,17 @@ local function createStatBar(parent, yOffset)
   topText:SetJustifyH("LEFT")
   topText:SetText("")
 
-  local barFrame = CreateFrame("Frame", nil, holder, "BackdropTemplate")
-  barFrame:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, -14)
-  barFrame:SetSize(304, 20)
+  local bf = Shared.MakeBarFrame(holder, 304, 20)
+  bf.frame:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, -14)
 
-  barFrame:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = 1,
-  })
-  barFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.95)
-  barFrame:SetBackdropBorderColor(0.15, 0.15, 0.15, 0.90)
-
-  local bar = CreateFrame("StatusBar", nil, barFrame)
-  bar:SetAllPoints(barFrame)
-  bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-  bar:SetMinMaxValues(0, 100)
-  bar:SetValue(0)
-
-  local sheen = bar:CreateTexture(nil, "OVERLAY")
+  local sheen = bf.bar:CreateTexture(nil, "OVERLAY")
   sheen:SetTexture("Interface\\Buttons\\WHITE8x8")
   sheen:SetVertexColor(1, 1, 1, 0.10)
-  sheen:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-  sheen:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+  sheen:SetPoint("TOPLEFT", bf.bar, "TOPLEFT", 0, 0)
+  sheen:SetPoint("TOPRIGHT", bf.bar, "TOPRIGHT", 0, 0)
   sheen:SetHeight(10)
 
-  return {
-    holder = holder,
-    topText = topText,
-    frame = barFrame,
-    bar = bar,
-    markers = {},
-  }
+  return { holder = holder, topText = topText, frame = bf.frame, bar = bf.bar, markers = {} }
 end
 
 local function updateHpShieldOverlays(row, hpNow, maxHp, blockValue, magicValue)
@@ -614,19 +593,11 @@ local function createPopup()
   popupFrame.petHpRow.magicOverlay:Hide()
   popupFrame.petHpRow.holder:Hide()
 
-  popupFrame.petHpMarkers = {
-    makeMarker(popupFrame.petHpRow.bar, 0.50, 1.0, 1.0, 1.0, 0.35, 2),
-    makeMarker(popupFrame.petHpRow.bar, 0.25, 1.0, 0.65, 0.10, 0.45, 2),
-    makeMarker(popupFrame.petHpRow.bar, 0.10, 1.0, 0.15, 0.15, 0.55, 2),
-  }
-  popupFrame.petHpCapMarker = makeMarker(popupFrame.petHpRow.bar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
+  popupFrame.petHpMarkers, popupFrame.petHpCapMarker =
+    Shared.MakeHpThresholdMarkers(popupFrame.petHpRow.bar)
 
-  popupFrame.hpMarkers = {
-    makeMarker(popupFrame.hpRow.bar, 0.50, 1.0, 1.0, 1.0, 0.35, 2),
-    makeMarker(popupFrame.hpRow.bar, 0.25, 1.0, 0.65, 0.10, 0.45, 2),
-    makeMarker(popupFrame.hpRow.bar, 0.10, 1.0, 0.15, 0.15, 0.55, 2),
-  }
-  popupFrame.hpCapMarker = makeMarker(popupFrame.hpRow.bar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
+  popupFrame.hpMarkers, popupFrame.hpCapMarker =
+    Shared.MakeHpThresholdMarkers(popupFrame.hpRow.bar)
 
   popupFrame.closeButton = CreateFrame("Button", nil, popupFrame, "UIPanelCloseButton")
   popupFrame.closeButton:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -3, -2)
@@ -1195,29 +1166,15 @@ local function positionHoverMarkers(markers, bar)
 end
 
 local function createHoverBar(parent)
-  local barFrame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-  barFrame:SetSize(HOVER_BAR_W, HOVER_BAR_H)
-  barFrame:SetBackdrop({
-    bgFile   = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = 1,
-  })
-  barFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.95)
-  barFrame:SetBackdropBorderColor(0.15, 0.15, 0.15, 0.90)
+  local bf = Shared.MakeBarFrame(parent, HOVER_BAR_W, HOVER_BAR_H)
 
-  local bar = CreateFrame("StatusBar", nil, barFrame)
-  bar:SetAllPoints(barFrame)
-  bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-  bar:SetMinMaxValues(0, 100)
-  bar:SetValue(0)
-
-  local label = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  label:SetAllPoints(bar)
+  local label = bf.bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  label:SetAllPoints(bf.bar)
   label:SetJustifyH("CENTER")
   label:SetJustifyV("MIDDLE")
   label:SetText("")
 
-  return { frame = barFrame, bar = bar, label = label, markers = {} }
+  return { frame = bf.frame, bar = bf.bar, label = label, markers = {} }
 end
 
 local function createHoverPopup()
@@ -1255,12 +1212,8 @@ local function createHoverPopup()
   hoverFrame.hpBar.magicOverlay:SetPoint("BOTTOM", hoverFrame.hpBar.bar, "BOTTOM", 0, 0)
   hoverFrame.hpBar.magicOverlay:Hide()
 
-  hoverFrame.hpMarkers = {
-    makeMarker(hoverFrame.hpBar.bar, 0.50, 1.0, 1.0, 1.0, 0.35, 2),
-    makeMarker(hoverFrame.hpBar.bar, 0.25, 1.0, 0.65, 0.10, 0.45, 2),
-    makeMarker(hoverFrame.hpBar.bar, 0.10, 1.0, 0.15, 0.15, 0.55, 2),
-  }
-  hoverFrame.hpCapMarker = makeMarker(hoverFrame.hpBar.bar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
+  hoverFrame.hpMarkers, hoverFrame.hpCapMarker =
+    Shared.MakeHpThresholdMarkers(hoverFrame.hpBar.bar)
 
   -- Resource bars (up to 5, shown/hidden dynamically)
   hoverFrame.resBars = {}

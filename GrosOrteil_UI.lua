@@ -908,14 +908,7 @@ function ns.UI_Init()
   magicOverlay:Hide()
 
   -- Marqueurs 50/25/10%
-  local makeMarker = Shared.MakeMarker
-  UI.hpMarkers = {}
-  UI.hpMarkers[1] = makeMarker(hpBar, 0.50, 1, 1, 1, 0.35, 2)
-  UI.hpMarkers[2] = makeMarker(hpBar, 0.25, 1.0, 0.65, 0.1, 0.45, 2)
-  UI.hpMarkers[3] = makeMarker(hpBar, 0.10, 1.0, 0.15, 0.15, 0.55, 2)
-
-  local capMarker = makeMarker(hpBar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
-  UI.hpCapMarker = capMarker
+  UI.hpMarkers, UI.hpCapMarker = Shared.MakeHpThresholdMarkers(hpBar)
 
   -- HP marker cache and reposition function — defined once here, called from OnChange and OnSizeChanged.
   UI.hpMarkerCache = { baseMaxHp = 0, effMaxHp = 0, cap = 1.0 }
@@ -1009,6 +1002,8 @@ function ns.UI_Init()
   for i = 1, 5 do
     mkResBar(i)
   end
+
+  local makeMarker = Shared.MakeMarker
 
   -- Warlock Corruption thresholds (max always 60)
   UI.corruptionMarkers = {}

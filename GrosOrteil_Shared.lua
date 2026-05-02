@@ -269,6 +269,49 @@ function Shared.UpdateHpShieldOverlays(blockOverlay, magicOverlay, bar, hpNow, m
 end
 
 ---------------------------------------------------------------------------
+-- Bar frame factory: dark backdrop + StatusBar, used by popup stat rows
+-- Returns: { frame=BackdropFrame, bar=StatusBar }
+---------------------------------------------------------------------------
+function Shared.MakeBarFrame(parent, w, h)
+  local barFrame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+  barFrame:SetSize(w, h)
+  barFrame:SetBackdrop({
+    bgFile   = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Buttons\\WHITE8x8",
+    edgeSize = 1,
+  })
+  barFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.95)
+  barFrame:SetBackdropBorderColor(0.15, 0.15, 0.15, 0.90)
+
+  local bar = CreateFrame("StatusBar", nil, barFrame)
+  bar:SetAllPoints(barFrame)
+  bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  bar:SetMinMaxValues(0, 100)
+  bar:SetValue(0)
+
+  return { frame = barFrame, bar = bar }
+end
+
+---------------------------------------------------------------------------
+-- HP threshold + cap markers, identical across main UI, popup and hover
+-- Returns: markers={[1]=50%, [2]=25%, [3]=10%}, capMarker=100%
+---------------------------------------------------------------------------
+local HP_MARKER_DEFS = {
+  { pct = 0.50, r = 1.0, g = 1.0,  b = 1.0,  a = 0.35, w = 2 },
+  { pct = 0.25, r = 1.0, g = 0.65, b = 0.10, a = 0.45, w = 2 },
+  { pct = 0.10, r = 1.0, g = 0.15, b = 0.15, a = 0.55, w = 2 },
+}
+function Shared.MakeHpThresholdMarkers(bar)
+  local markers = {}
+  for i = 1, #HP_MARKER_DEFS do
+    local d = HP_MARKER_DEFS[i]
+    markers[i] = Shared.MakeMarker(bar, d.pct, d.r, d.g, d.b, d.a, d.w)
+  end
+  local capMarker = Shared.MakeMarker(bar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
+  return markers, capMarker
+end
+
+---------------------------------------------------------------------------
 -- French class name lookup
 ---------------------------------------------------------------------------
 function Shared.GetClassNameFr(classKey)
