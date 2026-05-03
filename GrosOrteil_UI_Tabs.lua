@@ -38,26 +38,38 @@ function ns.UI_BuildFicheTab(ctx)
     Core.SetHP(ctx.getNumber(hpCur), ctx.getNumber(hpMax))
   end
   local function applyAllArmor()
-    Core.SetArmor(ctx.getNumber(armorEB), ctx.getNumber(trueArmorEB))
-    Core.SetTempArmor(ctx.getNumber(tempArmorEB))
-    Core.SetDodge(ctx.getNumber(dodgeEB))
-    Core.SetTempBlock(ctx.getNumber(blockEB))
+    local vArmor     = ctx.getNumber(armorEB)
+    local vTrueArmor = ctx.getNumber(trueArmorEB)
+    local vTempArmor = ctx.getNumber(tempArmorEB)
+    local vDodge     = ctx.getNumber(dodgeEB)
+    local vBlock     = ctx.getNumber(blockEB)
+    Core.SetArmor(vArmor, vTrueArmor)
+    Core.SetTempArmor(vTempArmor)
+    Core.SetDodge(vDodge)
+    Core.SetTempBlock(vBlock)
   end
   local function applyAllAttaque()
     if Core and Core.SetAttaque then
-      Core.SetAttaque(ctx.getNumber(attaqueMeleeEB), ctx.getNumber(attaqueDistanceEB))
+      local vMelee = ctx.getNumber(attaqueMeleeEB)
+      local vDist  = ctx.getNumber(attaqueDistanceEB)
+      Core.SetAttaque(vMelee, vDist)
     end
   end
   local function applyAllChance()
     if Core and Core.SetChance then
-      Core.SetChance(ctx.getNumber(chanceCurEB), ctx.getNumber(chanceMaxEB))
+      local vCur = ctx.getNumber(chanceCurEB)
+      local vMax = ctx.getNumber(chanceMaxEB)
+      Core.SetChance(vCur, vMax)
     end
   end
   local function applyAllPerception()
     if Core and Core.SetPerception then Core.SetPerception(ctx.getNumber(perceptionEB)) end
   end
   local function applyAllMagicShield()
-    Core.SetMagicShield(ctx.getNumber(msHpEB), ctx.getNumber(msMaxHpEB), ctx.getNumber(msArmorEB))
+    local vHp    = ctx.getNumber(msHpEB)
+    local vMaxHp = ctx.getNumber(msMaxHpEB)
+    local vArmor = ctx.getNumber(msArmorEB)
+    Core.SetMagicShield(vHp, vMaxHp, vArmor)
   end
   local function applyAllManaShield()
     Core.SetManaShieldArmor(ctx.getNumber(mnsArmorEB))

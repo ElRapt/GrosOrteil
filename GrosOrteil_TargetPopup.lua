@@ -902,75 +902,17 @@ local function showForState(targetName, state, petOnly)
   end
 
   local dynamicHeight = 188 + (shownRes * 34)
-  local pet = state.pet
-  local hasPet = false  -- pet is shown only when targeted directly
-  if hasPet then
-    local petY = -174 - (shownRes * 34) - 10
-
-    popupFrame.petNameText:ClearAllPoints()
-    popupFrame.petNameText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, petY)
-    popupFrame.petHpRow.holder:ClearAllPoints()
-    popupFrame.petHpRow.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, petY - 38)
-
-    local petName = type(pet.name) == "string" and pet.name or "Familier"
-    local petArmor = tonumber(pet.armor) or 0
-    local petTrueArmor = tonumber(pet.trueArmor) or 0
-    local petDodge = tonumber(pet.dodge) or 0
-    local petMaxHp = tonumber(pet.maxHp) or 1
-    local petHp = tonumber(pet.hp) or 0
-    if petMaxHp <= 0 then petMaxHp = 1 end
-
-    popupFrame.petNameText:SetText("Familier: " .. petName)
-    popupFrame.petArmorText:SetText(string.format("Armure: %d (+%d)", roundNumber(petArmor), roundNumber(petTrueArmor)))
-    popupFrame.petDodgeText:SetText(string.format("Esquive: %d", roundNumber(petDodge)))
-    setBarValue(popupFrame.petHpRow, "PV familier", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
-    updateHpShieldOverlays(
-      popupFrame.petHpRow,
-      petHp,
-      petMaxHp,
-      0,
-      tonumber(pet.tempMagicBlock) or 0
-    )
-
-    for i = 1, #popupFrame.petHpMarkers do
-      local m = popupFrame.petHpMarkers[i]
-      m.pct = m.pct or 0
-    end
-    positionMarkers(popupFrame.petHpMarkers, popupFrame.petHpRow.bar)
-
-    local petWoundCap = 1.0
-    if pet.wounds and pet.wounds.hit10 then
-      petWoundCap = 0.25
-    elseif pet.wounds and pet.wounds.hit25 then
-      petWoundCap = 0.50
-    end
-    if petWoundCap >= 1.0 then
-      popupFrame.petHpCapMarker:Hide()
-    else
-      popupFrame.petHpCapMarker.pct = petWoundCap
-      positionMarkers({ popupFrame.petHpCapMarker }, popupFrame.petHpRow.bar)
-    end
-
-    popupFrame.petNameText:Show()
-    popupFrame.petArmorIcon:Show()
-    popupFrame.petArmorText:Show()
-    popupFrame.petDodgeIcon:Show()
-    popupFrame.petDodgeText:Show()
-    popupFrame.petHpRow.holder:Show()
-
-    dynamicHeight = dynamicHeight + 86
-  else
-    popupFrame.petNameText:Hide()
-    popupFrame.petArmorIcon:Hide()
-    popupFrame.petArmorText:Hide()
-    popupFrame.petDodgeIcon:Hide()
-    popupFrame.petDodgeText:Hide()
-    popupFrame.petHpRow.holder:Hide()
-    hideMarkers(popupFrame.petHpMarkers)
-    if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
-    hideOverlay(popupFrame.petHpRow.blockOverlay)
-    hideOverlay(popupFrame.petHpRow.magicOverlay)
-  end
+  -- TODO: re-enable when pet state is networked
+  popupFrame.petNameText:Hide()
+  popupFrame.petArmorIcon:Hide()
+  popupFrame.petArmorText:Hide()
+  popupFrame.petDodgeIcon:Hide()
+  popupFrame.petDodgeText:Hide()
+  popupFrame.petHpRow.holder:Hide()
+  hideMarkers(popupFrame.petHpMarkers)
+  if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
+  hideOverlay(popupFrame.petHpRow.blockOverlay)
+  hideOverlay(popupFrame.petHpRow.magicOverlay)
 
   if dynamicHeight < 188 then dynamicHeight = 188 end
   popupFrame:SetHeight(dynamicHeight)
@@ -1091,9 +1033,15 @@ function Popup:Initialize()
   -- Hover popup: hook GameTooltip to detect player mouseover
   local gt = GameTooltip
   if gt then
+    local hoverPending = false
     hooksecurefunc(gt, "SetUnit", function()
-      if tryShowHover and C_Timer then
-        C_Timer.After(0, tryShowHover)
+      if hoverPending then return end
+      hoverPending = true
+      if C_Timer then
+        C_Timer.After(0, function()
+          hoverPending = false
+          if tryShowHover then tryShowHover() end
+        end)
       end
     end)
     gt:HookScript("OnHide", function()

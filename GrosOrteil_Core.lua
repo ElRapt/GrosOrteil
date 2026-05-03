@@ -91,7 +91,8 @@ end
 
 function Core.OnChange(fn)
   if type(fn) ~= "function" then return end
-  listeners[#listeners + 1] = fn
+  local id = #listeners + 1
+  listeners[id] = fn
 
   -- Important: Core_Init() may have already fired notify() before UI registers.
   -- Push the current cached state immediately so the UI is correct on /reload.
@@ -99,6 +100,8 @@ function Core.OnChange(fn)
     local ok, err = pcall(fn, Core.state)
     if not ok then reportError(err) end
   end
+
+  return function() listeners[id] = nil end
 end
 
 -- ── Undo / Redo ─────────────────────────────────────────────────────────

@@ -568,6 +568,14 @@ function ns.UI_Init()
   grip:SetPushedTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Down")
   grip:SetFrameLevel(frame:GetFrameLevel() + 10)
 
+  local function onResizeUpdate()
+    local cx, cy = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    local w = math.max(MIN_W, math.min(MAX_W, resizeBaseW + (cx - resizeOriginX) / scale))
+    local h = math.max(MIN_H, math.min(MAX_H, resizeBaseH - (cy - resizeOriginY) / scale))
+    frame:SetSize(w, h)
+  end
+
   grip:SetScript("OnMouseDown", function(_, button)
     if button == "LeftButton" then
       -- Re-anchor to TOPLEFT before resizing so the top-left corner stays fixed.
@@ -582,20 +590,13 @@ function ns.UI_Init()
       resizeBaseW = frame:GetWidth()
       resizeBaseH = frame:GetHeight()
       sizeLabel:Show()
+      grip:SetScript("OnUpdate", onResizeUpdate)
     end
-  end)
-
-  grip:SetScript("OnUpdate", function()
-    if not resizing then return end
-    local cx, cy = GetCursorPosition()
-    local scale = UIParent:GetEffectiveScale()
-    local w = math.max(MIN_W, math.min(MAX_W, resizeBaseW + (cx - resizeOriginX) / scale))
-    local h = math.max(MIN_H, math.min(MAX_H, resizeBaseH - (cy - resizeOriginY) / scale))
-    frame:SetSize(w, h)
   end)
 
   grip:SetScript("OnMouseUp", function(_, button)
     if button == "LeftButton" and resizing then
+      grip:SetScript("OnUpdate", nil)
       resizing = false
       sizeLabel:Hide()
       local w = math.floor(math.max(MIN_W, math.min(MAX_W, frame:GetWidth())))
