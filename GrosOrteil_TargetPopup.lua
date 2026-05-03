@@ -577,8 +577,13 @@ local function createPopup()
   popupFrame.petDodgeText:SetText("Esquive: 0")
   popupFrame.petDodgeText:Hide()
 
+  popupFrame.petAttaqueIcon = popupFrame:CreateTexture(nil, "ARTWORK")
+  popupFrame.petAttaqueIcon:SetSize(14, 14)
+  popupFrame.petAttaqueIcon:SetTexture("Interface\\Icons\\INV_Sword_04")
+  popupFrame.petAttaqueIcon:Hide()
+
   popupFrame.petAttaqueText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  popupFrame.petAttaqueText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -296)
+  popupFrame.petAttaqueText:SetPoint("LEFT", popupFrame.petAttaqueIcon, "RIGHT", 4, 0)
   popupFrame.petAttaqueText:SetJustifyH("LEFT")
   popupFrame.petAttaqueText:SetText("CaC: 0 | Dist: 0")
   popupFrame.petAttaqueText:Hide()
@@ -669,7 +674,7 @@ local function showForState(targetName, state, petOnly)
     popupFrame.dodgeText:SetText(string.format("Esquive: %d", roundNumber(petDodge)))
 
     setBarValue(popupFrame.hpRow, "PV", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
-    updateHpShieldOverlays(popupFrame.hpRow, petHp, petMaxHp, 0, tonumber(pet.tempMagicBlock) or 0)
+    updateHpShieldOverlays(popupFrame.hpRow, petHp, petMaxHp, 0, (pet.magicShield and pet.magicShield.hp or 0))
 
     local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
     for i = 1, #popupFrame.hpMarkers do
@@ -692,23 +697,30 @@ local function showForState(targetName, state, petOnly)
       if row then row.holder:Hide(); hideMarkers(row.markers) end
     end
 
-    popupFrame.attaqueIcon:Hide()
-    popupFrame.attaqueText:Hide()
+    -- Attaque row (same Y=-92 as owner layout; HP bar shifts down to -114)
+    local petAttM = tonumber(pet.attaqueMelee)    or 0
+    local petAttD = tonumber(pet.attaqueDistance) or 0
+    popupFrame.attaqueIcon:ClearAllPoints()
+    popupFrame.attaqueIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -92)
+    popupFrame.attaqueText:SetText(string.format("CaC: %d | Dist: %d", roundNumber(petAttM), roundNumber(petAttD)))
+    popupFrame.attaqueIcon:Show()
+    popupFrame.attaqueText:Show()
     popupFrame.perceptionIcon:Hide()
     popupFrame.perceptionText:Hide()
     popupFrame.chanceHolder:Hide()
 
-    -- Restore hpRow to its original position for petOnly layout.
+    -- hpRow shifted down 22px to make room for the attaque row.
     popupFrame.hpRow.holder:ClearAllPoints()
-    popupFrame.hpRow.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -92)
+    popupFrame.hpRow.holder:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -114)
 
     popupFrame.petNameText:Hide()
     popupFrame.petArmorIcon:Hide()
     popupFrame.petArmorText:Hide()
     popupFrame.petDodgeIcon:Hide()
     popupFrame.petDodgeText:Hide()
-    if popupFrame.petAttaqueText    then popupFrame.petAttaqueText:Hide()    end
-    if popupFrame.petTempArmorText  then popupFrame.petTempArmorText:Hide()  end
+    if popupFrame.petAttaqueIcon     then popupFrame.petAttaqueIcon:Hide()     end
+    if popupFrame.petAttaqueText     then popupFrame.petAttaqueText:Hide()     end
+    if popupFrame.petTempArmorText   then popupFrame.petTempArmorText:Hide()   end
     if popupFrame.petMagicShieldText then popupFrame.petMagicShieldText:Hide() end
     popupFrame.petHpRow.holder:Hide()
     hideMarkers(popupFrame.petHpMarkers)
@@ -717,7 +729,7 @@ local function showForState(targetName, state, petOnly)
     hideOverlay(popupFrame.petHpRow.magicOverlay)
     if popupFrame.statusBanner then popupFrame.statusBanner:Hide() end
 
-    local dynamicHeight = 140
+    local dynamicHeight = 162
     if dynamicHeight < 180 then dynamicHeight = 180 end
     popupFrame:SetHeight(dynamicHeight)
     popupFrame:Show()
@@ -925,7 +937,7 @@ local function showForState(targetName, state, petOnly)
   local dynamicHeight = 188 + (shownRes * 34)
 
   local pet = type(state.pet) == "table" and state.pet or {}
-  if pet.enabled then
+  if not pet.enabled then
     local petMaxHp = math.max(1, tonumber(pet.maxHp) or 1)
     local petHp    = tonumber(pet.hp) or 0
     local pms      = type(pet.magicShield) == "table" and pet.magicShield or {}
@@ -947,15 +959,16 @@ local function showForState(targetName, state, petOnly)
       roundNumber(tonumber(pet.dodge) or 0)))
     popupFrame.petDodgeIcon:Show(); popupFrame.petDodgeText:Show()
 
-    popupFrame.petAttaqueText:ClearAllPoints()
-    popupFrame.petAttaqueText:SetPoint("TOPLEFT", popupFrame.petArmorIcon, "BOTTOMLEFT", 0, -4)
+    popupFrame.petAttaqueIcon:ClearAllPoints()
+    popupFrame.petAttaqueIcon:SetPoint("TOPLEFT", popupFrame.petArmorIcon, "BOTTOMLEFT", 0, -4)
     popupFrame.petAttaqueText:SetText(string.format("CaC: %d | Dist: %d",
       roundNumber(tonumber(pet.attaqueMelee) or 0),
       roundNumber(tonumber(pet.attaqueDistance) or 0)))
+    popupFrame.petAttaqueIcon:Show()
     popupFrame.petAttaqueText:Show()
 
     popupFrame.petHpRow.holder:ClearAllPoints()
-    popupFrame.petHpRow.holder:SetPoint("TOPLEFT", popupFrame.petAttaqueText, "BOTTOMLEFT", 0, -6)
+    popupFrame.petHpRow.holder:SetPoint("TOPLEFT", popupFrame.petAttaqueIcon, "BOTTOMLEFT", 0, -6)
     setBarValue(popupFrame.petHpRow, "PV", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
     updateHpShieldOverlays(popupFrame.petHpRow, petHp, petMaxHp, 0, pms.hp or 0)
     local HP_PET_PCTS = { 0.50, 0.25, 0.10 }
@@ -998,13 +1011,14 @@ local function showForState(targetName, state, petOnly)
     popupFrame.petArmorText:Hide()
     popupFrame.petDodgeIcon:Hide()
     popupFrame.petDodgeText:Hide()
-    if popupFrame.petAttaqueText then popupFrame.petAttaqueText:Hide() end
+    if popupFrame.petAttaqueIcon    then popupFrame.petAttaqueIcon:Hide()    end
+    if popupFrame.petAttaqueText    then popupFrame.petAttaqueText:Hide()    end
     popupFrame.petHpRow.holder:Hide()
     hideMarkers(popupFrame.petHpMarkers)
     if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
     hideOverlay(popupFrame.petHpRow.blockOverlay)
     hideOverlay(popupFrame.petHpRow.magicOverlay)
-    if popupFrame.petTempArmorText  then popupFrame.petTempArmorText:Hide()  end
+    if popupFrame.petTempArmorText   then popupFrame.petTempArmorText:Hide()   end
     if popupFrame.petMagicShieldText then popupFrame.petMagicShieldText:Hide() end
   end
 

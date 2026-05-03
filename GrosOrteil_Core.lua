@@ -1061,7 +1061,7 @@ local function applyHit(s, t, rawAmount, opts)
 
   local amount = rawAmount
   local absorbedBlock = 0
-  local absorbedMagic = 0
+  local absorbedMagic
 
   -- Block (player DamageWithArmor only)
   if opts.armor and not opts.isPet then
@@ -1075,12 +1075,7 @@ local function applyHit(s, t, rawAmount, opts)
 
   -- Magic absorption
   if opts.isPet then
-    local mblock = math.max(0, t.tempMagicBlock or 0)
-    if mblock > 0 and amount > 0 then
-      absorbedMagic = math.min(mblock, amount)
-      t.tempMagicBlock = mblock - absorbedMagic
-      amount = amount - absorbedMagic
-    end
+    amount, absorbedMagic = consumeMagicShield(t, amount)
   else
     amount, absorbedMagic = consumeMagicShield(s, amount)
   end
@@ -1093,8 +1088,11 @@ local function applyHit(s, t, rawAmount, opts)
   -- Mitigation
   local mit
   if opts.isPet then
-    mit = math.max(0, (t.armor or 0) + (t.trueArmor or 0))
-    if not opts.armor then mit = math.max(0, t.trueArmor or 0) end
+    if opts.armor then
+      mit = math.max(0, (t.armor or 0) + (t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
+    else
+      mit = math.max(0, (t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
+    end
   else
     local armorVal = opts.armor and ((t.armor or 0) + (t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
                                  or ((t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
@@ -1375,4 +1373,37 @@ function Core.PetSurgery()
   local p = ensurePet(s)
   if not p.enabled then return end
   applyHeal(s, p, 0, { kind = "SURGERY",    isPet = true, subject = "PET", gainRatio = 0.50 })
+end
+
+function Core.PetRestoreHP()
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+  local hpBefore = p.hp or 0
+  local maxHp    = p.maxHp or 0
+  p.hp = maxHp
+  recomputePetWounds(p)
+  pushHistory({ kind = "RESTORE_HP", subject = "PET",
+                hpBefore = hpBefore, hpAfter = p.hp, maxHp = maxHp })
+  bump(); notify()
+end
+
+function Core.PetDailyRegenHP()
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+  local hpBefore = p.hp or 0
+  local baseMax  = math.max(1, p.maxHp or 1)
+  local gain     = math.floor(baseMax * 0.10 + 0.5)
+  p.hp = math.min((p.hp or 0) + gain, p.maxHp)
+  recomputePetWounds(p)
+  pushHistory({ kind = "DAILY_REGEN_HP", subject = "PET",
+                gain = gain, hpBefore = hpBefore, hpAfter = p.hp, maxHp = p.maxHp })
+  bump(); notify()
+end
+
+function Core.PetDailyRegenRes()
+  -- Pets have no primary resource; no-op kept for button symmetry.
 end

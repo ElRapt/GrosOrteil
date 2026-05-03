@@ -412,6 +412,7 @@ function ns.UI_Init()
   local MAX_W, MAX_H     = 1500, 1000
   local PAD_X = 14
   local applyContentHostLayout  -- forward declaration; defined below
+  local activeSectionRef        -- forward declaration; assigned below with initial value
 
   -- Left sidebar navigation (vertical tabs) + right content area.
   local SIDEBAR_W = 160
@@ -696,21 +697,27 @@ function ns.UI_Init()
       "Interface/Icons/inv12_apextalent_priest_benediction",
       "Restaurer PV",
       "Remet tous les PV au maximum (bonus inclus).",
-      function() Core.RestoreHP() end)
+      function()
+        if activeSectionRef.v == 2 then Core.PetRestoreHP() else Core.RestoreHP() end
+      end)
     iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -50, 20)
 
     local iconRegenHP = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_rejuvenation_empowered",
       "Régénération quotidienne PV",
       "Restaure 10 % du max de PV, ignorant les seuils de blessure.",
-      function() Core.DailyRegenHP() end)
+      function()
+        if activeSectionRef.v == 2 then Core.PetDailyRegenHP() else Core.DailyRegenHP() end
+      end)
     iconRegenHP:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
 
     local iconRegenRes = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_starfall_empowered",
       "Régénération quotidienne mystique",
       "Restaure 20 % de la ressource principale (mana, énergie, etc.).",
-      function() Core.DailyRegenRes() end)
+      function()
+        if activeSectionRef.v == 2 then Core.PetDailyRegenRes() else Core.DailyRegenRes() end
+      end)
     iconRegenRes:SetPoint("RIGHT", iconRegenHP, "LEFT", -ICON_GAP, 0)
   end
 
@@ -1127,7 +1134,7 @@ function ns.UI_Init()
   -- 1 = character section, 2 = familiar section.
   local activeSection    = 1
   local lastState        = nil
-  local activeSectionRef = { v = 1 }
+  activeSectionRef = { v = 1 }
   local lastStateRef     = { v = nil }
   local refreshHpDisplay   -- forward declaration; assigned after hpBar is created
   local onChangeCallback   -- forward declaration; allows setSidebarSection to trigger a full re-render
@@ -1642,9 +1649,10 @@ function ns.UI_Init()
         local petPct   = petHp / petMaxHp
         hpBar:SetValue(math.max(0, math.min(1, petPct)))
         hpText:SetText(string.format("PV familier : %d / %d (%d%%)", petHp, petMaxHp, roundPct(petPct)))
+        local petMs = type(pet.magicShield) == "table" and pet.magicShield or {}
         Shared.UpdateHpShieldOverlays(
           UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
-          petHp, petMaxHp, 0, tonumber(pet.tempMagicBlock) or 0
+          petHp, petMaxHp, 0, tonumber(petMs.hp) or 0
         )
         local petCap = 1.0
         if pet.wounds and pet.wounds.hit10 then petCap = 0.25
