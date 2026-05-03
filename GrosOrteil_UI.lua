@@ -1,7 +1,9 @@
+---@diagnostic disable: undefined-global, unused-local
 local _, ns = ...
 local Core = ns.Core
 local History = ns.History
 local Shared = ns.Shared
+local ipairs = ipairs
 
 local UI = {}
 ns.UI = UI
@@ -389,22 +391,25 @@ function ns.UI_Init()
   local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
   db.ui = db.ui or { point = "CENTER", x = 0, y = 0, shown = true }
 
-  if not db.ui._migrated_20260214_wide then
-    db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
-    db.ui._migrated_20260214_wide = true
-  end
-
-  -- UI layout migration: new sidebar layout is significantly larger.
-  if not db.ui._migrated_20260217_sidebar then
-    db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
-    db.ui._migrated_20260217_sidebar = true
-  end
-
-  -- Migration: Paramètres tab merge requires a wider default window.
-  if not db.ui._migrated_20260401_paramtab then
-    db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
-    db.ui.w, db.ui.h = nil, nil
-    db.ui._migrated_20260401_paramtab = true
+  -- Migration registry: add new entries here; each runs exactly once per character.
+  db.ui.migrations = db.ui.migrations or {}
+  -- Seed legacy boolean flags into the registry so they don't re-run.
+  if db.ui._migrated_20260214_wide    then db.ui.migrations["wide"]     = true end
+  if db.ui._migrated_20260217_sidebar then db.ui.migrations["sidebar"]  = true end
+  if db.ui._migrated_20260401_paramtab then db.ui.migrations["paramtab"] = true end
+  local MIGRATIONS = {
+    { key = "wide",     run = function() db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0 end },
+    { key = "sidebar",  run = function() db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0 end },
+    { key = "paramtab", run = function()
+        db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
+        db.ui.w, db.ui.h = nil, nil
+      end },
+  }
+  for _, m in ipairs(MIGRATIONS) do
+    if not db.ui.migrations[m.key] then
+      m.run()
+      db.ui.migrations[m.key] = true
+    end
   end
 
   local FRAME_W, FRAME_H = 880, 460

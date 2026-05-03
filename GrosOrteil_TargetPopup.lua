@@ -648,11 +648,12 @@ local function showForState(targetName, state, petOnly)
   createPopup()
   currentShownSender = targetName
 
-  -- Resolve petOnly: if enabled flag absent, fall back to owner view.
+  -- Resolve petOnly: if the pet unit is disabled, suppress the popup entirely.
   if petOnly then
     local pet = type(state.pet) == "table" and state.pet
     if not pet or not pet.enabled then
-      petOnly = false
+      hidePopup()
+      return
     end
   end
   currentShownIsPet = petOnly and true or false
@@ -936,91 +937,21 @@ local function showForState(targetName, state, petOnly)
 
   local dynamicHeight = 188 + (shownRes * 34)
 
-  local pet = type(state.pet) == "table" and state.pet or {}
-  if not pet.enabled then
-    local petMaxHp = math.max(1, tonumber(pet.maxHp) or 1)
-    local petHp    = tonumber(pet.hp) or 0
-    local pms      = type(pet.magicShield) == "table" and pet.magicShield or {}
-    -- Pet section starts just below the last resource row / base content.
-    local petTop = -(dynamicHeight + 8)
-
-    popupFrame.petNameText:ClearAllPoints()
-    popupFrame.petNameText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, petTop)
-    popupFrame.petNameText:SetText(pet.name or "Familier")
-    popupFrame.petNameText:Show()
-
-    popupFrame.petArmorIcon:ClearAllPoints()
-    popupFrame.petArmorIcon:SetPoint("TOPLEFT", popupFrame.petNameText, "BOTTOMLEFT", 0, -4)
-    popupFrame.petArmorText:SetText(string.format("Armure: %d (+%d)",
-      roundNumber(tonumber(pet.armor) or 0), roundNumber(tonumber(pet.trueArmor) or 0)))
-    popupFrame.petArmorIcon:Show(); popupFrame.petArmorText:Show()
-
-    popupFrame.petDodgeText:SetText(string.format("Esquive: %d",
-      roundNumber(tonumber(pet.dodge) or 0)))
-    popupFrame.petDodgeIcon:Show(); popupFrame.petDodgeText:Show()
-
-    popupFrame.petAttaqueIcon:ClearAllPoints()
-    popupFrame.petAttaqueIcon:SetPoint("TOPLEFT", popupFrame.petArmorIcon, "BOTTOMLEFT", 0, -4)
-    popupFrame.petAttaqueText:SetText(string.format("CaC: %d | Dist: %d",
-      roundNumber(tonumber(pet.attaqueMelee) or 0),
-      roundNumber(tonumber(pet.attaqueDistance) or 0)))
-    popupFrame.petAttaqueIcon:Show()
-    popupFrame.petAttaqueText:Show()
-
-    popupFrame.petHpRow.holder:ClearAllPoints()
-    popupFrame.petHpRow.holder:SetPoint("TOPLEFT", popupFrame.petAttaqueIcon, "BOTTOMLEFT", 0, -6)
-    setBarValue(popupFrame.petHpRow, "PV", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
-    updateHpShieldOverlays(popupFrame.petHpRow, petHp, petMaxHp, 0, pms.hp or 0)
-    local HP_PET_PCTS = { 0.50, 0.25, 0.10 }
-    for i = 1, #popupFrame.petHpMarkers do
-      popupFrame.petHpMarkers[i].pct = HP_PET_PCTS[i]
-    end
-    positionMarkers(popupFrame.petHpMarkers, popupFrame.petHpRow.bar)
-    local petWoundCap = 1.0
-    if pet.wounds and pet.wounds.hit10 then petWoundCap = 0.25
-    elseif pet.wounds and pet.wounds.hit25 then petWoundCap = 0.50 end
-    if petWoundCap >= 1.0 then
-      if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
-    else
-      if popupFrame.petHpCapMarker then
-        popupFrame.petHpCapMarker.pct = petWoundCap
-        positionMarkers({ popupFrame.petHpCapMarker }, popupFrame.petHpRow.bar)
-      end
-    end
-    popupFrame.petHpRow.holder:Show()
-
-    popupFrame.petTempArmorText:ClearAllPoints()
-    popupFrame.petTempArmorText:SetPoint("TOPLEFT", popupFrame.petHpRow.holder, "BOTTOMLEFT", 0, -4)
-    popupFrame.petTempArmorText:SetText(string.format("Arm. temp.: %d",
-      roundNumber(tonumber(pet.tempArmor) or 0)))
-    popupFrame.petTempArmorText:Show()
-
-    local msHp    = tonumber(pms.hp)    or 0
-    local msMaxHp = tonumber(pms.maxHp) or 0
-    local msArmor = tonumber(pms.armor) or 0
-    popupFrame.petMagicShieldText:ClearAllPoints()
-    popupFrame.petMagicShieldText:SetPoint("TOPLEFT", popupFrame.petTempArmorText, "BOTTOMLEFT", 0, -2)
-    popupFrame.petMagicShieldText:SetText(string.format("Boucl.: %d/%d (+%d arm.)",
-      roundNumber(msHp), roundNumber(msMaxHp), roundNumber(msArmor)))
-    popupFrame.petMagicShieldText:Show()
-
-    dynamicHeight = dynamicHeight + 120
-  else
-    popupFrame.petNameText:Hide()
-    popupFrame.petArmorIcon:Hide()
-    popupFrame.petArmorText:Hide()
-    popupFrame.petDodgeIcon:Hide()
-    popupFrame.petDodgeText:Hide()
-    if popupFrame.petAttaqueIcon    then popupFrame.petAttaqueIcon:Hide()    end
-    if popupFrame.petAttaqueText    then popupFrame.petAttaqueText:Hide()    end
-    popupFrame.petHpRow.holder:Hide()
-    hideMarkers(popupFrame.petHpMarkers)
-    if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
-    hideOverlay(popupFrame.petHpRow.blockOverlay)
-    hideOverlay(popupFrame.petHpRow.magicOverlay)
-    if popupFrame.petTempArmorText   then popupFrame.petTempArmorText:Hide()   end
-    if popupFrame.petMagicShieldText then popupFrame.petMagicShieldText:Hide() end
-  end
+  -- Pet section is only shown when targeting the pet unit directly (petOnly path above).
+  popupFrame.petNameText:Hide()
+  popupFrame.petArmorIcon:Hide()
+  popupFrame.petArmorText:Hide()
+  popupFrame.petDodgeIcon:Hide()
+  popupFrame.petDodgeText:Hide()
+  if popupFrame.petAttaqueIcon    then popupFrame.petAttaqueIcon:Hide()    end
+  if popupFrame.petAttaqueText    then popupFrame.petAttaqueText:Hide()    end
+  popupFrame.petHpRow.holder:Hide()
+  hideMarkers(popupFrame.petHpMarkers)
+  if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
+  hideOverlay(popupFrame.petHpRow.blockOverlay)
+  hideOverlay(popupFrame.petHpRow.magicOverlay)
+  if popupFrame.petTempArmorText   then popupFrame.petTempArmorText:Hide()   end
+  if popupFrame.petMagicShieldText then popupFrame.petMagicShieldText:Hide() end
 
   if dynamicHeight < 188 then dynamicHeight = 188 end
   popupFrame:SetHeight(dynamicHeight)
@@ -1317,14 +1248,14 @@ hideHoverPopup = function()
 end
 
 local function showHoverForState(state, petOnly)
-  createHoverPopup()
-
   if petOnly then
     local pet = type(state.pet) == "table" and state.pet
     if not pet or not pet.enabled then
-      petOnly = false
+      hideHoverPopup()
+      return
     end
   end
+  createHoverPopup()
 
   if petOnly then
     local pet = state.pet
