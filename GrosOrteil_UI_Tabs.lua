@@ -524,7 +524,9 @@ function ns.UI_BuildPetFicheTab(ctx)
 
   local petToggleBtn
   local petNameEB, petHpCurEB, petHpMaxEB
-  local petArmorEB, petTrueArmorEB, petDodgeEB, petMagicBlockEB
+  local petArmorEB, petTrueArmorEB, petDodgeEB
+  local petAttaqueMeleeEB, petAttaqueDistanceEB, petTempArmorEB
+  local petMsHpEB, petMsMaxHpEB, petMsArmorEB
   local petActionValEB
   local petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn, petSurgeryBtn
 
@@ -536,12 +538,19 @@ function ns.UI_BuildPetFicheTab(ctx)
     local armorVal     = ctx.getNumber(petArmorEB)
     local trueArmorVal = ctx.getNumber(petTrueArmorEB)
     local dodgeVal     = ctx.getNumber(petDodgeEB)
-    local magicVal     = ctx.getNumber(petMagicBlockEB)
-    if Core.SetPetName and petNameVal then Core.SetPetName(petNameVal) end
+    local meleeVal     = ctx.getNumber(petAttaqueMeleeEB)
+    local distVal      = ctx.getNumber(petAttaqueDistanceEB)
+    local tempArmorVal = ctx.getNumber(petTempArmorEB)
+    local msHpVal      = ctx.getNumber(petMsHpEB)
+    local msMaxHpVal   = ctx.getNumber(petMsMaxHpEB)
+    local msArmorVal   = ctx.getNumber(petMsArmorEB)
+    if Core.SetPetName  and petNameVal then Core.SetPetName(petNameVal) end
     if Core.SetPetHP    then Core.SetPetHP(petHpCurVal, petHpMaxVal) end
     if Core.SetPetArmor then Core.SetPetArmor(armorVal, trueArmorVal) end
     if Core.SetPetDodge then Core.SetPetDodge(dodgeVal) end
-    if Core.SetPetTempMagicBlock then Core.SetPetTempMagicBlock(magicVal) end
+    if Core.SetPetAttaque   then Core.SetPetAttaque(meleeVal, distVal) end
+    if Core.SetPetTempArmor then Core.SetPetTempArmor(tempArmorVal) end
+    if Core.SetPetMagicShield then Core.SetPetMagicShield(msHpVal, msMaxHpVal, msArmorVal) end
   end
 
   local petSF = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
@@ -642,28 +651,54 @@ function ns.UI_BuildPetFicheTab(ctx)
     if Core and Core.PetSurgery then Core.PetSurgery() end
   end)
 
-  -- Blocage
-  mkPetSep(-336); mkPetHeader("Blocage", -344)
-  local aPetBlock = mkRowAnchor(petPane, 310, -362)
-  mkLabel(aPetBlock, "Bouclier magique", 0, -2)
-  petMagicBlockEB = mkEdit(aPetBlock, 70, 20, 180, 0, applyAllPet)
-  mkButton(aPetBlock, "Réinit.", 70, 20, 260, 0, function()
-    if Core and Core.ResetPetTempMagicBlock then
-      Core.ResetPetTempMagicBlock()
-    elseif Core and Core.SetPetTempMagicBlock then
-      Core.SetPetTempMagicBlock(0)
-    end
+  -- Attaque
+  mkPetSep(-336); mkPetHeader("Attaque", -344)
+  local aPetAtt = mkRowAnchor(petPane, 320, -362)
+  mkLabel(aPetAtt, "CaC", 0, -2)
+  petAttaqueMeleeEB    = mkEdit(aPetAtt, 70, 20, 30,  0, applyAllPet)
+  mkLabel(aPetAtt, "Distance", 120, -2)
+  petAttaqueDistanceEB = mkEdit(aPetAtt, 70, 20, 210, 0, applyAllPet)
+
+  -- Armure temporaire
+  mkPetSep(-390); mkPetHeader("Armure temporaire", -398)
+  local aPetTempArmor = mkRowAnchor(petPane, 310, -416)
+  mkLabel(aPetTempArmor, "Arm. tempo.", 0, -2)
+  petTempArmorEB = mkEdit(aPetTempArmor, 70, 20, 110, 0, applyAllPet)
+  mkButton(aPetTempArmor, "Réinit.", 70, 20, 200, 0, function()
+    if Core and Core.ResetPetTempArmor then Core.ResetPetTempArmor() end
   end)
+
+  -- Bouclier magique
+  mkPetSep(-444); mkPetHeader("Bouclier magique", -452)
+  local aPetMs1 = mkRowAnchor(petPane, 310, -470)
+  mkLabel(aPetMs1, "PV", 0, -2)
+  petMsHpEB    = mkEdit(aPetMs1, 70, 20, 26,  0, applyAllPet)
+  mkLabel(aPetMs1, "/", 100, -2)
+  petMsMaxHpEB = mkEdit(aPetMs1, 70, 20, 114, 0, applyAllPet)
+  mkButton(aPetMs1, "Réinit.", 70, 20, 210, 0, function()
+    if Core and Core.ResetPetMagicShield then Core.ResetPetMagicShield() end
+  end)
+  local aPetMs2 = mkRowAnchor(petPane, 230, -498)
+  mkLabel(aPetMs2, "Armure", 0, -2)
+  petMsArmorEB = mkEdit(aPetMs2, 70, 20, 70, 0, applyAllPet)
+
+  petPane:SetHeight(540)
 
   -- Write refs
   UI.petToggleBtn = petToggleBtn
   UI.petControls = { petNameEB, petHpCurEB, petHpMaxEB,
-                     petArmorEB, petTrueArmorEB, petDodgeEB, petMagicBlockEB, petActionValEB }
+                     petArmorEB, petTrueArmorEB, petDodgeEB,
+                     petAttaqueMeleeEB, petAttaqueDistanceEB, petTempArmorEB,
+                     petMsHpEB, petMsMaxHpEB, petMsArmorEB, petActionValEB }
   UI.petButtons  = { petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn, petSurgeryBtn }
   ctx.petInputs  = {
     petName = petNameEB, petHpCur = petHpCurEB, petHpMax = petHpMaxEB,
     petArmor = petArmorEB, petTrueArmor = petTrueArmorEB,
-    petDodge = petDodgeEB, petMagicBlock = petMagicBlockEB, petActionVal = petActionValEB,
+    petDodge = petDodgeEB,
+    petAttaqueMelee = petAttaqueMeleeEB, petAttaqueDistance = petAttaqueDistanceEB,
+    petTempArmor = petTempArmorEB,
+    petMsHp = petMsHpEB, petMsMaxHp = petMsMaxHpEB, petMsArmor = petMsArmorEB,
+    petActionVal = petActionValEB,
   }
 end
 
@@ -1008,12 +1043,18 @@ function ns.UI_BuildOnChangeCallback(ctx)
       end
       setEditBoxEnabled(UI.inputs.petName, true)
     end
-    ctx.setNumber(UI.inputs.petHpCur,    p.hp)
-    ctx.setNumber(UI.inputs.petHpMax,    p.maxHp)
-    ctx.setNumber(UI.inputs.petArmor,    p.armor)
-    ctx.setNumber(UI.inputs.petTrueArmor,p.trueArmor)
-    ctx.setNumber(UI.inputs.petDodge,    p.dodge)
-    ctx.setNumber(UI.inputs.petMagicBlock,p.tempMagicBlock)
+    ctx.setNumber(UI.inputs.petHpCur,           p.hp)
+    ctx.setNumber(UI.inputs.petHpMax,           p.maxHp)
+    ctx.setNumber(UI.inputs.petArmor,           p.armor)
+    ctx.setNumber(UI.inputs.petTrueArmor,       p.trueArmor)
+    ctx.setNumber(UI.inputs.petDodge,           p.dodge)
+    ctx.setNumber(UI.inputs.petAttaqueMelee,    p.attaqueMelee)
+    ctx.setNumber(UI.inputs.petAttaqueDistance, p.attaqueDistance)
+    ctx.setNumber(UI.inputs.petTempArmor,       p.tempArmor)
+    local pms = type(p.magicShield) == "table" and p.magicShield or {}
+    ctx.setNumber(UI.inputs.petMsHp,    pms.hp)
+    ctx.setNumber(UI.inputs.petMsMaxHp, pms.maxHp)
+    ctx.setNumber(UI.inputs.petMsArmor, pms.armor)
     if UI.petControls then
       for i = 1, #UI.petControls do setEditBoxEnabled(UI.petControls[i], true) end
     end

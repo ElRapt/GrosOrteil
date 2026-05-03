@@ -66,7 +66,8 @@ local NUMERIC_FIELDS = {
 local PET_NUMERIC_FIELDS = {
   { "hp", 0 }, { "maxHp", 0 },
   { "armor", 0 }, { "trueArmor", 0 }, { "dodge", 0 },
-  { "tempMagicBlock", 0 },
+  { "attaqueMelee", 0 }, { "attaqueDistance", 0 },
+  { "tempArmor", 0 },
 }
 
 local function copyNumeric(src, fields)
@@ -92,9 +93,16 @@ local function buildPayload(src, petSrc, classKey)
   out.stabilise = src.stabilise and true or false
   out.classKey = classKey
   local pet = copyNumeric(petSrc, PET_NUMERIC_FIELDS)
-  pet.enabled = not not petSrc.enabled
-  pet.name    = type(petSrc.name) == "string" and petSrc.name or "Familier"
-  pet.wounds  = packWounds(petSrc.wounds)
+  pet.enabled          = not not petSrc.enabled
+  pet.authorityEnabled = not not petSrc.authorityEnabled
+  pet.name             = type(petSrc.name) == "string" and petSrc.name or "Familier"
+  pet.wounds           = packWounds(petSrc.wounds)
+  local pms = type(petSrc.magicShield) == "table" and petSrc.magicShield or {}
+  pet.magicShield = {
+    hp    = tonumber(pms.hp)    or 0,
+    maxHp = tonumber(pms.maxHp) or 0,
+    armor = tonumber(pms.armor) or 0,
+  }
   out.pet = pet
   return out
 end

@@ -1606,14 +1606,19 @@ function ns.UI_Init()
   -- Onglet 8 : Familier — Fiche
   tabCtx.page = pagePetHP
   ns.UI_BuildPetFicheTab(tabCtx)
-  UI.inputs.petName       = tabCtx.petInputs.petName
-  UI.inputs.petHpCur      = tabCtx.petInputs.petHpCur
-  UI.inputs.petHpMax      = tabCtx.petInputs.petHpMax
-  UI.inputs.petArmor      = tabCtx.petInputs.petArmor
-  UI.inputs.petTrueArmor  = tabCtx.petInputs.petTrueArmor
-  UI.inputs.petDodge      = tabCtx.petInputs.petDodge
-  UI.inputs.petMagicBlock = tabCtx.petInputs.petMagicBlock
-  UI.inputs.petActionVal  = tabCtx.petInputs.petActionVal
+  UI.inputs.petName            = tabCtx.petInputs.petName
+  UI.inputs.petHpCur           = tabCtx.petInputs.petHpCur
+  UI.inputs.petHpMax           = tabCtx.petInputs.petHpMax
+  UI.inputs.petArmor           = tabCtx.petInputs.petArmor
+  UI.inputs.petTrueArmor       = tabCtx.petInputs.petTrueArmor
+  UI.inputs.petDodge           = tabCtx.petInputs.petDodge
+  UI.inputs.petAttaqueMelee    = tabCtx.petInputs.petAttaqueMelee
+  UI.inputs.petAttaqueDistance = tabCtx.petInputs.petAttaqueDistance
+  UI.inputs.petTempArmor       = tabCtx.petInputs.petTempArmor
+  UI.inputs.petMsHp            = tabCtx.petInputs.petMsHp
+  UI.inputs.petMsMaxHp         = tabCtx.petInputs.petMsMaxHp
+  UI.inputs.petMsArmor         = tabCtx.petInputs.petMsArmor
+  UI.inputs.petActionVal       = tabCtx.petInputs.petActionVal
 
   -- Onglet 9 : Familier — Historique
   tabCtx.page = pagePetArmor

@@ -121,7 +121,8 @@ local SNAPSHOT_SCALARS = {
 }
 local SNAPSHOT_PET_FIELDS = {
   "enabled", "name", "hp", "maxHp",
-  "armor", "trueArmor", "dodge", "tempMagicBlock",
+  "armor", "trueArmor", "dodge",
+  "attaqueMelee", "attaqueDistance", "tempArmor",
   "authorityEnabled",
 }
 local SNAPSHOT_POSTURE_BASE = {
@@ -148,6 +149,8 @@ local function deepCopyState(s)
   local pc = copyKeys(p, SNAPSHOT_PET_FIELDS)
   local pw = p.wounds or {}
   pc.wounds = { hit25 = pw.hit25, hit10 = pw.hit10 }
+  local pms = p.magicShield
+  pc.magicShield = pms and { hp = pms.hp, maxHp = pms.maxHp, armor = pms.armor } or { hp = 0, maxHp = 0, armor = 0 }
   c.pet = pc
   return c
 end
@@ -183,6 +186,11 @@ local function restoreSnapshot(snap)
     p[k] = sp[k]
   end
   p.wounds.hit25 = sp.wounds.hit25; p.wounds.hit10 = sp.wounds.hit10
+  local spms = sp.magicShield
+  p.magicShield = p.magicShield or {}
+  p.magicShield.hp    = spms and spms.hp    or 0
+  p.magicShield.maxHp = spms and spms.maxHp or 0
+  p.magicShield.armor = spms and spms.armor or 0
   s.rev = (s.rev or 0) + 1
 end
 
@@ -332,7 +340,19 @@ local function ensurePetDefaults(pet)
   if type(pet.armor) ~= "number" or pet.armor < 0 then pet.armor = 0 end
   if type(pet.trueArmor) ~= "number" or pet.trueArmor < 0 then pet.trueArmor = 0 end
   if type(pet.dodge) ~= "number" or pet.dodge < 0 then pet.dodge = 0 end
-  if type(pet.tempMagicBlock) ~= "number" or pet.tempMagicBlock < 0 then pet.tempMagicBlock = 0 end
+  if type(pet.attaqueMelee) ~= "number" or pet.attaqueMelee < 0 then pet.attaqueMelee = 0 end
+  if type(pet.attaqueDistance) ~= "number" or pet.attaqueDistance < 0 then pet.attaqueDistance = 0 end
+  if type(pet.tempArmor) ~= "number" or pet.tempArmor < 0 then pet.tempArmor = 0 end
+  -- migrate legacy flat tempMagicBlock to magicShield sub-table
+  if type(pet.magicShield) ~= "table" then
+    local legacy = tonumber(pet.tempMagicBlock) or 0
+    pet.magicShield = { hp = legacy, maxHp = legacy, armor = 0 }
+  else
+    if type(pet.magicShield.hp)    ~= "number" then pet.magicShield.hp    = 0 end
+    if type(pet.magicShield.maxHp) ~= "number" then pet.magicShield.maxHp = pet.magicShield.hp or 0 end
+    if type(pet.magicShield.armor) ~= "number" then pet.magicShield.armor = 0 end
+  end
+  pet.tempMagicBlock = nil
   if type(pet.authorityEnabled) ~= "boolean" then pet.authorityEnabled = false end
   if type(pet.wounds) ~= "table" then pet.wounds = {} end
   pet.wounds.hit25 = not not pet.wounds.hit25
@@ -408,7 +428,10 @@ function ns.Core_Init()
       armor = 0,
       trueArmor = 0,
       dodge = 0,
-      tempMagicBlock = 0,
+      attaqueMelee = 0,
+      attaqueDistance = 0,
+      tempArmor = 0,
+      magicShield = { hp = 0, maxHp = 0, armor = 0 },
       wounds = { hit25 = false, hit10 = false },
     },
 
@@ -607,20 +630,53 @@ function Core.SetPetDodge(v)
   bump(); notify()
 end
 
-function Core.SetPetTempMagicBlock(v)
+function Core.SetPetAttaque(melee, dist)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  melee = clampNumber(melee, 0, 1e9)
+  dist  = clampNumber(dist,  0, 1e9)
+  if melee then p.attaqueMelee    = melee end
+  if dist  then p.attaqueDistance = dist  end
+  bump(); notify()
+end
+
+function Core.SetPetTempArmor(v)
   local s = Core.state
   if not s then return end
   local p = ensurePet(s)
   v = clampNumber(v, 0, 1e9)
-  if v then p.tempMagicBlock = v end
+  if v then p.tempArmor = v end
   bump(); notify()
 end
 
-function Core.ResetPetTempMagicBlock()
+function Core.ResetPetTempArmor()
   local s = Core.state
   if not s then return end
   local p = ensurePet(s)
-  p.tempMagicBlock = 0
+  p.tempArmor = 0
+  bump(); notify()
+end
+
+function Core.SetPetMagicShield(hp, maxHp, armor)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  p.magicShield = p.magicShield or { hp = 0, maxHp = 0, armor = 0 }
+  hp    = clampNumber(hp,    0, 1e9)
+  maxHp = clampNumber(maxHp, 0, 1e9)
+  armor = clampNumber(armor, 0, 1e9)
+  if hp    then p.magicShield.hp    = hp    end
+  if maxHp then p.magicShield.maxHp = maxHp end
+  if armor then p.magicShield.armor = armor end
+  bump(); notify()
+end
+
+function Core.ResetPetMagicShield()
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  p.magicShield = { hp = 0, maxHp = 0, armor = 0 }
   bump(); notify()
 end
 
