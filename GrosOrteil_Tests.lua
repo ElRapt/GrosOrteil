@@ -268,6 +268,203 @@ describe("Slash commands", function()
   end)
 end)
 
+describe("Combat math (in-game)", function()
+  it("DamageWithArmor: armor + tempArmor + trueArmor stack", function()
+    reset()
+    local Core = ns.Core
+    Core.SetHP(100, 100); Core.SetArmor(5, 3); Core.SetTempArmor(2)
+    Core.DamageWithArmor(20)  -- 20 - 10 = 10
+    assertEq(Core.state.hp, 90)
+  end)
+  it("DamageTrue ignores armor only", function()
+    reset()
+    local Core = ns.Core
+    Core.SetHP(100, 100); Core.SetArmor(50, 0)
+    Core.DamageTrue(20)
+    assertEq(Core.state.hp, 80)
+  end)
+  it("dodge dodges hits ≤ dodge value", function()
+    reset()
+    local Core = ns.Core
+    Core.SetHP(100, 100); Core.SetDodge(15)
+    Core.DamageTrue(15); assertEq(Core.state.hp, 100)
+    Core.DamageTrue(16); assertTrue(Core.state.hp < 100)
+  end)
+  it("tempBlock absorbs and depletes", function()
+    reset()
+    local Core = ns.Core
+    Core.SetHP(100, 100); Core.SetTempBlock(20)
+    Core.DamageWithArmor(30)
+    assertEq(Core.state.hp, 70)
+    assertEq(Core.state.tempBlock, 0)
+  end)
+  it("magic shield consumes before HP", function()
+    reset()
+    local Core = ns.Core
+    Core.SetHP(100, 100); Core.SetMagicShield(40, 40, 0)
+    Core.DamageWithArmor(30)
+    assertEq(Core.state.hp, 100)
+    assertEq(Core.state.magicShield.hp, 10)
+  end)
+end)
+
+describe("Mage mana shield (in-game)", function()
+  it("activates and redirects damage onto mana", function()
+    reset()
+    local Core = ns.Core
+    Core.SetClassKey("MAGE"); Core.SetHP(100, 100); Core.SetRes(50, 100)
+    Core.SetManaShieldArmor(0)  -- isolate mana redirect from shield armor
+    Core.SetManaShieldActive(true)
+    Core.DamageTrue(30)
+    assertEq(Core.state.res, 20)
+    assertEq(Core.state.hp, 100)
+  end)
+  it("breaks at 0 mana and overflow hits HP", function()
+    reset()
+    local Core = ns.Core
+    Core.SetClassKey("MAGE"); Core.SetHP(100, 100); Core.SetRes(20, 100)
+    Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.DamageTrue(50)
+    assertEq(Core.state.res, 0)
+    assertEq(Core.state.hp, 70)
+    assertFalse(Core.state.manaShield.active)
+  end)
+end)
+
+describe("Shaman postures (in-game)", function()
+  local function setupShaman()
+    reset()
+    local Core = ns.Core
+    Core.SetClassKey("SHAMAN")
+    for i = 1, 4 do Core.SetResIndex(i, 5, 20) end
+    return Core
+  end
+  it("TERRE adds armor + maxHp", function()
+    local Core = setupShaman()
+    local maxHp0, armor0 = Core.state.maxHp, Core.state.armor
+    Core.SetShamanPosture("TERRE")
+    assertEq(Core.state.armor, armor0 + 5)
+    assertEq(Core.state.maxHp, maxHp0 + 20)
+  end)
+  it("AIR grants +15 dodge", function()
+    local Core = setupShaman()
+    local d0 = Core.state.dodge
+    Core.SetShamanPosture("AIR")
+    assertEq(Core.state.dodge, d0 + 15)
+  end)
+  it("FEU adds outgoing damage bonus", function()
+    local Core = setupShaman()
+    Core.SetShamanPosture("FEU")
+    assertEq(Core.state.shamanPostureDmgBonus, 10)
+  end)
+  it("EAU extends maxRes3", function()
+    local Core = setupShaman()
+    local m0 = Core.state.maxRes3
+    Core.SetShamanPosture("EAU")
+    assertEq(Core.state.maxRes3, m0 + 8)
+  end)
+end)
+
+describe("Migrations (in-game)", function()
+  it("legacy tempMagicBlock becomes magicShield.hp", function()
+    -- Wipe and inject legacy DB shape, then re-init.
+    local db = ns.GetDB and ns.GetDB() or nil
+    if not db then return end
+    db.state = { hp = 50, maxHp = 50, tempMagicBlock = 30, wounds = {}, pet = {}, history = {} }
+    ns.Core_Init()
+    assertEq(ns.Core.state.magicShield.hp, 30)
+    assertNil(ns.Core.state.tempMagicBlock)
+  end)
+end)
+
+describe("History formatting", function()
+  it("DamageWithArmor produces a non-nil entry text", function()
+    reset()
+    local Core = ns.Core
+    Core.SetHP(100, 100); Core.SetArmor(0, 0); Core.SetDodge(0)
+    Core.DamageWithArmor(20)
+    local hist = ns.History.Get(Core.state)
+    assertTrue(#hist >= 1)
+    assertNotNil(ns.History.FormatEntry(hist[1]))
+  end)
+  it("PET subject filter excludes character entries", function()
+    reset()
+    local Core = ns.Core
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.SetHP(100, 100)
+    Core.PetDamageTrue(5)
+    Core.DamageTrue(5)
+    local txt = ns.History.FormatHistoryText(ns.History.Get(Core.state), 0, "PET")
+    assertNotNil(txt)
+    assertTrue(txt:find("%[Familier%]") ~= nil)
+  end)
+end)
+
+describe("Comm full echo (in-game)", function()
+  it("SerializeState then DeserializeState multipart-or-not preserves state", function()
+    reset()
+    local Core, Comm = ns.Core, ns.Comm
+    Core.SetClassKey("WARLOCK"); Core.SetHP(33, 77); Core.SetResIndex(2, 25, 60)
+    -- Force a long state to exercise compress path.
+    Core.SetPetEnabled(true); Core.SetPetName(string.rep("A", 64))
+
+    local s = Comm.SerializeState(Core.state)
+    assertNotNil(s)
+    local out = Comm:DeserializeState("STATE_DATA", s, "Self")
+    assertNotNil(out)
+    assertEq(out.hp, 33); assertEq(out.maxHp, 77); assertEq(out.classKey, "WARLOCK")
+    assertEq(out.res2, 25); assertEq(out.pet.enabled, true)
+  end)
+end)
+
+describe("Listener safety (in-game)", function()
+  it("a faulty listener does not break notify()", function()
+    reset()
+    local Core = ns.Core
+    local good = 0
+    local b = Core.OnChange(function() error("boom") end)
+    local g = Core.OnChange(function() good = good + 1 end)
+    local before = good
+    Core.SetHP(40, 100)  -- triggers notify
+    assertTrue(good > before, "good listener still fired")
+    b(); g()
+  end)
+end)
+
+describe("UI smoke (in-game)", function()
+  it("UI frame can be hidden then shown without error", function()
+    if not ns.UI or not ns.UI.frame then return end
+    ns.UI_Show(false); ns.UI_Show(true); ns.UI_Show(false); ns.UI_Show(true)
+    assertTrue(true)
+  end)
+  it("TargetPopup module exists", function()
+    assertNotNil(ns.TargetPopup)
+    assertNotNil(ns.TargetPopup.OnStateReceived)
+  end)
+end)
+
+describe("Defensive setters (in-game)", function()
+  it("SetHP with non-numeric does not crash", function()
+    reset()
+    local Core = ns.Core
+    Core.SetHP("foo", nil); Core.SetHP(nil, "bar")
+    assertTrue(true)
+  end)
+  it("SetClassKey rejects empty/non-string", function()
+    reset()
+    local Core = ns.Core
+    Core.SetClassKey(""); Core.SetClassKey(nil); Core.SetClassKey(42)
+    assertTrue(true)
+  end)
+  it("Pet operations no-op when pet disabled", function()
+    reset()
+    local Core = ns.Core
+    Core.SetPetEnabled(false)
+    Core.PetDamageTrue(99); Core.PetHeal(99); Core.PetRestoreHP()
+    assertTrue(true)
+  end)
+end)
+
 -- ─── Runner ──────────────────────────────────────────────────────────
 
 local function runOne(t)

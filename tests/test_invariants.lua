@@ -12,10 +12,10 @@ local ns = _G.NS
 local Core = ns.Core
 
 local SEED = 42
-local STEPS = 800
+local STEPS = 1500
 -- Number of seeds to run. Each seed runs STEPS ops, so total = SEED_COUNT * STEPS.
 -- Bumping this widens fuzz coverage at modest cost (~2ms per seed locally).
-local SEED_COUNT = 8
+local SEED_COUNT = 16
 
 local CLASSES = {
   "MAGE", "WARLOCK", "PRIEST", "PALADIN", "ROGUE", "SHAMAN",

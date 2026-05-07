@@ -76,19 +76,69 @@ T.describe("TargetPopup owner-tooltip parser", function()
 end)
 
 T.describe("TargetPopup state cache", function()
+  local function clearCache()
+    for k in pairs(h.cache) do h.cache[k] = nil end
+  end
+
   T.it("setCached + getCached round-trip", function()
-    -- Reset cache: stash + restore.
-    local saved = {}
-    for k, v in pairs(h.cache) do saved[k] = v; h.cache[k] = nil end
+    clearCache()
     h.setCached("foo", { hp = 10 })
     local got = h.getCached("foo")
     T.assertNotNil(got)
     T.assertEq(got.hp, 10)
-    -- Restore.
-    for k in pairs(h.cache) do h.cache[k] = nil end
-    for k, v in pairs(saved) do h.cache[k] = v end
+    clearCache()
   end)
   T.it("getCached returns nil for missing key", function()
+    clearCache()
     T.assertNil(h.getCached("never-set-this-key"))
+  end)
+  T.it("getCached evicts and returns nil for entries older than TTL", function()
+    clearCache()
+    _G.MOCKS.fakeNow = 1000
+    h.setCached("aging", { hp = 1 })
+    T.assertNotNil(h.getCached("aging"))
+    -- Advance past TTL.
+    _G.MOCKS.fakeNow = _G.MOCKS.fakeNow + h.CACHE_TTL + 1
+    T.assertNil(h.getCached("aging"))
+    -- Entry should also be removed from the underlying map.
+    T.assertNil(h.cache["aging"])
+    _G.MOCKS.fakeNow = nil
+    clearCache()
+  end)
+  T.it("setCached evicts oldest entry when cache exceeds CACHE_MAX", function()
+    clearCache()
+    _G.MOCKS.fakeNow = 1000
+    -- Fill above CACHE_MAX. Older entries get older fakeNow timestamps.
+    for i = 1, h.CACHE_MAX do
+      _G.MOCKS.fakeNow = 1000 + i
+      h.setCached("k" .. i, { hp = i })
+    end
+    T.assertNotNil(h.cache["k1"])
+    -- Insert one more; the soft cap should drop the oldest (k1, ts=1001).
+    _G.MOCKS.fakeNow = 2000
+    h.setCached("kNew", { hp = 0 })
+    T.assertNil(h.cache["k1"], "oldest entry should be evicted")
+    T.assertNotNil(h.cache["kNew"])
+    _G.MOCKS.fakeNow = nil
+    clearCache()
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- senderToUnitID
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("TargetPopup senderToUnitID", function()
+  T.it("passes through names that already include a realm", function()
+    T.assertEq(h.senderToUnitID("Foo-Realm"), "Foo-Realm")
+  end)
+  T.it("appends TRP3's player_realm_id when available", function()
+    rawset(_G, "TRP3_API", { globals = { player_realm_id = "MyRealm" } })
+    T.assertEq(h.senderToUnitID("Foo"), "Foo-MyRealm")
+    rawset(_G, "TRP3_API", nil)
+  end)
+  T.it("returns bare name when TRP3 is absent", function()
+    rawset(_G, "TRP3_API", nil)
+    T.assertEq(h.senderToUnitID("Foo"), "Foo")
   end)
 end)

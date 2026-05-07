@@ -12,7 +12,12 @@ function M.install()
   rawset(_G, "GrosOrteilDBPC", nil)
 
   -- Time helpers.
-  _G.GetTime = function() return os.clock() end
+  -- M.fakeNow lets tests force a deterministic timestamp without re-binding
+  -- _G.GetTime (Comm.lua captures it at file load via rawget so a re-bind is
+  -- invisible to module code). Set M.fakeNow to a number to override; nil =
+  -- normal os.clock-driven timing.
+  M.fakeNow = nil
+  _G.GetTime = function() return M.fakeNow or os.clock() end
   _G.time = os.time
   _G.date = os.date
 

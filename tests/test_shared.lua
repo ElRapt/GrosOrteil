@@ -85,3 +85,154 @@ T.describe("Shared.GetClassNameFr", function()
     T.assertEq(Shared.GetClassNameFr("MADE_UP"), "MADE_UP")
   end)
 end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Texture-coord helpers + overlay math (smoke against mock frames)
+-- ────────────────────────────────────────────────────────────────────
+
+-- Recording texture mock so we can assert show/hide/width side effects.
+local function makeRecordingTex()
+  local t = {
+    _shown = false,
+    _alpha = 1,
+    _width = 0,
+    _texture = nil,
+    _coord = nil,
+    _points = {},
+  }
+  function t:Show()             self._shown = true  end
+  function t:Hide()             self._shown = false end
+  function t:SetAlpha(a)        self._alpha = a end
+  function t:SetWidth(w)        self._width = w end
+  function t:GetWidth()         return self._width end
+  function t:SetTexture(s)      self._texture = s end
+  function t:SetTexCoord(...)   self._coord = { ... } end
+  function t:SetColorTexture(r, g, b, a) self._color = { r, g, b, a } end
+  function t:SetHeight(h)       self._height = h end
+  function t:ClearAllPoints()   self._points = {} end
+  function t:SetPoint(...)      self._points[#self._points + 1] = { ... } end
+  return t
+end
+
+local function makeBar(width)
+  return {
+    _w = width,
+    GetWidth = function(self) return self._w end,
+    GetHeight = function() return 14 end,
+    CreateTexture = function() return makeRecordingTex() end,
+  }
+end
+
+T.describe("Shared.SetClassIconTexCoords", function()
+  T.it("uses standard sheet for vanilla classes", function()
+    local tex = makeRecordingTex()
+    Shared.SetClassIconTexCoords(tex, "MAGE")
+    T.assertEq(tex._texture, "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+    T.assertNotNil(tex._coord)
+  end)
+  T.it("special-cases MEDIC", function()
+    local tex = makeRecordingTex()
+    Shared.SetClassIconTexCoords(tex, "MEDIC")
+    T.assertTrue(tex._texture:find("emberweavebandagelight") ~= nil)
+  end)
+  T.it("special-cases SHADOWPRIEST", function()
+    local tex = makeRecordingTex()
+    Shared.SetClassIconTexCoords(tex, "SHADOWPRIEST")
+    T.assertTrue(tex._texture:find("powerwordmadness") ~= nil)
+  end)
+  T.it("falls back to full coords for unknown class", function()
+    local tex = makeRecordingTex()
+    Shared.SetClassIconTexCoords(tex, "UNKNOWN")
+    T.assertNotNil(tex._coord)
+    T.assertEq(tex._coord[1], 0); T.assertEq(tex._coord[2], 1)
+  end)
+  T.it("no-op when texture has no SetTexCoord", function()
+    Shared.SetClassIconTexCoords({}, "MAGE")
+    Shared.SetClassIconTexCoords(nil, "MAGE")
+    T.assertTrue(true)
+  end)
+end)
+
+T.describe("Shared.HideOverlay", function()
+  T.it("hides + collapses width", function()
+    local tex = makeRecordingTex(); tex._shown = true; tex._width = 50
+    Shared.HideOverlay(tex)
+    T.assertFalse(tex._shown)
+    T.assertEq(tex._alpha, 0)
+    T.assertTrue(tex._width <= 0.001 + 1e-9)
+  end)
+  T.it("nil texture is a no-op", function()
+    Shared.HideOverlay(nil); T.assertTrue(true)
+  end)
+end)
+
+T.describe("Shared.UpdateHpShieldOverlays", function()
+  T.it("hides both overlays when no shields", function()
+    local block, magic = makeRecordingTex(), makeRecordingTex()
+    block._shown = true; magic._shown = true
+    Shared.UpdateHpShieldOverlays(block, magic, makeBar(100), 50, 100, 0, 0, 100)
+    T.assertFalse(block._shown); T.assertFalse(magic._shown)
+  end)
+  T.it("shows magic overlay when magic > 0", function()
+    local block, magic = makeRecordingTex(), makeRecordingTex()
+    Shared.UpdateHpShieldOverlays(block, magic, makeBar(100), 50, 100, 0, 10, 100)
+    T.assertTrue(magic._shown)
+    T.assertTrue(magic._width > 0)
+  end)
+  T.it("shows block overlay when block > 0", function()
+    local block, magic = makeRecordingTex(), makeRecordingTex()
+    Shared.UpdateHpShieldOverlays(block, magic, makeBar(100), 50, 100, 10, 0, 100)
+    T.assertTrue(block._shown)
+  end)
+  T.it("hides both when bar width is zero", function()
+    local block, magic = makeRecordingTex(), makeRecordingTex()
+    block._shown = true; magic._shown = true
+    Shared.UpdateHpShieldOverlays(block, magic, makeBar(0), 50, 100, 10, 10, 0)
+    T.assertFalse(block._shown); T.assertFalse(magic._shown)
+  end)
+  T.it("hides both when hp = 0", function()
+    local block, magic = makeRecordingTex(), makeRecordingTex()
+    block._shown = true; magic._shown = true
+    Shared.UpdateHpShieldOverlays(block, magic, makeBar(100), 0, 100, 10, 10, 100)
+    T.assertFalse(block._shown); T.assertFalse(magic._shown)
+  end)
+end)
+
+T.describe("Shared marker helpers", function()
+  T.it("MakeMarker returns hidden texture with stored pct", function()
+    local m = Shared.MakeMarker(makeBar(100), 0.5, 1, 1, 1, 0.5, 2)
+    T.assertEq(m.pct, 0.5)
+    T.assertFalse(m._shown)
+  end)
+  T.it("HideMarkers hides all entries", function()
+    local list = { makeRecordingTex(), makeRecordingTex(), nil, makeRecordingTex() }
+    list[1]._shown = true; list[2]._shown = true; list[4]._shown = true
+    Shared.HideMarkers(list)
+    T.assertFalse(list[1]._shown); T.assertFalse(list[2]._shown); T.assertFalse(list[4]._shown)
+  end)
+  T.it("PositionMarkers no-ops when bar width is 0", function()
+    local m = makeRecordingTex(); m.pct = 0.5
+    Shared.PositionMarkers({ m }, makeBar(0))
+    T.assertFalse(m._shown)
+  end)
+  T.it("PositionMarkers shows + clamps marker pct", function()
+    local m = makeRecordingTex(); m.pct = 1.5  -- overshoot, must clamp to bar width
+    Shared.PositionMarkers({ m }, makeBar(100))
+    T.assertTrue(m._shown)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- HP threshold marker factory (smoke)
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Shared.MakeHpThresholdMarkers", function()
+  T.it("creates 3 threshold markers and 1 cap marker", function()
+    local markers, cap = Shared.MakeHpThresholdMarkers(makeBar(100))
+    T.assertEq(#markers, 3)
+    T.assertNotNil(cap)
+    T.assertEq(markers[1].pct, 0.50)
+    T.assertEq(markers[2].pct, 0.25)
+    T.assertEq(markers[3].pct, 0.10)
+  end)
+end)

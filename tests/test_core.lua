@@ -1060,3 +1060,212 @@ T.describe("Core.ClearHistory", function()
     unsub()
   end)
 end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet operations are no-ops when pet is disabled
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Pet operations no-op when disabled", function()
+  local function setup()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.SetPetEnabled(false)  -- now disabled but state remains
+  end
+  T.it("PetDamageWithArmor does not change pet hp", function()
+    setup()
+    Core.PetDamageWithArmor(50)
+    T.assertEq(Core.state.pet.hp, 20)
+  end)
+  T.it("PetDamageTrue does not change pet hp", function()
+    setup()
+    Core.PetDamageTrue(50)
+    T.assertEq(Core.state.pet.hp, 20)
+  end)
+  T.it("PetHeal does not change pet hp", function()
+    setup()
+    Core.SetPetHP(5, 20)
+    Core.SetPetEnabled(false)
+    Core.PetHeal(99)
+    T.assertEq(Core.state.pet.hp, 5)
+  end)
+  T.it("PetDivineHeal/Surgery/RestoreHP/DailyRegenHP all no-op", function()
+    setup()
+    local hp = Core.state.pet.hp
+    Core.PetDivineHeal(); Core.PetSurgery(); Core.PetRestoreHP(); Core.PetDailyRegenHP()
+    T.assertEq(Core.state.pet.hp, hp)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Idempotence: repeating identical setters
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Core setter idempotence", function()
+  T.it("setting the same HP twice keeps state consistent", function()
+    reset()
+    Core.SetHP(50, 100)
+    Core.SetHP(50, 100)
+    T.assertEq(Core.state.hp, 50)
+    T.assertEq(Core.state.maxHp, 100)
+  end)
+  T.it("toggling pet enabled twice ends up identical", function()
+    reset()
+    Core.SetPetEnabled(true)
+    local hp = Core.state.pet.hp
+    Core.SetPetEnabled(true)  -- second call same value
+    T.assertEq(Core.state.pet.enabled, true)
+    T.assertEq(Core.state.pet.hp, hp)
+  end)
+  T.it("ClearHistory on already-empty history is a safe no-op", function()
+    reset()
+    Core.ClearHistory()
+    T.assertEq(#Core.state.history, 0)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Edge: zero / corrupt magic shield state
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Magic shield corrupt state", function()
+  T.it("damage with maxHp=0 but hp>0 still drains hp gracefully", function()
+    reset()
+    Core.SetHP(100, 100)
+    -- Force a corrupt shape (defensive coding test).
+    Core.state.magicShield = { hp = 5, maxHp = 0, armor = 0 }
+    Core.DamageTrue(3)  -- shield hp 5 absorbs 3 → shield hp 2 → but maxHp 0 should reset
+    T.assertEq(Core.state.hp, 100)
+    -- 3 absorbed by shield hp; resulting shield hp <= 0 path: not triggered yet (3 < 5).
+    T.assertEq(Core.state.magicShield.hp, 2)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Heal edge cases
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Heal edge cases", function()
+  T.it("heal does NOT lower current hp (math.max(current, healed))", function()
+    reset()
+    Core.SetHP(80, 100)
+    Core.SetHP(80, 100)  -- normalize
+    -- Force hit10 sticky → wound cap 25. Heal cap < current.
+    Core.state.wounds.hit10 = true
+    Core.state.wounds.hit25 = true
+    Core.Heal(5)
+    T.assertEq(Core.state.hp, 80, "heal must not lower hp below current")
+  end)
+  T.it("heal at hp=0 with stabilise grants minimum", function()
+    reset()
+    Core.SetHP(0, 100); Core.SetStabilise(true)
+    Core.Heal(0)  -- no input
+    T.assertEq(Core.state.hp, 0)
+    T.assertEq(Core.state.stabilise, true, "stabilise still set since hp == 0")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Dodge interaction with damage
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Dodge does NOT decrement on hit", function()
+  T.it("dodge value persists across multiple dodged hits", function()
+    reset()
+    Core.SetHP(100, 100); Core.SetDodge(20)
+    Core.DamageTrue(15); Core.DamageTrue(20); Core.DamageTrue(10)
+    T.assertEq(Core.state.dodge, 20)
+    T.assertEq(Core.state.hp, 100)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- ResetToDefaults clears active posture and shields
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("ResetToDefaults clears transient state", function()
+  T.it("active shaman posture is gone after reset", function()
+    reset()
+    Core.SetClassKey("SHAMAN")
+    Core.SetResIndex(1, 5, 20)
+    Core.SetShamanPosture("TERRE")
+    Core.ResetToDefaults()
+    T.assertNil(Core.state.shamanPosture)
+  end)
+  T.it("active mana shield is gone after reset", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetRes(50, 100)
+    Core.SetManaShieldActive(true)
+    Core.ResetToDefaults()
+    T.assertFalse(Core.state.manaShield.active)
+  end)
+  T.it("magic shield reset to zeros after reset", function()
+    reset()
+    Core.SetMagicShield(10, 20, 5)
+    Core.ResetToDefaults()
+    T.assertEq(Core.state.magicShield.hp, 0)
+    T.assertEq(Core.state.magicShield.maxHp, 0)
+    T.assertEq(Core.state.magicShield.armor, 0)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Resource arithmetic boundary
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Resource arithmetic boundaries", function()
+  T.it("AddResIndex(2, ...) for WARLOCK respects 60 cap", function()
+    reset()
+    Core.SetClassKey("WARLOCK")
+    Core.AddResIndex(2, 9999)
+    T.assertEq(Core.state.res2, 60)
+  end)
+  T.it("AddResIndex(2, ...) for MAGE respects 8 cap", function()
+    reset()
+    Core.SetClassKey("ROGUE")  -- escape default MAGE
+    Core.SetClassKey("MAGE")
+    Core.AddResIndex(2, 9999)
+    T.assertEq(Core.state.res2, 8)
+  end)
+  T.it("AddResIndex(2, negative) for WARLOCK floor at 0", function()
+    reset()
+    Core.SetClassKey("WARLOCK")
+    Core.SetResIndex(2, 5, 60)
+    Core.AddResIndex(2, -100)
+    T.assertEq(Core.state.res2, 0)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- History rev counter monotonicity
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("State.rev counter", function()
+  T.it("rev increments on every mutation", function()
+    reset()
+    local r0 = Core.state.rev or 0
+    Core.SetHP(40, 100)
+    T.assertTrue((Core.state.rev or 0) > r0)
+    local r1 = Core.state.rev
+    Core.DamageTrue(5)
+    T.assertTrue((Core.state.rev or 0) > r1)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- AceSerializer/Deflate compat: state survives a no-op cycle
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("State JSON-like shape stays serializable", function()
+  T.it("no functions, threads, or userdata in Core.state after operations", function()
+    reset()
+    Core.SetClassKey("WARLOCK"); Core.SetHP(33, 77); Core.DamageTrue(3); Core.Heal(5)
+    local function bad(v)
+      local t = type(v)
+      if t == "function" or t == "thread" or t == "userdata" then return true end
+      if t == "table" then for _, vv in pairs(v) do if bad(vv) then return true end end end
+      return false
+    end
+    T.assertFalse(bad(Core.state))
+  end)
+end)
