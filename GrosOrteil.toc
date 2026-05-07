@@ -26,3 +26,4 @@ GrosOrteil_UI_Tabs.lua
 GrosOrteil_UI.lua
 GrosOrteil_Comm.lua
 GrosOrteil_TargetPopup.lua
+GrosOrteil_Tests.lua

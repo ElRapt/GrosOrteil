@@ -258,8 +258,8 @@ function Comm:DeserializeState(cmd, payload, sender)
 end
 
 function Comm:SendStateData(targetPlayer)
-  if not targetPlayer then
-    dbg("SendStateData aborted: no target")
+  if type(targetPlayer) ~= "string" or targetPlayer == "" then
+    dbg("SendStateData aborted: invalid target")
     return
   end
 

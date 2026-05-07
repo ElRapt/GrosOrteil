@@ -1522,6 +1522,25 @@ end
 
 -- ============================================================
 
+-- Test-only handles: lets the offline test runner reach pure helpers
+-- (name normalization, owner-tooltip parsing, cache primitives) without
+-- relying on real WoW API surface. NOT for production use.
+Popup._test = {
+  normalizeName                  = normalizeName,
+  splitNameRealm                 = splitNameRealm,
+  toCacheKey                     = toCacheKey,
+  namesMatch                     = namesMatch,
+  stripColorCodes                = stripColorCodes,
+  extractOwnerNameFromTooltipText = extractOwnerNameFromTooltipText,
+  baseCharacterName              = baseCharacterName,
+  senderToUnitID                 = senderToUnitID,
+  getCached                      = getCached,
+  setCached                      = setCached,
+  cache                          = stateCache,
+  CACHE_TTL                      = CACHE_TTL,
+  CACHE_MAX                      = CACHE_MAX,
+}
+
 function ns.TargetPopup_Init()
   Popup:Initialize()
 end

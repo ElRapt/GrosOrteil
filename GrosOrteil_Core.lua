@@ -588,10 +588,15 @@ function Core.SetClassKey(classKey)
 
   -- Warlock: Corruption has a fixed max of 60.
   -- Mage: Arcane Charge has a fixed max of 8.
+  -- Other classes: ensure res2 ≤ maxRes2. SHADOWPRIEST's insanity (res2)
+  -- is intentionally allowed to exceed maxRes2; everywhere else, leaving
+  -- a stale insanity value over the new class's cap is a bug.
   if classKey == "WARLOCK" then
     clampWarlockCorruption(s)
   elseif classKey == "MAGE" then
     clampMageArcaneCharge(s)
+  elseif classKey ~= "SHADOWPRIEST" then
+    clampToMax(s, "res2", "maxRes2")
   end
   bump(); notify()
 end
@@ -702,8 +707,12 @@ function Core.SetPetMagicShield(hp, maxHp, armor)
   hp    = clampNumber(hp,    0, 1e9)
   maxHp = clampNumber(maxHp, 0, 1e9)
   armor = clampNumber(armor, 0, 1e9)
-  if hp    then p.magicShield.hp    = hp    end
   if maxHp then p.magicShield.maxHp = maxHp end
+  if hp then
+    local cap = p.magicShield.maxHp or 0
+    if cap > 0 and hp > cap then hp = cap end
+    p.magicShield.hp = hp
+  end
   if armor then p.magicShield.armor = armor end
   bump(); notify()
 end
