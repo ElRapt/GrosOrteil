@@ -45,13 +45,22 @@ function ns.GetDB()
   return ns.db
 end
 
-local function ensureMinimapShown()
+local function applyMinimapVisibility()
   local db = ns.GetDB()
   db.minimap = db.minimap or {}
-  db.minimap.hide = false
-
   if not Icon then return end
-  Icon:Show(MINIMAP_ICON_NAME)
+  if db.minimap.hide then
+    Icon:Hide(MINIMAP_ICON_NAME)
+  else
+    Icon:Show(MINIMAP_ICON_NAME)
+  end
+end
+
+local function setMinimapHidden(hidden)
+  local db = ns.GetDB()
+  db.minimap = db.minimap or {}
+  db.minimap.hide = not not hidden
+  applyMinimapVisibility()
 end
 
 local function initMinimapIcon()
@@ -90,7 +99,7 @@ local function initMinimapIcon()
   end
 
   Icon:Refresh(MINIMAP_ICON_NAME, db.minimap)
-  ensureMinimapShown()
+  applyMinimapVisibility()
 end
 
 local f = CreateFrame("Frame")
@@ -164,10 +173,21 @@ f:SetScript("OnEvent", function(_, event, arg1)
           end
         end
       elseif cmd == "minimap" then
-        ensureMinimapShown()
-        print("|cFF00FF00GrosOrteil|r l'icone minimap est toujours visible.")
+        local sub = (rest or ""):match("^(%S*)"):lower()
+        if sub == "hide" then
+          setMinimapHidden(true)
+          print("|cFF00FF00GrosOrteil|r icone minimap masquee.")
+        elseif sub == "show" then
+          setMinimapHidden(false)
+          print("|cFF00FF00GrosOrteil|r icone minimap affichee.")
+        else
+          local db = ns.GetDB()
+          db.minimap = db.minimap or {}
+          setMinimapHidden(not db.minimap.hide)
+          print("|cFF00FF00GrosOrteil|r icone minimap " .. (db.minimap.hide and "masquee" or "affichee") .. ".")
+        end
       else
-        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go pet | /go minimap")
+        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go pet | /go minimap [show|hide]")
       end
     end
   end

@@ -1268,9 +1268,10 @@ local function showHoverForState(state, petOnly)
     hoverFrame.hpBar.bar:SetStatusBarColor(0.95, 0.62, 0.18, 1)
     hoverFrame.hpBar.label:SetText(string.format("PV : %d / %d", roundNumber(petHp), roundNumber(petMaxHp)))
 
+    local petMs = type(pet.magicShield) == "table" and pet.magicShield or {}
     Shared.UpdateHpShieldOverlays(
       hoverFrame.hpBar.blockOverlay, hoverFrame.hpBar.magicOverlay,
-      hoverFrame.hpBar.bar, petHp, petMaxHp, 0, tonumber(pet.tempMagicBlock) or 0, HOVER_BAR_W
+      hoverFrame.hpBar.bar, petHp, petMaxHp, 0, tonumber(petMs.hp) or 0, HOVER_BAR_W
     )
 
     local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }

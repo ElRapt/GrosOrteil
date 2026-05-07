@@ -6,14 +6,12 @@ ns.History = History
 History.MAX = 60
 
 function History.NowTimestamp()
+	-- Use Unix epoch via time(); GetTime() returns fractional seconds since
+	-- session start, which date("%H:%M:%S", ts) would format as wee hours of
+	-- 1970-01-01.
 	local t = rawget(_G, "time")
 	if type(t) == "function" then
 		local ok, v = pcall(t)
-		if ok and type(v) == "number" then return v end
-	end
-	local gt = rawget(_G, "GetTime")
-	if type(gt) == "function" then
-		local ok, v = pcall(gt)
 		if ok and type(v) == "number" then return v end
 	end
 	return nil

@@ -7,6 +7,7 @@ ns.Core = Core
 local History = ns.History
 
 local listeners = {}
+local nextListenerId = 0
 
 local function playFirstSoundKit(keys)
   if type(PlaySound) ~= "function" then return end
@@ -80,8 +81,8 @@ local function notify()
   local s = Core.state
   if not s then return end
 
-  for i = 1, #listeners do
-    local fn = listeners[i]
+  -- pairs() over a counter-keyed map: stable under unregister, no sparse-array footgun.
+  for _, fn in pairs(listeners) do
     local ok, err = pcall(fn, s)
     if not ok then
       reportError(err)
@@ -91,7 +92,8 @@ end
 
 function Core.OnChange(fn)
   if type(fn) ~= "function" then return end
-  local id = #listeners + 1
+  nextListenerId = nextListenerId + 1
+  local id = nextListenerId
   listeners[id] = fn
 
   -- Important: Core_Init() may have already fired notify() before UI registers.
@@ -231,6 +233,10 @@ local function bump()
   Core.state.rev = (Core.state.rev or 0) + 1
   prevSnapshot = deepCopyState(Core.state)
 end
+
+-- Forward declarations: defined later but referenced by setters.
+local applyManaShieldActive
+local deactivateShamanPosture
 
 local function clampNumber(x, minv, maxv)
   if type(x) ~= "number" then return nil end
@@ -402,6 +408,13 @@ local function effDmg(dmg, mitigation)
 end
 
 function ns.Core_Init()
+  -- Reset undo/redo on (re-)init so ResetToDefaults can't replay pre-reset
+  -- snapshots back into the freshly-defaulted state.
+  for i = #undoStack, 1, -1 do undoStack[i] = nil end
+  for i = #redoStack, 1, -1 do redoStack[i] = nil end
+  prevSnapshot = nil
+  undoCoalesce = false
+
   local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
 
   db.state = db.state or {
@@ -489,6 +502,17 @@ function ns.Core_Init()
     db.state.manaShield.active = db.state.manaShield.active and true or false
     if type(db.state.manaShield.armor) ~= "number" then db.state.manaShield.armor = 25 end
   end
+  -- Mana shield armor used to be folded into s.tempArmor on activation. The model
+  -- now keeps it separate (added to mitigation at hit time). For old saves that
+  -- were captured while the shield was active, peel the contribution back out
+  -- once so the displayed tempArmor matches the user's intent.
+  if not db.state._manaShieldArmorSplit then
+    if db.state.manaShield.active then
+      local contrib = math.max(0, db.state.manaShield.armor or 0)
+      db.state.tempArmor = math.max(0, (db.state.tempArmor or 0) - contrib)
+    end
+    db.state._manaShieldArmorSplit = true
+  end
   ensureHistory(db.state)
   ensurePet(db.state)
 
@@ -548,6 +572,18 @@ function Core.SetClassKey(classKey)
   if not s then return end
   if type(classKey) ~= "string" or classKey == "" then return end
   if s.classKey == classKey then return end
+
+  -- Leaving SHAMAN: tear down any active posture (stat bumps + posture bonuses)
+  -- before changing class, otherwise the bumps leak into the new class.
+  if s.classKey == "SHAMAN" then
+    deactivateShamanPosture(s)
+  end
+
+  -- Leaving MAGE: drop any active mana shield so it can't trigger from non-MAGE state.
+  if s.classKey == "MAGE" and s.manaShield and s.manaShield.active then
+    applyManaShieldActive(s, false)
+  end
+
   s.classKey = classKey
 
   -- Warlock: Corruption has a fixed max of 60.
@@ -838,19 +874,13 @@ end
 -- Bouclier de mana (mage uniquement)
 
 -- Interne : change l'état actif du bouclier de mana et synchronise tempArmor.
-local function applyManaShieldActive(s, newActive)
+-- Mana shield is now treated as an additive armor contribution computed at hit time
+-- (see manaShieldArmorContribution() in applyHit). Activating/deactivating no longer
+-- mutates s.tempArmor, eliminating desync when the user edits tempArmor directly.
+applyManaShieldActive = function(s, newActive)
   local mns = s.manaShield
   if not mns then return end
-  local wasActive = mns.active
-  mns.active = newActive
-  if newActive ~= wasActive then
-    local a = mns.armor or 0
-    if newActive then
-      s.tempArmor = math.max(0, (s.tempArmor or 0) + a)
-    else
-      s.tempArmor = math.max(0, (s.tempArmor or 0) - a)
-    end
-  end
+  mns.active = not not newActive
 end
 
 function Core.SetManaShieldArmor(v)
@@ -858,15 +888,7 @@ function Core.SetManaShieldArmor(v)
   if not s then return end
   s.manaShield = s.manaShield or { active = false, armor = 25 }
   v = clampNumber(v, 0, 1e9)
-  if v then
-    if s.manaShield.active then
-      local oldArmor = s.manaShield.armor or 0
-      s.manaShield.armor = v
-      s.tempArmor = math.max(0, (s.tempArmor or 0) - oldArmor + v)
-    else
-      s.manaShield.armor = v
-    end
-  end
+  if v then s.manaShield.armor = v end
   bump(); notify()
 end
 
@@ -1096,6 +1118,13 @@ local function applyHit(s, t, rawAmount, opts)
   else
     local armorVal = opts.armor and ((t.armor or 0) + (t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
                                  or ((t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
+    -- Active mana shield (Mage only) adds armor to mitigation. This used to be
+    -- folded into tempArmor on (de)activation, which desynced when the user
+    -- edited tempArmor manually.
+    local mns = s.manaShield
+    if mns and mns.active and s.classKey == "MAGE" then
+      armorVal = armorVal + math.max(0, mns.armor or 0)
+    end
     mit = armorVal
   end
 
@@ -1135,7 +1164,8 @@ local function applyHit(s, t, rawAmount, opts)
     maxHp         = maxBefore,
   }
   if not opts.isPet then
-    entry.input       = amount + absorbedBlock + absorbedMagic
+    -- input stays as rawAmount (the value the user typed, after Shaman-FEU bonus),
+    -- matching pet history. The breakdown lines already report block/magic/mit.
     entry.manaAbsorbed = manaAbsorbed
     entry.manaBroke    = manaBroke
     entry.manaBefore   = manaBefore
@@ -1228,38 +1258,40 @@ function Core.AddRes(amount)
   Core.AddResIndex(1, amount)
 end
 
+deactivateShamanPosture = function(s)
+  if not s or not s.shamanPosture then return end
+  local base = s.shamanPostureBase or {}
+  if s.shamanPosture == "FEU" then
+    s.armor = base.armor or s.armor
+    s.shamanPostureDmgBonus = 0
+    s.maxRes4 = base.maxRes4 or s.maxRes4
+    clampToMax(s, "res4", "maxRes4")
+  elseif s.shamanPosture == "TERRE" then
+    s.armor = math.max(0, (s.armor or 0) - 5)
+    s.maxHp = math.max(1, (s.maxHp or 0) - 20)
+    if (s.hp or 0) > s.maxHp then s.hp = s.maxHp end
+    recomputeWounds(s)
+    s.maxRes = base.maxRes or s.maxRes
+    clampToMax(s, "res", "maxRes")
+  elseif s.shamanPosture == "AIR" then
+    s.dodge = math.max(0, (s.dodge or 0) - 15)
+    s.maxRes2 = base.maxRes2 or s.maxRes2
+    clampToMax(s, "res2", "maxRes2")
+  elseif s.shamanPosture == "EAU" then
+    s.maxRes3 = base.maxRes3 or s.maxRes3
+    clampToMax(s, "res3", "maxRes3")
+  end
+  s.shamanPosture = nil
+  s.shamanPostureBase = nil
+end
+
 function Core.SetShamanPosture(posture)
   local s = Core.state
   if not s or s.classKey ~= "SHAMAN" then return end
   -- Toggle off if same posture clicked again
   if s.shamanPosture == posture then posture = nil end
 
-  -- Deactivate current posture first (restore base stats)
-  if s.shamanPosture then
-    local base = s.shamanPostureBase or {}
-    if s.shamanPosture == "FEU" then
-      s.armor = base.armor or s.armor
-      s.shamanPostureDmgBonus = 0
-      s.maxRes4 = base.maxRes4 or s.maxRes4
-      clampToMax(s, "res4", "maxRes4")
-    elseif s.shamanPosture == "TERRE" then
-      s.armor = math.max(0, (s.armor or 0) - 5)
-      s.maxHp = math.max(1, (s.maxHp or 0) - 20)
-      if (s.hp or 0) > s.maxHp then s.hp = s.maxHp end
-      recomputeWounds(s)
-      s.maxRes = base.maxRes or s.maxRes
-      clampToMax(s, "res", "maxRes")
-    elseif s.shamanPosture == "AIR" then
-      s.dodge = math.max(0, (s.dodge or 0) - 15)
-      s.maxRes2 = base.maxRes2 or s.maxRes2
-      clampToMax(s, "res2", "maxRes2")
-    elseif s.shamanPosture == "EAU" then
-      s.maxRes3 = base.maxRes3 or s.maxRes3
-      clampToMax(s, "res3", "maxRes3")
-    end
-    s.shamanPosture = nil
-    s.shamanPostureBase = nil
-  end
+  deactivateShamanPosture(s)
 
   if not posture then bump(); notify(); return end
 

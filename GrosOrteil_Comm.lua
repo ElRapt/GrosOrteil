@@ -6,6 +6,9 @@ ns.Comm = Comm
 
 Comm.PREFIX = "GO_STATE"
 Comm.REQUEST_TIMEOUT = 5
+-- Per-sender minimum interval between REQUEST_STATE responses. The popup side
+-- self-throttles at 5s, so anything below that is a misbehaving/abusive peer.
+Comm.RESPONSE_COOLDOWN = 3
 
 local _G = _G
 local type = type
@@ -50,10 +53,11 @@ local function sendAddonMessage(prefix, msg, channel, target)
 end
 
 -- Numeric fields shared in the addon-message payload. Each entry: { key, default }.
+-- tempArmor is included so peer popups display the player's effective armor.
 local NUMERIC_FIELDS = {
   { "hp", 0 }, { "maxHp", 0 },
-  { "armor", 0 }, { "trueArmor", 0 }, { "dodge", 0 },
-  { "tempBlock", 0 }, { "tempMagicBlock", 0 },
+  { "armor", 0 }, { "trueArmor", 0 }, { "tempArmor", 0 }, { "dodge", 0 },
+  { "tempBlock", 0 },
   { "res", 0 }, { "maxRes", 0 },
   { "res2", 0 }, { "maxRes2", 0 },
   { "res3", 0 }, { "maxRes3", 0 },
@@ -92,6 +96,23 @@ local function buildPayload(src, petSrc, classKey)
   out.wounds   = packWounds(src.wounds)
   out.stabilise = src.stabilise and true or false
   out.classKey = classKey
+
+  -- Player magic shield (mirrors the per-pet block below). Without this peer
+  -- popups always show 0 for the player's magic-shield overlay.
+  local sms = type(src.magicShield) == "table" and src.magicShield or {}
+  out.magicShield = {
+    hp    = tonumber(sms.hp)    or 0,
+    maxHp = tonumber(sms.maxHp) or 0,
+    armor = tonumber(sms.armor) or 0,
+  }
+  -- Mana shield (Mage only): peers need to know it's active to render the
+  -- effective tempArmor contribution.
+  local smns = type(src.manaShield) == "table" and src.manaShield or {}
+  out.manaShield = {
+    active = smns.active and true or false,
+    armor  = tonumber(smns.armor) or 0,
+  }
+
   local pet = copyNumeric(petSrc, PET_NUMERIC_FIELDS)
   pet.enabled          = not not petSrc.enabled
   pet.authorityEnabled = not not petSrc.authorityEnabled
@@ -344,6 +365,16 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
   end
 
   if msg == "REQUEST_STATE" then
+    -- Rate-limit per sender so a misbehaving peer can't flood our addon channel
+    -- by spamming requests.
+    self.lastRequestServed = self.lastRequestServed or {}
+    local now = (GetTime and GetTime()) or 0
+    local last = self.lastRequestServed[sender or ""] or 0
+    if last > 0 and (now - last) < self.RESPONSE_COOLDOWN then
+      dbg("Throttled REQUEST_STATE from %s (last %.2fs ago)", tostring(sender), now - last)
+      return
+    end
+    self.lastRequestServed[sender or ""] = now
     dbg("Received REQUEST_STATE from %s", tostring(sender))
     self:SendStateData(sender)
     return

@@ -724,6 +724,9 @@ function ns.UI_Init()
         if activeSectionRef.v == 2 then Core.PetDailyRegenRes() else Core.DailyRegenRes() end
       end)
     iconRegenRes:SetPoint("RIGHT", iconRegenHP, "LEFT", -ICON_GAP, 0)
+    -- Pet section has no primary resource (PetDailyRegenRes is a no-op), so
+    -- hide the icon while in pet section instead of letting clicks do nothing.
+    UI.iconRegenRes = iconRegenRes
   end
 
   -- Main body: sidebar (left) + content (right)
@@ -1208,14 +1211,21 @@ function ns.UI_Init()
   end
 
   local function setTab(active)
-    if UI.tabDisabled and UI.tabDisabled[active] then
-      return
-    end
     -- Don't activate a tab that belongs to the inactive section.
     if active <= 7 and activeSection ~= 1 then return end
     if active >= 8 and activeSection ~= 2 then return end
     if UI.tabHidden and UI.tabHidden[active] then
       setTab(activeSection == 1 and 1 or 8)
+      return
+    end
+    if UI.tabDisabled and UI.tabDisabled[active] then
+      -- The previously-active tab just became disabled (e.g. resources for a
+      -- class with no resources). Fall back to the section's home tab so the
+      -- pages stay in sync — without this the disabled page kept rendering.
+      local fallback = (activeSection == 1) and 1 or 8
+      if active ~= fallback and not (UI.tabDisabled and UI.tabDisabled[fallback]) then
+        setTab(fallback)
+      end
       return
     end
     UI.activeTab = active
@@ -1459,6 +1469,10 @@ function ns.UI_Init()
       if UI.activeTab and UI.activeTab >= 8 then setTab(1) end
     else
       if not UI.activeTab or UI.activeTab < 8 then setTab(8) end
+    end
+    -- Mystic-regen icon has no pet equivalent, so hide it in the pet section.
+    if UI.iconRegenRes then
+      if sect == 2 then UI.iconRegenRes:Hide() else UI.iconRegenRes:Show() end
     end
     -- Full re-render for the newly active section.
     if lastState and onChangeCallback then onChangeCallback(lastState) end
