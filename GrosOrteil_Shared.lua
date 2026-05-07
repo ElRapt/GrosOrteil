@@ -220,9 +220,9 @@ function Shared.HideOverlay(tex)
   tex:SetWidth(0.001)
 end
 
-function Shared.UpdateHpShieldOverlays(blockOverlay, magicOverlay, bar, hpNow, maxHp, blockValue, magicValue)
+function Shared.UpdateHpShieldOverlays(blockOverlay, magicOverlay, bar, hpNow, maxHp, blockValue, magicValue, barWidth)
   if not bar then return end
-  local wBar = bar:GetWidth() or 0
+  local wBar = barWidth or (bar:GetWidth()) or 0
   local hpForOverlay = math.max(0, hpNow or 0)
   local block = math.max(0, blockValue or 0)
   local magic = math.max(0, magicValue or 0)

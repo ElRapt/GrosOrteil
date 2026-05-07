@@ -336,7 +336,7 @@ local function updateHpShieldOverlays(row, hpNow, maxHp, blockValue, magicValue)
   if not row or not row.bar then return end
   Shared.UpdateHpShieldOverlays(
     row.blockOverlay, row.magicOverlay, row.bar,
-    hpNow, maxHp, blockValue, magicValue
+    hpNow, maxHp, blockValue, magicValue, 304
   )
 end
 
@@ -1270,7 +1270,7 @@ local function showHoverForState(state, petOnly)
 
     Shared.UpdateHpShieldOverlays(
       hoverFrame.hpBar.blockOverlay, hoverFrame.hpBar.magicOverlay,
-      hoverFrame.hpBar.bar, petHp, petMaxHp, 0, tonumber(pet.tempMagicBlock) or 0
+      hoverFrame.hpBar.bar, petHp, petMaxHp, 0, tonumber(pet.tempMagicBlock) or 0, HOVER_BAR_W
     )
 
     local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
@@ -1319,7 +1319,7 @@ local function showHoverForState(state, petOnly)
   Shared.UpdateHpShieldOverlays(
     hoverFrame.hpBar.blockOverlay, hoverFrame.hpBar.magicOverlay,
     hoverFrame.hpBar.bar, hp, effMax,
-    tonumber(state.tempBlock) or 0, (state.magicShield and state.magicShield.hp or 0)
+    tonumber(state.tempBlock) or 0, (state.magicShield and state.magicShield.hp or 0), HOVER_BAR_W
   )
 
   local HP_THRESHOLD_PCTS = { 0.50, 0.25, 0.10 }
