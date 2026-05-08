@@ -385,3 +385,88 @@ T.describe("Comm end-to-end echo", function()
     T.assertEq(received.res2, 25)
   end)
 end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Defensive serialization
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Comm defensive serialization", function()
+  T.it("SerializeState with empty state returns a valid string", function()
+    local s = Comm.SerializeState({})
+    T.assertNotNil(s)
+    T.assertEq(type(s), "string")
+  end)
+  T.it("SerializeState round-trips an empty state with default values", function()
+    local s = Comm.SerializeState({})
+    local out = Comm:DeserializeState("STATE_DATA", s, "Tester")
+    T.assertNotNil(out)
+    T.assertEq(out.hp, 0)
+    T.assertEq(out.maxHp, 0)
+    -- pet sub-table fully defaulted.
+    T.assertEq(out.pet.enabled, false)
+    T.assertEq(out.pet.name, "Familier")
+  end)
+  T.it("DeserializeState ignores STATE_DATA with a non-string payload", function()
+    -- Should not crash even if payload is the wrong type.
+    local out = Comm:DeserializeState("STATE_DATA", nil, "Tester")
+    T.assertNil(out)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Bool/string field round-trip strictness
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Comm boolean and string preservation", function()
+  T.it("pet.enabled is exactly false (not 0 / nil) on round-trip", function()
+    reset()
+    local s = Comm.SerializeState(Core.state)
+    local out = Comm:DeserializeState("STATE_DATA", s, "Tester")
+    T.assertEq(out.pet.enabled, false)
+    T.assertEq(type(out.pet.enabled), "boolean")
+  end)
+  T.it("wounds remain booleans on round-trip", function()
+    reset()
+    Core.SetHP(2, 100)  -- hit10 sticky
+    local s = Comm.SerializeState(Core.state)
+    local out = Comm:DeserializeState("STATE_DATA", s, "Tester")
+    T.assertEq(type(out.wounds.hit10), "boolean")
+    T.assertEq(type(out.wounds.hit25), "boolean")
+  end)
+  T.it("non-string pet.name in payload falls back to 'Familier'", function()
+    -- Bypass the pre-clamp and inject a corrupt pet name into a serialized payload.
+    -- Easiest: build a fake decoded payload through buildPayload via DeserializeState.
+    local LibStub = _G.LibStub
+    local AceSerializer = LibStub("AceSerializer-3.0", true)
+    T.assertNotNil(AceSerializer)
+    local raw = AceSerializer:Serialize({ hp = 1, maxHp = 1, pet = { name = 42, enabled = true } })
+    local out = Comm:DeserializeState("STATE_DATA", raw, "Tester")
+    T.assertEq(out.pet.name, "Familier")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Multipart isolation between senders
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Comm multipart per-sender isolation", function()
+  T.it("part for sender A does not get mixed with part for sender B", function()
+    reset()
+    Core.SetHP(60, 90)
+    local serialized = Comm.SerializeState(Core.state)
+    local mid = math.floor(#serialized / 2)
+    local p1, p2 = serialized:sub(1, mid), serialized:sub(mid + 1)
+
+    Comm.partialMessages = {}
+    -- Sender A sends part 1, sender B sends a totally unrelated part 1 (different total).
+    local r1 = Comm:DeserializeState("STATE_DATA_PART", { total = 2, index = 1, data = p1 }, "A")
+    T.assertNil(r1)
+    local junkB = Comm:DeserializeState("STATE_DATA_PART", { total = 5, index = 1, data = "noise" }, "B")
+    T.assertNil(junkB)
+
+    -- Sender A's part 2 should still complete cleanly without B's junk interfering.
+    local r2 = Comm:DeserializeState("STATE_DATA_PART", { total = 2, index = 2, data = p2 }, "A")
+    T.assertNotNil(r2)
+    T.assertEq(r2.hp, 60)
+  end)
+end)

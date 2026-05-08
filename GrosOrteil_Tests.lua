@@ -465,6 +465,75 @@ describe("Defensive setters (in-game)", function()
   end)
 end)
 
+describe("Combat absorption ordering (in-game)", function()
+  it("dodge short-circuits all other absorption layers", function()
+    reset()
+    local Core = ns.Core
+    Core.SetClassKey("MAGE")
+    Core.SetHP(100, 100); Core.SetDodge(50); Core.SetTempBlock(10)
+    Core.SetMagicShield(20, 20, 0); Core.SetRes(50, 100)
+    Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.DamageWithArmor(40)
+    assertEq(Core.state.hp, 100)
+    assertEq(Core.state.tempBlock, 10)
+    assertEq(Core.state.magicShield.hp, 20)
+    assertEq(Core.state.res, 50)
+  end)
+  it("block + magic shield + armor + mana shield chain", function()
+    reset()
+    local Core = ns.Core
+    Core.SetClassKey("MAGE")
+    Core.SetHP(100, 100); Core.SetDodge(5)
+    Core.SetTempBlock(10); Core.SetArmor(5, 0)
+    Core.SetMagicShield(10, 10, 0)
+    Core.SetRes(50, 100); Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.DamageWithArmor(50)
+    assertEq(Core.state.hp, 100)
+    assertEq(Core.state.res, 25)
+    assertEq(Core.state.tempBlock, 0)
+    assertEq(Core.state.magicShield.hp, 0)
+  end)
+end)
+
+describe("Undo deep restoration (in-game)", function()
+  it("undo restores magic shield, mana shield active, posture", function()
+    reset()
+    local Core = ns.Core
+    Core.SetClassKey("MAGE"); Core.SetRes(50, 100)
+    Core.SetMagicShield(10, 20, 5); Core.SetManaShieldActive(true)
+    -- Mutate everything.
+    Core.ResetMagicShield(); Core.SetManaShieldActive(false)
+    Core.Undo(); Core.Undo()
+    -- Note in-game C_Timer.After(0,..) fires next frame, so coalesce may merge:
+    -- we only assert that ONE of them was restored, not exact step granularity.
+    local restoredShield = Core.state.magicShield.hp == 10 or Core.state.manaShield.active
+    assertTrue(restoredShield, "at least one shield-restoring undo step took effect")
+  end)
+end)
+
+describe("Multi-class transitions (in-game)", function()
+  it("SHAMAN(TERRE) → MAGE clears posture", function()
+    reset()
+    local Core = ns.Core
+    Core.SetClassKey("SHAMAN")
+    for i = 1, 4 do Core.SetResIndex(i, 5, 20) end
+    Core.SetShamanPosture("TERRE")
+    Core.SetClassKey("MAGE")
+    assertNil(Core.state.shamanPosture)
+  end)
+end)
+
+describe("Pet PET-only history (in-game)", function()
+  it("pet damage entry has subject=PET", function()
+    reset()
+    local Core = ns.Core
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.PetDamageTrue(5)
+    local h = Core.state.history[1]
+    assertEq(h.subject, "PET")
+  end)
+end)
+
 -- ─── Runner ──────────────────────────────────────────────────────────
 
 local function runOne(t)

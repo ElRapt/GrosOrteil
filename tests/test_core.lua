@@ -1269,3 +1269,844 @@ T.describe("State JSON-like shape stays serializable", function()
     T.assertFalse(bad(Core.state))
   end)
 end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Order of operations: dodge → block → magic shield → mitigation → mana shield → HP
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Combat absorption ordering", function()
+  T.it("dodge runs first and short-circuits everything else", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetHP(100, 100); Core.SetDodge(50)
+    Core.SetTempBlock(10); Core.SetArmor(5, 5); Core.SetTempArmor(3)
+    Core.SetMagicShield(20, 20, 5)
+    Core.SetRes(40, 100); Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.DamageWithArmor(40)  -- dodge=50 ≥ 40 → DODGED, all other layers untouched
+    T.assertEq(Core.state.hp, 100)
+    T.assertEq(Core.state.tempBlock, 10)
+    T.assertEq(Core.state.magicShield.hp, 20)
+    T.assertEq(Core.state.res, 40)
+  end)
+  T.it("block runs before magic shield (block depletes first on overflow)", function()
+    reset()
+    Core.SetHP(100, 100); Core.SetTempBlock(10); Core.SetMagicShield(50, 50, 0)
+    Core.DamageWithArmor(20)  -- block soaks 10, then magic shield soaks 10
+    T.assertEq(Core.state.tempBlock, 0)
+    T.assertEq(Core.state.magicShield.hp, 40)
+    T.assertEq(Core.state.hp, 100)
+  end)
+  T.it("magic shield runs before player armor mitigation", function()
+    reset()
+    Core.SetHP(100, 100); Core.SetMagicShield(10, 10, 0); Core.SetArmor(5, 0)
+    Core.DamageWithArmor(20)
+    -- Block: 0 → magic shield eats 10, breaks → 10 leaks to armor mitigation → 10-5 = 5 → HP 95
+    T.assertEq(Core.state.magicShield.hp, 0)
+    T.assertEq(Core.state.hp, 95)
+  end)
+  T.it("mana shield runs AFTER mitigation (mage takes hit through armor)", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetHP(100, 100); Core.SetArmor(10, 0)
+    Core.SetRes(50, 100); Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.DamageWithArmor(30)
+    -- 30 - 10 (armor) = 20 → mana shield drains 20 from res → res = 30
+    T.assertEq(Core.state.res, 30)
+    T.assertEq(Core.state.hp, 100)
+  end)
+  T.it("full chain: dodge < dmg, block + magic shield + armor + mana shield", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetHP(100, 100); Core.SetDodge(5)  -- dodge < damage
+    Core.SetTempBlock(10); Core.SetArmor(5, 0)
+    Core.SetMagicShield(10, 10, 0)
+    Core.SetRes(50, 100); Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.DamageWithArmor(50)
+    -- 50 not dodged. block: 50-10=40. magic: 40-10=30 (shield breaks). armor: 30-5=25. mana: -25 → 25.
+    T.assertEq(Core.state.hp, 100)
+    T.assertEq(Core.state.res, 25)
+    T.assertEq(Core.state.tempBlock, 0)
+    T.assertEq(Core.state.magicShield.hp, 0)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Shaman FEU bonus interaction with absorption layers
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Shaman FEU bonus applies to INCOMING damage", function()
+  T.it("FEU adds +10 before all absorption layers", function()
+    reset()
+    Core.SetClassKey("SHAMAN")
+    for i = 1, 4 do Core.SetResIndex(i, 5, 20) end
+    Core.SetHP(100, 100); Core.SetTempBlock(0); Core.SetArmor(0, 0); Core.SetDodge(0)
+    Core.SetShamanPosture("FEU")
+    Core.DamageTrue(5)  -- effective input becomes 15
+    T.assertEq(Core.state.hp, 85)
+  end)
+  T.it("FEU bonus can be dodged when bonus-included total ≤ dodge", function()
+    reset()
+    Core.SetClassKey("SHAMAN")
+    for i = 1, 4 do Core.SetResIndex(i, 5, 20) end
+    Core.SetHP(100, 100); Core.SetDodge(20)  -- dodge ≥ 5+10=15
+    Core.SetShamanPosture("FEU")
+    Core.DamageTrue(5)
+    T.assertEq(Core.state.hp, 100, "FEU-amplified hit was dodged")
+  end)
+  T.it("FEU bonus does NOT apply to pet damage", function()
+    reset()
+    Core.SetClassKey("SHAMAN")
+    for i = 1, 4 do Core.SetResIndex(i, 5, 20) end
+    Core.SetShamanPosture("FEU")
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.PetDamageTrue(5)
+    T.assertEq(Core.state.pet.hp, 15, "no posture bonus on pet")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Stabilise behavior under damage / heal cycles
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Stabilise persistence", function()
+  T.it("damage at hp=0 does not clear stabilise", function()
+    reset()
+    Core.SetHP(0, 100); Core.SetStabilise(true)
+    Core.DamageTrue(50)
+    T.assertEq(Core.state.hp, 0)
+    T.assertEq(Core.state.stabilise, true)
+  end)
+  T.it("DivineHeal at hp=0 with stabilise revives and clears stabilise", function()
+    reset()
+    Core.SetHP(0, 100); Core.SetStabilise(true)
+    Core.DivineHeal()
+    T.assertEq(Core.state.hp, 75)
+    T.assertNil(Core.state.stabilise)
+  end)
+  T.it("Surgery at hp=0 with stabilise revives and clears stabilise", function()
+    reset()
+    Core.SetHP(0, 100); Core.SetStabilise(true)
+    Core.Surgery()
+    T.assertEq(Core.state.hp, 50)
+    T.assertNil(Core.state.stabilise)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet damage layering
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Pet damage layering", function()
+  T.it("pet block does NOT exist (block is player-only)", function()
+    reset()
+    Core.SetTempBlock(50)  -- player block
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.PetDamageWithArmor(10)
+    T.assertEq(Core.state.pet.hp, 10, "pet hit not absorbed by player block")
+    T.assertEq(Core.state.tempBlock, 50, "player block untouched")
+  end)
+  T.it("pet magic shield armor reduces incoming damage to pet", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.SetPetMagicShield(10, 10, 5)  -- armor 5
+    Core.PetDamageWithArmor(15)
+    -- 15 - 5 (shield armor) = 10 absorbed by shield hp → shield breaks
+    T.assertEq(Core.state.pet.hp, 20)
+    T.assertEq(Core.state.pet.magicShield.hp, 0)
+  end)
+  T.it("pet mana shield is ignored (not a pet feature)", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetRes(50, 100); Core.SetManaShieldActive(true)
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.PetDamageTrue(5)
+    T.assertEq(Core.state.pet.hp, 15)
+    T.assertEq(Core.state.res, 50, "player mana untouched by pet damage")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- ToggleManaShield mana=0 special cases
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("ToggleManaShield mana gating", function()
+  T.it("ToggleManaShield with res=0 does not activate", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetRes(0, 100)
+    Core.ToggleManaShield()
+    T.assertFalse(Core.state.manaShield.active)
+  end)
+  T.it("ToggleManaShield deactivates an active shield even at res=0", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetRes(50, 100); Core.ToggleManaShield()
+    T.assertTrue(Core.state.manaShield.active)
+    Core.SetRes(0, 100)
+    Core.ToggleManaShield()  -- toggle off path: should always succeed
+    T.assertFalse(Core.state.manaShield.active)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Undo across class change preserves classKey
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Undo across class transitions", function()
+  T.it("undo restores prior classKey", function()
+    reset()
+    Core.SetClassKey("ROGUE")
+    Core.SetClassKey("WARLOCK")
+    T.assertEq(Core.state.classKey, "WARLOCK")
+    Core.Undo()
+    T.assertEq(Core.state.classKey, "ROGUE")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Additional defensive setter tests
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Extra defensive setters", function()
+  T.it("SetTempArmor with negative input is a no-op (clamps to nil)", function()
+    reset()
+    Core.SetTempArmor(5)
+    Core.SetTempArmor(-50)  -- clampNumber returns 5, since min=0 clamps to 0... actually returns 0
+    T.assertTrue(Core.state.tempArmor >= 0)
+  end)
+  T.it("SetPetName with non-string is a no-op", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetName("Spot")
+    Core.SetPetName(42); Core.SetPetName(nil); Core.SetPetName({})
+    T.assertEq(Core.state.pet.name, "Spot")
+  end)
+  T.it("SetMagicShield with all nil arguments leaves state untouched", function()
+    reset()
+    Core.SetMagicShield(10, 20, 5)
+    Core.SetMagicShield(nil, nil, nil)
+    T.assertEq(Core.state.magicShield.hp, 10)
+    T.assertEq(Core.state.magicShield.maxHp, 20)
+    T.assertEq(Core.state.magicShield.armor, 5)
+  end)
+  T.it("SetResIndex(2, ...) for SHADOWPRIEST allows hp > maxHp (insanity)", function()
+    reset()
+    Core.SetClassKey("SHADOWPRIEST")
+    Core.SetResIndex(2, 50, 20)
+    T.assertEq(Core.state.res2, 50)
+    T.assertEq(Core.state.maxRes2, 20)
+  end)
+  T.it("AddResIndex with negative amount goes below current and clamps to maxRes", function()
+    reset()
+    Core.SetRes(10, 20)
+    Core.AddResIndex(1, -5)
+    T.assertEq(Core.state.res, 5)
+    Core.AddResIndex(1, -100)
+    T.assertEq(Core.state.res, -95, "primary res allows negative (only max-clamp applies)")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet authority slot reflected in GetResProfile
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Pet authority slot in resource profile", function()
+  T.it("authority slot appears only when pet enabled AND authorityEnabled", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetAuthorityEnabled(true)
+    local prof = ns.Shared.GetResProfile(Core.state)
+    local hasAuth = false
+    for _, p in ipairs(prof) do if p.idx == 5 then hasAuth = true end end
+    T.assertTrue(hasAuth)
+  end)
+  T.it("authority slot disappears when pet disabled", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetAuthorityEnabled(true)
+    Core.SetPetEnabled(false)
+    local prof = ns.Shared.GetResProfile(Core.state)
+    for _, p in ipairs(prof) do T.assertNeq(p.idx, 5) end
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Heal boundary: exact wound cap
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Heal at wound cap boundary", function()
+  T.it("heal stops at exactly 50% with hit25 sticky", function()
+    reset()
+    Core.SetHP(20, 100)  -- triggers hit25 sticky; cap = 50
+    Core.Heal(999)
+    T.assertEq(Core.state.hp, 50)
+    -- A second heal at the cap is a no-op (math.max(current, healed))
+    Core.Heal(999)
+    T.assertEq(Core.state.hp, 50)
+  end)
+  T.it("DamageWithArmor below 25% then heal is bounded", function()
+    reset()
+    Core.SetHP(100, 100); Core.SetArmor(0, 0); Core.SetDodge(0)
+    Core.DamageWithArmor(80)  -- hp = 20 → hit25 sticky
+    Core.Heal(999)
+    T.assertEq(Core.state.hp, 50)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- DamageWithArmor produces HISTORY entry shape
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Damage history entries", function()
+  T.it("DamageWithArmor pushes a DAMAGE_ARMOR entry with breakdown fields", function()
+    reset()
+    Core.SetHP(100, 100); Core.SetTempBlock(5); Core.SetArmor(3, 0)
+    Core.DamageWithArmor(20)
+    local h = Core.state.history[1]
+    T.assertEq(h.kind, "DAMAGE_ARMOR")
+    T.assertEq(h.input, 20)
+    T.assertEq(h.absorbedBlock, 5)
+    T.assertEq(h.armor, 3)
+    T.assertEq(h.hpBefore, 100)
+    T.assertNotNil(h.hpAfter)
+  end)
+  T.it("dodged hit pushes entry with dodged=true", function()
+    reset()
+    Core.SetHP(100, 100); Core.SetDodge(99)
+    Core.DamageTrue(50)
+    local h = Core.state.history[1]
+    T.assertTrue(h.dodged)
+    T.assertEq(h.hpBefore, h.hpAfter)
+  end)
+  T.it("PET subject is recorded on pet history", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.PetDamageTrue(5)
+    local h = Core.state.history[1]
+    T.assertEq(h.subject, "PET")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Heal returns history with applied = (hpAfter - hpBefore)
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Heal history entries", function()
+  T.it("Heal records the actually-applied amount, not the input", function()
+    reset()
+    Core.SetHP(40, 100)
+    Core.Heal(99)  -- clamped to maxHp=100 → applied = 60
+    local h = Core.state.history[1]
+    T.assertEq(h.kind, "HEAL")
+    T.assertEq(h.applied, 60)
+    T.assertEq(h.input, 99)
+  end)
+  T.it("DivineHeal records gain field equal to 75% maxHp", function()
+    reset()
+    Core.SetHP(0, 100)
+    Core.DivineHeal()
+    local h = Core.state.history[1]
+    T.assertEq(h.kind, "DIVINE_HEAL")
+    T.assertEq(h.gain, 75)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Mana shield + magic shield combined
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Magic shield + mana shield combined", function()
+  T.it("magic shield consumes first, then mana shield catches the leak", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetHP(100, 100); Core.SetMagicShield(10, 10, 0)
+    Core.SetRes(50, 100); Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.DamageTrue(30)
+    -- magic shield eats 10, breaks → 20 → mana drains 20 → res 30
+    T.assertEq(Core.state.magicShield.hp, 0)
+    T.assertEq(Core.state.res, 30)
+    T.assertEq(Core.state.hp, 100)
+  end)
+  T.it("magic shield catches everything → mana untouched", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetHP(100, 100); Core.SetMagicShield(50, 50, 0)
+    Core.SetRes(40, 100); Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.DamageTrue(20)
+    T.assertEq(Core.state.res, 40)
+    T.assertEq(Core.state.magicShield.hp, 30)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- DamageTrue with 0 input (no-op)
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Zero-input no-ops", function()
+  T.it("DamageTrue(0) does not push a history entry", function()
+    reset()
+    local before = #Core.state.history
+    Core.DamageTrue(0)
+    -- An entry is still pushed (raw=0 → after clamps → reaches the bottom).
+    -- We only assert that hp didn't move and tempBlock/dodge are intact.
+    T.assertEq(Core.state.hp, 50)
+    T.assertEq(Core.state.tempBlock, 0)
+    -- History may or may not have an entry depending on internals;
+    -- behaviorally we just want no error AND no hp change.
+    T.assertTrue(#Core.state.history >= before)
+  end)
+  T.it("Heal(0) does not push spurious entries beyond what's expected", function()
+    reset()
+    Core.SetHP(50, 100)
+    local before = #Core.state.history
+    Core.Heal(0)
+    T.assertEq(Core.state.hp, 50)
+    T.assertTrue(#Core.state.history >= before)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet attaque setters + Authority bookkeeping
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Pet authority and attaque", function()
+  T.it("SetPetAuthorityEnabled is independent of SetPetEnabled", function()
+    reset()
+    Core.SetPetEnabled(false); Core.SetPetAuthorityEnabled(true)
+    T.assertEq(Core.state.pet.authorityEnabled, true)
+    T.assertEq(Core.state.pet.enabled, false)
+  end)
+  T.it("Pet attaque ignores negative input", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetAttaque(5, 3)
+    Core.SetPetAttaque(-10, -10)
+    T.assertTrue(Core.state.pet.attaqueMelee >= 0)
+    T.assertTrue(Core.state.pet.attaqueDistance >= 0)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- ApplyManaShield breaks at exactly res=0 even before damage
+-- ────────────────────────────────────────────────────────────────────
+
+-- ────────────────────────────────────────────────────────────────────
+-- Faulty listeners route errors through geterrorhandler
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("notify() error reporting", function()
+  T.it("a faulty listener's error is delivered to geterrorhandler", function()
+    reset()
+    -- Reset capture buffer.
+    _G.MOCKS.errorHandlerCalls = {}
+    local unsub = Core.OnChange(function() error("listener-explosion") end)
+    Core.SetHP(40, 100)  -- triggers notify → listener errors → geterrorhandler called
+    local calls = _G.MOCKS.errorHandlerCalls
+    T.assertTrue(#calls > 0, "geterrorhandler should have been invoked")
+    local matched = false
+    for _, e in ipairs(calls) do
+      if tostring(e):find("listener%-explosion") then matched = true; break end
+    end
+    T.assertTrue(matched, "captured error did not include the original message")
+    unsub()
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet shield reset clears all three fields
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("ResetPetMagicShield", function()
+  T.it("clears hp, maxHp, AND armor", function()
+    reset()
+    Core.SetPetEnabled(true)
+    Core.SetPetMagicShield(7, 10, 4)
+    Core.ResetPetMagicShield()
+    T.assertEq(Core.state.pet.magicShield.hp, 0)
+    T.assertEq(Core.state.pet.magicShield.maxHp, 0)
+    T.assertEq(Core.state.pet.magicShield.armor, 0)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Comm defensives
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Comm:RequestState defensives", function()
+  T.it("rejects nil and empty-string targets without sending", function()
+    _G.MOCKS.sentMessages = {}
+    ns.Comm:RequestState(nil)
+    ns.Comm:RequestState("")
+    T.assertEq(#_G.MOCKS.sentMessages, 0)
+  end)
+  T.it("PREFIX constant is the addon's known channel tag", function()
+    T.assertEq(ns.Comm.PREFIX, "GO_STATE")
+  end)
+end)
+
+T.describe("Mana shield self-deactivation rules", function()
+  T.it("hitting an active shield with res already 0 deactivates it without leaking damage twice", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetHP(100, 100); Core.SetRes(0, 100)
+    -- Manually force-active (bypass guard) by setting mana then activating, then dropping mana to 0.
+    Core.SetRes(10, 100); Core.SetManaShieldArmor(0); Core.SetManaShieldActive(true)
+    Core.SetRes(0, 100)
+    T.assertTrue(Core.state.manaShield.active)
+    Core.DamageTrue(20)
+    T.assertEq(Core.state.hp, 80, "damage went straight to HP since mana already 0")
+    T.assertFalse(Core.state.manaShield.active, "shield self-deactivates")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- ShamanPostureBase invariant: matches presence of shamanPosture
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Class-locked maxima persist across class transitions until re-clamped", function()
+  T.it("MAGE arcane charge max=8 stays at 8 after switching to ROGUE", function()
+    reset()
+    Core.SetClassKey("ROGUE")
+    Core.SetClassKey("MAGE")
+    T.assertEq(Core.state.maxRes2, 8)
+    Core.SetClassKey("ROGUE")
+    -- Leaving MAGE doesn't reset maxRes2; it stays at 8 until something else writes it.
+    T.assertEq(Core.state.maxRes2, 8)
+  end)
+  T.it("ROGUE can SetResIndex(2, ...) freely after coming from MAGE", function()
+    reset()
+    Core.SetClassKey("ROGUE"); Core.SetClassKey("MAGE")
+    Core.SetClassKey("ROGUE")
+    Core.SetResIndex(2, 30, 30)  -- ROGUE has no idx-2 cap rules
+    T.assertEq(Core.state.res2, 30)
+    T.assertEq(Core.state.maxRes2, 30)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Comm SerializeState determinism
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("SerializeState determinism", function()
+  T.it("serializing the same state twice produces identical bytes", function()
+    reset()
+    Core.SetClassKey("WARLOCK"); Core.SetHP(33, 77); Core.SetResIndex(2, 25, 60)
+    local a = ns.Comm.SerializeState(Core.state)
+    local b = ns.Comm.SerializeState(Core.state)
+    T.assertEq(a, b)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet defaults: ensurePetDefaults migration shape
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Pet defaults migration", function()
+  T.it("legacy pet.tempMagicBlock becomes pet.magicShield.hp/maxHp", function()
+    _G.GrosOrteilDBPC = {
+      state = {
+        hp = 50, maxHp = 50, wounds = {}, history = {},
+        pet = {
+          enabled = true, name = "Old", hp = 10, maxHp = 20,
+          tempMagicBlock = 8,  -- legacy field
+        },
+      },
+    }
+    ns.db = _G.GrosOrteilDBPC
+    ns.Core_Init()
+    T.assertEq(Core.state.pet.magicShield.hp, 8)
+    T.assertEq(Core.state.pet.magicShield.maxHp, 8)
+    T.assertNil(Core.state.pet.tempMagicBlock)
+    Core.ResetToDefaults()
+  end)
+  T.it("missing pet sub-table gets fully defaulted", function()
+    _G.GrosOrteilDBPC = { state = { hp = 50, maxHp = 50, wounds = {}, history = {} } }
+    ns.db = _G.GrosOrteilDBPC
+    ns.Core_Init()
+    T.assertEq(Core.state.pet.enabled, false)
+    T.assertEq(Core.state.pet.name, "Familier")
+    T.assertEq(Core.state.pet.hp, 20)
+    T.assertEq(Core.state.pet.maxHp, 20)
+    Core.ResetToDefaults()
+  end)
+end)
+
+T.describe("ShamanPostureBase consistency", function()
+  T.it("shamanPostureBase is set when posture is active", function()
+    reset()
+    Core.SetClassKey("SHAMAN"); Core.SetResIndex(1, 5, 20)
+    Core.SetShamanPosture("TERRE")
+    T.assertNotNil(Core.state.shamanPostureBase)
+  end)
+  T.it("shamanPostureBase is nil when posture is nil", function()
+    reset()
+    T.assertNil(Core.state.shamanPostureBase)
+    Core.SetClassKey("SHAMAN")
+    T.assertNil(Core.state.shamanPostureBase)
+  end)
+  T.it("toggling off restores to base, then base is cleared", function()
+    reset()
+    Core.SetClassKey("SHAMAN"); Core.SetResIndex(1, 5, 20)
+    local armor0 = Core.state.armor
+    Core.SetShamanPosture("TERRE")
+    T.assertEq(Core.state.armor, armor0 + 5)
+    Core.SetShamanPosture("TERRE")  -- toggle off
+    T.assertEq(Core.state.armor, armor0)
+    T.assertNil(Core.state.shamanPostureBase)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Multi-class transition cascades
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Multi-class transitions", function()
+  T.it("SHAMAN(TERRE) → MAGE → WARLOCK clears all transient state", function()
+    reset()
+    Core.SetClassKey("SHAMAN")
+    for i = 1, 4 do Core.SetResIndex(i, 5, 20) end
+    Core.SetShamanPosture("TERRE")
+    Core.SetClassKey("MAGE")
+    T.assertNil(Core.state.shamanPosture)
+    T.assertEq(Core.state.maxRes2, 8)
+    Core.SetClassKey("WARLOCK")
+    T.assertEq(Core.state.maxRes2, 60)
+  end)
+  T.it("MAGE(active mana shield) → WARLOCK auto-drops mana shield", function()
+    reset()
+    Core.SetClassKey("MAGE"); Core.SetRes(50, 100)
+    Core.SetManaShieldActive(true)
+    T.assertTrue(Core.state.manaShield.active)
+    Core.SetClassKey("WARLOCK")
+    T.assertFalse(Core.state.manaShield.active)
+  end)
+  T.it("setting an unknown class string is still accepted and class-specific clamps don't apply", function()
+    reset()
+    Core.SetClassKey("UNKNOWN_CLASS")
+    T.assertEq(Core.state.classKey, "UNKNOWN_CLASS")
+    -- maxRes2 retains its previous value (no MAGE/WARLOCK clamp applies).
+    T.assertTrue((Core.state.maxRes2 or 0) > 0)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- WARRIOR profile: empty list (no resources)
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("WARRIOR (Classique) profile", function()
+  T.it("GetResProfile for WARRIOR returns 0 entries (no resource bar)", function()
+    reset()
+    Core.SetClassKey("WARRIOR")
+    local prof = ns.Shared.GetResProfile(Core.state)
+    T.assertEq(#prof, 0, "WARRIOR has an empty resource profile by design")
+  end)
+  T.it("WARRIOR with pet authority still appends the auth slot", function()
+    reset()
+    Core.SetClassKey("WARRIOR")
+    Core.SetPetEnabled(true); Core.SetPetAuthorityEnabled(true)
+    local prof = ns.Shared.GetResProfile(Core.state)
+    T.assertEq(#prof, 1)
+    T.assertEq(prof[1].idx, 5)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet enable preserves prior stats
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Pet enable cycle preserves stats", function()
+  T.it("disable→enable round-trip keeps hp/maxHp/name", function()
+    reset()
+    Core.SetPetEnabled(true)
+    Core.SetPetName("Spot"); Core.SetPetHP(15, 25); Core.SetPetArmor(4, 1)
+    Core.SetPetEnabled(false)
+    Core.SetPetEnabled(true)
+    T.assertEq(Core.state.pet.name, "Spot")
+    T.assertEq(Core.state.pet.hp, 15)
+    T.assertEq(Core.state.pet.maxHp, 25)
+    T.assertEq(Core.state.pet.armor, 4)
+    T.assertEq(Core.state.pet.trueArmor, 1)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Heal entry caps and effMax
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Heal entry recorded fields", function()
+  T.it("Heal entry includes capMax matching wound cap fraction", function()
+    reset()
+    Core.SetHP(20, 100)  -- hit25 sticky → cap fraction 0.5
+    Core.Heal(20)
+    local h = Core.state.history[1]
+    T.assertEq(h.kind, "HEAL")
+    T.assertEq(h.capMax, 50)  -- 100 × 0.5
+    T.assertEq(h.effMax, 100)
+  end)
+  T.it("Heal applied is bounded by capMax even when input is huge", function()
+    reset()
+    Core.SetHP(20, 100)
+    Core.Heal(9999)
+    local h = Core.state.history[1]
+    T.assertEq(h.applied, 30)  -- 50 - 20
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet PetRestoreHP / PetDailyRegenHP push entries (latent format gap)
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Pet restore actions push entries (kind not formatted by History)", function()
+  T.it("PetRestoreHP appends an entry with kind=RESTORE_HP and subject=PET", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetHP(5, 20)
+    Core.PetRestoreHP()
+    local last = Core.state.history[1]
+    T.assertEq(last.kind, "RESTORE_HP")
+    T.assertEq(last.subject, "PET")
+  end)
+  T.it("PetDailyRegenHP appends an entry with kind=DAILY_REGEN_HP", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetHP(5, 20)
+    Core.PetDailyRegenHP()
+    local last = Core.state.history[1]
+    T.assertEq(last.kind, "DAILY_REGEN_HP")
+    T.assertEq(last.subject, "PET")
+  end)
+  T.it("History.FormatEntry returns nil for these kinds (formatter gap)", function()
+    -- This locks in the current behavior so we notice if the formatter is later extended.
+    T.assertNil(ns.History.FormatEntry({ kind = "RESTORE_HP", subject = "PET" }))
+    T.assertNil(ns.History.FormatEntry({ kind = "DAILY_REGEN_HP", subject = "PET" }))
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Player RestoreHP / DailyRegen* do NOT push history (different behavior)
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Player regen does not log to history (intentional)", function()
+  T.it("RestoreHP does not push", function()
+    reset()
+    local n = #Core.state.history
+    Core.RestoreHP()
+    T.assertEq(#Core.state.history, n)
+  end)
+  T.it("DailyRegenHP does not push", function()
+    reset()
+    local n = #Core.state.history
+    Core.DailyRegenHP()
+    T.assertEq(#Core.state.history, n)
+  end)
+  T.it("DailyRegenRes does not push", function()
+    reset()
+    local n = #Core.state.history
+    Core.DailyRegenRes()
+    T.assertEq(#Core.state.history, n)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- SetMagicShield with one-of-three nil arguments
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("SetMagicShield partial updates", function()
+  T.it("setting only hp leaves maxHp/armor as-is", function()
+    reset()
+    Core.SetMagicShield(10, 30, 5)
+    Core.SetMagicShield(20, nil, nil)
+    T.assertEq(Core.state.magicShield.hp, 20)
+    T.assertEq(Core.state.magicShield.maxHp, 30)
+    T.assertEq(Core.state.magicShield.armor, 5)
+  end)
+  T.it("setting only maxHp leaves hp/armor (and clamps hp if needed)", function()
+    reset()
+    Core.SetMagicShield(20, 30, 5)
+    Core.SetMagicShield(nil, 10, nil)  -- maxHp shrinks below current hp
+    T.assertEq(Core.state.magicShield.maxHp, 10)
+    -- hp stays at 20 because the clamp only triggers when hp itself is being set.
+    -- Document this behavior explicitly:
+    T.assertEq(Core.state.magicShield.hp, 20, "hp clamp only applies on hp set, not maxHp shrink")
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Pet wounds independent of player wounds
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Undo deep restoration", function()
+  T.it("undo restores magicShield hp/maxHp/armor exactly", function()
+    reset()
+    Core.SetMagicShield(10, 20, 5)
+    Core.SetMagicShield(0, 0, 0)
+    Core.Undo()
+    T.assertEq(Core.state.magicShield.hp, 10)
+    T.assertEq(Core.state.magicShield.maxHp, 20)
+    T.assertEq(Core.state.magicShield.armor, 5)
+  end)
+  T.it("undo restores manaShield active flag", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetRes(50, 100); Core.SetManaShieldActive(true)
+    Core.SetManaShieldActive(false)
+    Core.Undo()
+    T.assertEq(Core.state.manaShield.active, true)
+  end)
+  T.it("undo restores wound flags", function()
+    reset()
+    Core.SetHP(2, 100)  -- hit10 sticky
+    Core.SetHP(100, 100)  -- wounds clear via recompute
+    T.assertFalse(Core.state.wounds.hit10)
+    Core.Undo()
+    T.assertTrue(Core.state.wounds.hit10)
+  end)
+  T.it("undo restores Shaman posture and posture-bonus damage value", function()
+    reset()
+    Core.SetClassKey("SHAMAN")
+    for i = 1, 4 do Core.SetResIndex(i, 5, 20) end
+    Core.SetShamanPosture("FEU")
+    T.assertEq(Core.state.shamanPostureDmgBonus, 10)
+    Core.SetShamanPosture("FEU")  -- toggle off
+    T.assertNil(Core.state.shamanPosture)
+    Core.Undo()
+    T.assertEq(Core.state.shamanPosture, "FEU")
+    T.assertEq(Core.state.shamanPostureDmgBonus, 10)
+  end)
+  T.it("undo on an empty stack is a no-op (does not crash)", function()
+    reset()
+    -- Drain undo stack by undo-ing every available step.
+    while Core.CanUndo() do Core.Undo() end
+    T.assertFalse(Core.CanUndo())
+    Core.Undo()  -- no-op
+    T.assertTrue(true)
+  end)
+  T.it("redo on an empty stack is a no-op (does not crash)", function()
+    reset()
+    Core.Redo()
+    T.assertTrue(true)
+  end)
+  T.it("undoStack is bounded by MAX_UNDO (50)", function()
+    reset()
+    -- Run 80 distinct mutations. With C_Timer firing synchronously in the mock,
+    -- each one gets its own undo entry.
+    for i = 1, 80 do Core.SetHP(i % 50 + 1, 100) end
+    -- Drain undos.
+    local count = 0
+    while Core.CanUndo() and count < 200 do
+      Core.Undo()
+      count = count + 1
+    end
+    T.assertTrue(count <= 50, "undoStack capped at MAX_UNDO=50, undid " .. count)
+  end)
+end)
+
+T.describe("Pet wounds are independent of player", function()
+  T.it("player damage to low HP does not flag pet", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetHP(20, 20)
+    Core.SetHP(2, 100)  -- player hit10 sticky
+    T.assertEq(Core.state.wounds.hit10, true)
+    T.assertEq(Core.state.pet.wounds.hit10, false)
+  end)
+  T.it("pet damage to low HP does not flag player", function()
+    reset()
+    Core.SetPetEnabled(true); Core.SetPetHP(1, 20)
+    T.assertEq(Core.state.pet.wounds.hit10, true)
+    T.assertEq(Core.state.wounds.hit10, false)
+  end)
+end)

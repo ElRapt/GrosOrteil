@@ -142,3 +142,55 @@ T.describe("TargetPopup senderToUnitID", function()
     T.assertEq(h.senderToUnitID("Foo"), "Foo")
   end)
 end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Edge cases for normalization
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("TargetPopup normalization edge cases", function()
+  T.it("preserves accented characters (no diacritic stripping)", function()
+    -- string.lower on Lua's stock locale does not transform non-ASCII.
+    -- Verify normalizeName mirrors that so RP names with accents match.
+    local raw = "Élise"
+    local expected = (string.lower(raw):gsub("%s+", ""))
+    T.assertEq(h.normalizeName(raw), expected)
+  end)
+  T.it("splitNameRealm splits on the FIRST hyphen only", function()
+    local short, realm = h.splitNameRealm("Foo-Bar-Baz")
+    T.assertEq(short, "foo")
+    T.assertEq(realm, "bar-baz")
+  end)
+  T.it("namesMatch is case-insensitive via normalize", function()
+    T.assertTrue(h.namesMatch("FOO", "foo"))
+    T.assertTrue(h.namesMatch("Foo-Realm", "FOO-realm"))
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- OnStateReceived behavior (smoke-level, given heavy frame deps)
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("TargetPopup.OnStateReceived defensive paths", function()
+  T.it("ignores non-table state", function()
+    Popup:OnStateReceived("PeerA", nil)
+    Popup:OnStateReceived("PeerA", "not a table")
+    Popup:OnStateReceived("PeerA", 42)
+    T.assertTrue(true, "no error")
+  end)
+  T.it("ignores empty / nil sender", function()
+    Popup:OnStateReceived("", { hp = 1, maxHp = 1 })
+    Popup:OnStateReceived(nil, { hp = 1, maxHp = 1 })
+    T.assertTrue(true, "no error")
+  end)
+  T.it("caches the state by short name even when popup not shown", function()
+    -- Clear cache.
+    for k in pairs(h.cache) do h.cache[k] = nil end
+    Popup:OnStateReceived("Aria-RealmX", { hp = 7, maxHp = 10, classKey = "MAGE" })
+    local cached = h.getCached("aria")
+    T.assertNotNil(cached)
+    T.assertEq(cached.hp, 7)
+    T.assertEq(cached.classKey, "MAGE")
+    -- Cleanup.
+    for k in pairs(h.cache) do h.cache[k] = nil end
+  end)
+end)

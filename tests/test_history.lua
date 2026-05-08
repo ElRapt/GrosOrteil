@@ -173,3 +173,54 @@ T.describe("History defensive paths", function()
     T.assertNil(History.FormatHistoryText(hist, 99, nil))
   end)
 end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- Boundary conditions
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("History boundary conditions", function()
+  T.it("Push exactly MAX entries keeps all of them", function()
+    local s = { history = {} }
+    for i = 1, History.MAX do
+      History.Push(s, { kind = "HEAL", input = i, ts = i })
+    end
+    T.assertEq(#s.history, History.MAX)
+    T.assertEq(s.history[1].input, History.MAX)  -- newest at front
+    T.assertEq(s.history[#s.history].input, 1)   -- oldest at back
+  end)
+  T.it("NowTimestamp returns a positive integer when time() is available", function()
+    local ts = History.NowTimestamp()
+    T.assertNotNil(ts)
+    T.assertEq(type(ts), "number")
+    T.assertTrue(ts > 0)
+  end)
+  T.it("Push without ts auto-stamps using NowTimestamp", function()
+    local s = { history = {} }
+    History.Push(s, { kind = "HEAL" })
+    T.assertEq(type(s.history[1].ts), "number")
+    T.assertTrue(s.history[1].ts > 0)
+  end)
+  T.it("Push with ts=0 keeps the explicit 0 (no auto-replace)", function()
+    local s = { history = {} }
+    History.Push(s, { kind = "HEAL", ts = 0 })
+    T.assertEq(s.history[1].ts, 0)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- subject filter in combination with undoneCount
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("History subject filter + undoneCount interaction", function()
+  T.it("subject PET excludes character entries even past the undoneCount threshold", function()
+    local hist = {
+      { kind = "HEAL", subject = "PET",  input = 1, capMax = 1, effMax = 1, applied = 1, hpBefore = 0, hpAfter = 1 },
+      { kind = "HEAL", subject = nil,    input = 2, capMax = 2, effMax = 2, applied = 2, hpBefore = 0, hpAfter = 2 },
+      { kind = "HEAL", subject = nil,    input = 3, capMax = 3, effMax = 3, applied = 3, hpBefore = 0, hpAfter = 3 },
+    }
+    -- undoneCount=1 hides the most recent action. Then PET filter further keeps only PET.
+    -- Newest is index 1 (PET). With undoneCount=1, index 1 is hidden → only index 2,3 (CHAR) remain.
+    -- PET filter then drops both → empty → returns nil.
+    T.assertNil(History.FormatHistoryText(hist, 1, "PET"))
+  end)
+end)
