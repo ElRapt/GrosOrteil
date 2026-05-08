@@ -295,7 +295,9 @@ describe("Combat math (in-game)", function()
     local Core = ns.Core
     Core.SetHP(100, 100); Core.SetTempBlock(20)
     Core.DamageWithArmor(30)
-    assertEq(Core.state.hp, 70)
+    -- tempBlock=20 absorbs 20 of the 30 damage (partial absorb, consistent
+    -- with the chain test below). 10 leaks through to HP, block depletes to 0.
+    assertEq(Core.state.hp, 90)
     assertEq(Core.state.tempBlock, 0)
   end)
   it("magic shield consumes before HP", function()
@@ -499,13 +501,24 @@ describe("Undo deep restoration (in-game)", function()
   it("undo restores magic shield, mana shield active, posture", function()
     reset()
     local Core = ns.Core
-    Core.SetClassKey("MAGE"); Core.SetRes(50, 100)
-    Core.SetMagicShield(10, 20, 5); Core.SetManaShieldActive(true)
+    -- Each mutation needs to create its own undo entry; in-game the coalesce
+    -- flag clears via C_Timer.After(0, ...) which only fires next frame, so
+    -- in synchronous test code we break it explicitly.
+    local function step(fn)
+      fn()
+      if Core.BreakUndoCoalesce then Core.BreakUndoCoalesce() end
+    end
+    step(function() Core.SetClassKey("MAGE") end)
+    step(function() Core.SetRes(50, 100) end)
+    step(function() Core.SetMagicShield(10, 20, 5) end)
+    step(function() Core.SetManaShieldActive(true) end)
     -- Mutate everything.
-    Core.ResetMagicShield(); Core.SetManaShieldActive(false)
+    step(function() Core.ResetMagicShield() end)
+    step(function() Core.SetManaShieldActive(false) end)
     Core.Undo(); Core.Undo()
-    -- Note in-game C_Timer.After(0,..) fires next frame, so coalesce may merge:
-    -- we only assert that ONE of them was restored, not exact step granularity.
+    -- After two undos we should be back at the (active mana shield, magic
+    -- shield 10/20/5) state. We only assert that ONE shield-restoring step
+    -- took effect to stay robust against coalesce edge cases.
     local restoredShield = Core.state.magicShield.hp == 10 or Core.state.manaShield.active
     assertTrue(restoredShield, "at least one shield-restoring undo step took effect")
   end)

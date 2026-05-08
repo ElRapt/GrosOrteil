@@ -64,14 +64,11 @@ local function sfxLayOnHands()
   playFirstSoundKit({ "SPELL_HOLY_LAY_ON_HANDS", "SPELL_HOLY_REDEMPTION", "RAID_WARNING" })
 end
 
+-- Listener errors are non-fatal: notify() pcalls each callback so a single
+-- bad listener can't break the chain. Surfacing them through Blizzard's
+-- global error handler causes a disruptive popup for the user (and a
+-- noisy "boom" frame during /grostest), so we just log to chat in red.
 local function reportError(err)
-  if type(geterrorhandler) == "function" then
-    local h = geterrorhandler()
-    if type(h) == "function" then
-      h(err)
-      return
-    end
-  end
   if type(print) == "function" then
     print("|cffff0000GrosOrteil error:|r " .. tostring(err))
   end
@@ -218,6 +215,14 @@ function Core.CanUndo() return #undoStack > 0 end
 function Core.CanRedo() return #redoStack > 0 end
 function Core.GetUndoDepth() return #redoStack end
 
+-- Test/scripting helper: drop the in-frame coalesce flag so the next bump()
+-- creates a fresh undo entry. C_Timer.After(0, ...) only fires on the next
+-- frame, which never happens during synchronous /grostest execution; without
+-- this escape hatch every test mutation merges into a single undo step.
+function Core.BreakUndoCoalesce()
+  undoCoalesce = false
+end
+
 -- bump() is called AFTER state is modified. We save the PREVIOUS
 -- post-change snapshot as the undo target, then record the new
 -- post-change snapshot for the next undo.
@@ -282,8 +287,8 @@ local function getWoundCap(s)
 end
 
 local function woundsFromPct(p)
-  if p < 0.10 then return true, true end
-  if p < 0.25 then return true, false end
+  if p <= 0.10 then return true, true end
+  if p <= 0.25 then return true, false end
   return false, false
 end
 

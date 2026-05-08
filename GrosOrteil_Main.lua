@@ -119,6 +119,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if ns.TargetPopup_Init then
       ns.TargetPopup_Init()
     end
+    if ns.Bonus_Init then
+      ns.Bonus_Init()
+    end
     initMinimapIcon()
 
     f:UnregisterEvent("ADDON_LOADED")
