@@ -74,22 +74,33 @@ Shared.CLASS_NAMES_FR = {
 }
 
 ---------------------------------------------------------------------------
--- Class icon texture coordinates (standard WoW class icon sheet)
+-- Class tab icons. 
 ---------------------------------------------------------------------------
-Shared.CLASS_ICON_COORDS = {
-  WARRIOR      = { 0,    0.25, 0,    0.25 },
-  MAGE         = { 0.25, 0.50, 0,    0.25 },
-  ROGUE        = { 0.50, 0.75, 0,    0.25 },
-  DRUID        = { 0.75, 1.00, 0,    0.25 },
-  HUNTER       = { 0,    0.25, 0.25, 0.50 },
-  SHAMAN       = { 0.25, 0.50, 0.25, 0.50 },
-  PRIEST       = { 0.50, 0.75, 0.25, 0.50 },
-  WARLOCK      = { 0.75, 1.00, 0.25, 0.50 },
-  PALADIN      = { 0,    0.25, 0.50, 0.75 },
-  DEATHKNIGHT  = { 0.25, 0.50, 0.50, 0.75 },
-  MONK         = { 0.50, 0.75, 0.50, 0.75 },
-  DEMONHUNTER  = { 0.75, 1.00, 0.50, 0.75 },
-  EVOKER       = { 0,    0.25, 0.75, 1.00 },
+local CLASS_SHEET = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
+
+Shared.CLASS_ICONS = {
+  WARRIOR      = { texture = "Interface\\Icons\\inv12_apextalent_rogue_gravedigger", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  MAGE         = { texture = "Interface\\Icons\\inv12_apextalent_mage_touchofthearchmage", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  ROGUE        = { texture = "Interface\\Icons\\inv12_apextalent_rogue_ancientarts", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  DRUID        = { texture = "Interface\\Icons\\inv12_ability_druid_flourish_empowered", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  HUNTER       = { texture = CLASS_SHEET, coords = { 0.07, 0.93, 0.07, 0.93 } },
+  SHAMAN       = { texture = "Interface\\Icons\\inv12_apextalent_shaman_stormstreamtotem", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  PRIEST       = { texture = "Interface\\Icons\\ability_priest_ascendance", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  WARLOCK      = { texture = "Interface\\Icons\\inv12_ability_warlock_ritualofsummoning", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  PALADIN      = { texture = "Interface\\Icons\\inv12_ability_paladin_hammerofwrath", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  DEATHKNIGHT  = { texture = CLASS_SHEET, coords = { 0.07, 0.93, 0.07, 0.93 } },
+  MONK         = { texture = "Interface\\Icons\\inv12_apextalent_monk_spiritfont", coords = { 0.07, 0.93, 0.07, 0.93 } },
+  DEMONHUNTER  = { texture = CLASS_SHEET, coords = { 0.07, 0.93, 0.07, 0.93 } },
+  EVOKER       = { texture = CLASS_SHEET, coords = { 0.07, 0.93, 0.07, 0.93 } },
+
+  MEDIC = {
+    texture = "Interface\\Icons\\inv_misc_emberweavebandagelight",
+    coords  = { 0.07, 0.93, 0.07, 0.93 },
+  },
+  SHADOWPRIEST = {
+    texture = "Interface\\Icons\\inv12_ability_priest_powerwordmadness_eye",
+    coords  = { 0.07, 0.93, 0.07, 0.93 },
+  },
 }
 
 ---------------------------------------------------------------------------
@@ -149,28 +160,19 @@ function Shared.RoundPct(x)
 end
 
 ---------------------------------------------------------------------------
--- Set class icon tex coords on a texture, with special-case icons
+-- Apply a class's icon (texture + coords) to a texture object. Look up the
+-- entry in Shared.CLASS_ICONS to customize what's drawn for a given class.
 ---------------------------------------------------------------------------
 function Shared.SetClassIconTexCoords(tex, classKey)
   if not tex or not tex.SetTexCoord then return end
-
-  if classKey == "MEDIC" then
-    tex:SetTexture("Interface\\Icons\\inv_misc_emberweavebandagelight")
-    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    return
-  elseif classKey == "SHADOWPRIEST" then
-    tex:SetTexture("Interface\\Icons\\inv12_ability_priest_powerwordmadness_eye")
-    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    return
-  end
-
-  tex:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-  local c = Shared.CLASS_ICON_COORDS[classKey]
-  if not c then
+  local def = Shared.CLASS_ICONS[classKey]
+  tex:SetTexture((def and def.texture) or CLASS_SHEET)
+  local c = def and def.coords
+  if c then
+    tex:SetTexCoord(c[1], c[2], c[3], c[4])
+  else
     tex:SetTexCoord(0, 1, 0, 1)
-    return
   end
-  tex:SetTexCoord(c[1], c[2], c[3], c[4])
 end
 
 ---------------------------------------------------------------------------

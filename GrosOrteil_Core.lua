@@ -65,13 +65,32 @@ local function sfxLayOnHands()
 end
 
 -- Listener errors are non-fatal: notify() pcalls each callback so a single
--- bad listener can't break the chain. Surfacing them through Blizzard's
--- global error handler causes a disruptive popup for the user (and a
--- noisy "boom" frame during /grostest), so we just log to chat in red.
+-- bad listener can't break the chain. Errors flow through geterrorhandler
+-- (Blizzard's default error display in WoW; mocked for offline tests),
+-- unless a caller has installed a quiet handler via Core.SetListenerErrorHandler
+-- (used by /grostest's listener-safety test to skip the popup).
+local listenerErrorHandler = nil
+
 local function reportError(err)
+  if listenerErrorHandler then
+    listenerErrorHandler(err)
+    return
+  end
+  if type(geterrorhandler) == "function" then
+    local h = geterrorhandler()
+    if type(h) == "function" then
+      h(err)
+      return
+    end
+  end
   if type(print) == "function" then
     print("|cffff0000GrosOrteil error:|r " .. tostring(err))
   end
+end
+
+-- Override the listener-error reporter (or pass nil to restore default).
+function Core.SetListenerErrorHandler(fn)
+  listenerErrorHandler = (type(fn) == "function") and fn or nil
 end
 
 local function notify()
@@ -1309,8 +1328,9 @@ function Core.SetShamanPosture(posture)
 
   if not posture then bump(); notify(); return end
 
-  -- Check requirement: ≥ 3 points in the matching element
-  local reqKeys = { TERRE = "res", AIR = "res2", EAU = "res3", FEU = "res4" }
+  -- Check requirement: ≥ 3 max points in the matching element
+  -- (the cap matters, not the spent/available value)
+  local reqKeys = { TERRE = "maxRes", AIR = "maxRes2", EAU = "maxRes3", FEU = "maxRes4" }
   local reqKey = reqKeys[posture]
   if not reqKey or (s[reqKey] or 0) < 3 then bump(); notify(); return end
 

@@ -424,12 +424,24 @@ describe("Listener safety (in-game)", function()
     reset()
     local Core = ns.Core
     local good = 0
+    -- Swap in a no-op error reporter for this test so the deliberate
+    -- error("boom") doesn't trigger Blizzard's error frame popup.
+    if Core.SetListenerErrorHandler then
+      Core.SetListenerErrorHandler(function() end)
+    end
     local b = Core.OnChange(function() error("boom") end)
     local g = Core.OnChange(function() good = good + 1 end)
     local before = good
-    Core.SetHP(40, 100)  -- triggers notify
-    assertTrue(good > before, "good listener still fired")
+    local ok, err = pcall(Core.SetHP, 40, 100)  -- triggers notify
+    -- Always clean up listeners + restore the default reporter, even if
+    -- the assertion below fails — a leaked faulty listener floods every
+    -- subsequent test's notify() call.
     b(); g()
+    if Core.SetListenerErrorHandler then
+      Core.SetListenerErrorHandler(nil)
+    end
+    assertTrue(ok, "notify() should not propagate listener errors: " .. tostring(err))
+    assertTrue(good > before, "good listener still fired")
   end)
 end)
 
