@@ -245,7 +245,7 @@ function ns.UI_BuildFicheTab(ctx)
     btn("Réinit.", 100, 284, -616, function() Core.ResetTempBlock() end)
     mkSep(-652)
 
-    -- Boucliers magiques
+    -- Boucliers magiques: 1x3 grid on PV row (cur | max | Réinit); col1 alignment elsewhere.
     mkSectionHeader("Boucliers magiques", -664)
     lbl("PV", 0, -690); lbl("/", 148, -690)
     msHpEB    = edt(110, 26,  -688, applyAllMagicShield)
@@ -254,14 +254,14 @@ function ns.UI_BuildFicheTab(ctx)
       if Core and Core.ResetMagicShield then Core.ResetMagicShield() end
     end)
     lbl("Armure", 0, -722)
-    msArmorEB = edt(110, 162, -720, applyAllMagicShield)
+    msArmorEB = edt(110, 166, -720, applyAllMagicShield)
     mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -756, function()
       if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
     end)
     UI.manaShieldToggleBtn = mnsToggleBtn
-    mnsArmorLabel = mkLabel(cA, "Armure", 250, -756 + LBL_Y)
+    mnsArmorLabel = mkLabel(cA, "Armure", 246, -756 + LBL_Y)
     UI.manaShieldArmorLabel = mnsArmorLabel
-    mnsArmorEB = edt(80, 304, -756, applyAllManaShield)
+    mnsArmorEB = edt(100, 284, -756, applyAllManaShield)
     UI.manaShieldArmorEB = mnsArmorEB
     mnsToggleBtn:Hide(); mnsArmorLabel:Hide()
     if mnsArmorEB._wrap then mnsArmorEB._wrap:Hide() else mnsArmorEB:Hide() end
@@ -593,9 +593,13 @@ function ns.UI_BuildPetFicheTab(ctx)
     sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
   end
 
+  -- Pet panel uses a unified grid: anchor 380, col1 lbl@0 / EB@60 w70, col2 lbl@150 / EB@230 w70,
+  -- col3 (buttons) @310 w70. Side-by-side wide buttons use @0 w180 and @200 w180.
+  local PET_ROW_W = 380
+
   -- Identité
   mkPetHeader("Identité", -6)
-  local aPetToggle = mkRowAnchor(petPane, 380, -26)
+  local aPetToggle = mkRowAnchor(petPane, PET_ROW_W, -26)
   petToggleBtn = mkButton(aPetToggle, "Activer le familier", 180, 22, 0, 0, function()
     if not Core or not Core.SetPetEnabled then return end
     local p = Core.GetPet and Core.GetPet() or nil
@@ -606,80 +610,79 @@ function ns.UI_BuildPetFicheTab(ctx)
     local p = Core.GetPet and Core.GetPet() or nil
     Core.SetPetAuthorityEnabled(not (p and p.authorityEnabled))
   end)
-  local aPetNom = mkRowAnchor(petPane, 230, -54)
+  local aPetNom = mkRowAnchor(petPane, PET_ROW_W, -54)
   mkLabel(aPetNom, "Nom", 0, -2)
-  petNameEB = mkEdit(aPetNom, 180, 20, 46, 0, applyAllPet)
+  petNameEB = mkEdit(aPetNom, 320, 20, 60, 0, applyAllPet)
   petNameEB:SetNumeric(false)
-  local aPetHP = mkRowAnchor(petPane, 230, -80)
+  local aPetHP = mkRowAnchor(petPane, PET_ROW_W, -80)
   mkLabel(aPetHP, "PV", 0, -2)
-  petHpCurEB = mkEdit(aPetHP, 70, 20, 30,  0, applyAllPet)
-  mkLabel(aPetHP, "/", 106, -2)
-  petHpMaxEB = mkEdit(aPetHP, 70, 20, 120, 0, applyAllPet)
+  petHpCurEB = mkEdit(aPetHP, 70, 20, 60,  0, applyAllPet)
+  mkLabel(aPetHP, "/", 138, -2)
+  petHpMaxEB = mkEdit(aPetHP, 70, 20, 148, 0, applyAllPet)
 
   -- Armure & Esquive (inclut Armure temporaire)
   mkPetSep(-106); mkPetHeader("Armure & Esquive", -114)
-  local aPetDef1 = mkRowAnchor(petPane, 320, -132)
+  local aPetDef1 = mkRowAnchor(petPane, PET_ROW_W, -132)
   mkLabel(aPetDef1, "Armure", 0, -2)
   petArmorEB     = mkEdit(aPetDef1, 70, 20, 60,  0, applyAllPet)
   mkLabel(aPetDef1, "Armure invul", 150, -2)
-  petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 244, 0, applyAllPet)
-  local aPetDef2 = mkRowAnchor(petPane, 160, -160)
+  petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 230, 0, applyAllPet)
+  local aPetDef2 = mkRowAnchor(petPane, PET_ROW_W, -160)
   mkLabel(aPetDef2, "Esquive", 0, -2)
   petDodgeEB = mkEdit(aPetDef2, 70, 20, 60, 0, applyAllPet)
-  local aPetTempArmor = mkRowAnchor(petPane, 310, -188)
-  mkLabel(aPetTempArmor, "Arm. tempo.", 0, -2)
-  petTempArmorEB = mkEdit(aPetTempArmor, 70, 20, 110, 0, applyAllPet)
-  mkButton(aPetTempArmor, "Réinit.", 70, 20, 200, 0, function()
+  mkLabel(aPetDef2, "Arm. tempo.", 150, -2)
+  petTempArmorEB = mkEdit(aPetDef2, 70, 20, 230, 0, applyAllPet)
+  mkButton(aPetDef2, "Réinit.", 70, 20, 310, 0, function()
     if Core and Core.ResetPetTempArmor then Core.ResetPetTempArmor() end
   end)
 
   -- Attaque
-  mkPetSep(-216); mkPetHeader("Attaque", -224)
-  local aPetAtt = mkRowAnchor(petPane, 320, -242)
+  mkPetSep(-188); mkPetHeader("Attaque", -196)
+  local aPetAtt = mkRowAnchor(petPane, PET_ROW_W, -214)
   mkLabel(aPetAtt, "CaC", 0, -2)
-  petAttaqueMeleeEB    = mkEdit(aPetAtt, 70, 20, 30,  0, applyAllPet)
-  mkLabel(aPetAtt, "Distance", 120, -2)
-  petAttaqueDistanceEB = mkEdit(aPetAtt, 70, 20, 210, 0, applyAllPet)
+  petAttaqueMeleeEB    = mkEdit(aPetAtt, 70, 20, 60,  0, applyAllPet)
+  mkLabel(aPetAtt, "Distance", 150, -2)
+  petAttaqueDistanceEB = mkEdit(aPetAtt, 70, 20, 230, 0, applyAllPet)
+
+  -- Bouclier magique (above Actions). 1x3 grid on PV row (cur | max | Réinit).
+  mkPetSep(-242); mkPetHeader("Bouclier magique", -250)
+  local aPetMs1 = mkRowAnchor(petPane, PET_ROW_W, -268)
+  mkLabel(aPetMs1, "PV", 0, -2)
+  petMsHpEB    = mkEdit(aPetMs1, 70, 20, 60,  0, applyAllPet)
+  mkLabel(aPetMs1, "/", 138, -2)
+  petMsMaxHpEB = mkEdit(aPetMs1, 70, 20, 148, 0, applyAllPet)
+  mkButton(aPetMs1, "Réinit.", 70, 20, 310, 0, function()
+    if Core and Core.ResetPetMagicShield then Core.ResetPetMagicShield() end
+  end)
+  local aPetMs2 = mkRowAnchor(petPane, PET_ROW_W, -296)
+  mkLabel(aPetMs2, "Armure", 0, -2)
+  petMsArmorEB = mkEdit(aPetMs2, 70, 20, 60, 0, applyAllPet)
 
   -- Actions
-  mkPetSep(-270); mkPetHeader("Actions", -278)
-  local aPetVal = mkRowAnchor(petPane, 180, -296)
+  mkPetSep(-324); mkPetHeader("Actions", -332)
+  local aPetVal = mkRowAnchor(petPane, PET_ROW_W, -350)
   mkLabel(aPetVal, "Valeur", 0, -2)
-  petActionValEB = mkEdit(aPetVal, 80, 20, 56, 0)
-  local aPetBtns1 = mkRowAnchor(petPane, 392, -322)
-  petDmgArmorBtn = mkButton(aPetBtns1, "Dégâts (armure)", 190, 22, 0,   0, function()
+  petActionValEB = mkEdit(aPetVal, 80, 20, 60, 0)
+  local aPetBtns1 = mkRowAnchor(petPane, PET_ROW_W, -378)
+  petDmgArmorBtn = mkButton(aPetBtns1, "Dégâts (armure)", 180, 22, 0,   0, function()
     if Core and Core.PetDamageWithArmor then Core.PetDamageWithArmor(ctx.getNumber(petActionValEB) or 0) end
   end)
-  petDmgTrueBtn = mkButton(aPetBtns1, "Dégâts (bruts)", 190, 22, 202, 0, function()
+  petDmgTrueBtn = mkButton(aPetBtns1, "Dégâts (bruts)", 180, 22, 200, 0, function()
     if Core and Core.PetDamageTrue then Core.PetDamageTrue(ctx.getNumber(petActionValEB) or 0) end
   end)
-  local aPetBtns2 = mkRowAnchor(petPane, 392, -350)
-  petHealBtn = mkButton(aPetBtns2, "Soins", 190, 22, 0, 0, function()
+  local aPetBtns2 = mkRowAnchor(petPane, PET_ROW_W, -406)
+  petHealBtn = mkButton(aPetBtns2, "Soins", 180, 22, 0, 0, function()
     if Core and Core.PetHeal then Core.PetHeal(ctx.getNumber(petActionValEB) or 0) end
   end)
-  petDivineBtn = mkButton(aPetBtns2, "Soins divins (75%)", 190, 22, 202, 0, function()
+  petDivineBtn = mkButton(aPetBtns2, "Soins divins (75%)", 180, 22, 200, 0, function()
     if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
   end)
-  local aPetBtns3 = mkRowAnchor(petPane, 392, -388)
-  petSurgeryBtn = mkButton(aPetBtns3, "Chirurgie (50%)", 190, 22, 0, 0, function()
+  local aPetBtns3 = mkRowAnchor(petPane, PET_ROW_W, -434)
+  petSurgeryBtn = mkButton(aPetBtns3, "Chirurgie (50%)", 180, 22, 0, 0, function()
     if Core and Core.PetSurgery then Core.PetSurgery() end
   end)
 
-  -- Bouclier magique
-  mkPetSep(-416); mkPetHeader("Bouclier magique", -424)
-  local aPetMs1 = mkRowAnchor(petPane, 310, -442)
-  mkLabel(aPetMs1, "PV", 0, -2)
-  petMsHpEB    = mkEdit(aPetMs1, 70, 20, 26,  0, applyAllPet)
-  mkLabel(aPetMs1, "/", 100, -2)
-  petMsMaxHpEB = mkEdit(aPetMs1, 70, 20, 114, 0, applyAllPet)
-  mkButton(aPetMs1, "Réinit.", 70, 20, 210, 0, function()
-    if Core and Core.ResetPetMagicShield then Core.ResetPetMagicShield() end
-  end)
-  local aPetMs2 = mkRowAnchor(petPane, 230, -470)
-  mkLabel(aPetMs2, "Armure", 0, -2)
-  petMsArmorEB = mkEdit(aPetMs2, 70, 20, 70, 0, applyAllPet)
-
-  petPane:SetHeight(510)
+  petPane:SetHeight(480)
 
   -- Write refs
   UI.petToggleBtn = petToggleBtn

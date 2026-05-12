@@ -418,10 +418,11 @@ local function createPopup()
   popupFrame.classText:SetJustifyH("LEFT")
   popupFrame.classText:SetText("Classe: Inconnue")
 
+  -- 2x2 stat grid: col1 X=18, col2 X=170; row1 Y=-60, row2 Y=-92
   popupFrame.armorIcon = popupFrame:CreateTexture(nil, "ARTWORK")
   popupFrame.armorIcon:SetSize(14, 14)
   popupFrame.armorIcon:SetTexture("Interface\\Icons\\INV_Shield_06")
-  popupFrame.armorIcon:SetPoint("TOPLEFT", popupFrame.classText, "BOTTOMLEFT", 0, -8)
+  popupFrame.armorIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -60)
 
   popupFrame.armorText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.armorText:SetPoint("LEFT", popupFrame.armorIcon, "RIGHT", 4, 0)
@@ -431,7 +432,7 @@ local function createPopup()
   popupFrame.dodgeIcon = popupFrame:CreateTexture(nil, "ARTWORK")
   popupFrame.dodgeIcon:SetSize(14, 14)
   popupFrame.dodgeIcon:SetTexture("Interface\\Icons\\Ability_Rogue_Sprint")
-  popupFrame.dodgeIcon:SetPoint("LEFT", popupFrame.armorText, "RIGHT", 18, 0)
+  popupFrame.dodgeIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 170, -60)
 
   popupFrame.dodgeText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.dodgeText:SetPoint("LEFT", popupFrame.dodgeIcon, "RIGHT", 4, 0)
