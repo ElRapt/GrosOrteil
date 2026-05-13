@@ -88,6 +88,13 @@ function ns.UI_BuildFicheTab(ctx)
   local cA = CreateFrame("Frame", nil, paramChild)
   cA:SetSize(BLOCK_W, 1)
 
+  -- Container for all content below the agonie button row.
+  -- Repositioned in the update function: Y=-104 when HP>0, Y=-178 when HP=0.
+  UI.lowerBlock = CreateFrame("Frame", nil, cA)
+  UI.lowerBlock:SetSize(BLOCK_W, 1)
+  UI.lowerBlock:SetPoint("TOPLEFT", cA, "TOPLEFT", 0, -104)
+  UI.ficheParamChild = paramChild   -- needed by the onChange callback (different scope)
+
   -- Resource rows (merged Tab 2)
   UI.resRow      = UI.resRow      or {}
   UI.resRowLabel = UI.resRowLabel or {}
@@ -112,9 +119,9 @@ function ns.UI_BuildFicheTab(ctx)
   end
 
   local function mkResRow(idx, y)
-    local row = CreateFrame("Frame", nil, cA)
+    local row = CreateFrame("Frame", nil, UI.lowerBlock)
     row:SetSize(354, 24)
-    row:SetPoint("TOPLEFT", cA, "TOPLEFT", 43, y)
+    row:SetPoint("TOPLEFT", UI.lowerBlock, "TOPLEFT", 43, y + 178)
     row.resIdx = idx
     UI.resRow[idx] = row
     row:Hide()
@@ -135,7 +142,7 @@ function ns.UI_BuildFicheTab(ctx)
   end
 
   mkResRow(1, -836); mkResRow(2, -864); mkResRow(3, -892); mkResRow(4, -920); mkResRow(5, -948)
-  UI.noResHint = mkLabelCenter(cA, "Aucune ressource pour cette classe.", 0, -862)
+  UI.noResHint = mkLabelCenter(UI.lowerBlock, "Aucune ressource pour cette classe.", 0, -684)
   UI.noResHint:Hide()
 
   -- Main Fiche content
@@ -206,6 +213,41 @@ function ns.UI_BuildFicheTab(ctx)
     chanceMaxEB = edt(48, 92, -70, applyAllChance)
     smallBtn("-", 22, 148, -70, function() if Core and Core.AddChance then Core.AddChance(-1) end end)
     smallBtn("+", 22, 174, -70, function() if Core and Core.AddChance then Core.AddChance(1)  end end)
+
+    -- All elements from here down are children of UI.lowerBlock.
+    -- _LO converts cA-absolute Y values to lowerBlock-relative coordinates.
+    local _LO = 178
+    local lbl      = function(t,x,y)     mkLabel(UI.lowerBlock, t, x, y+LBL_Y+_LO) end
+    local edt      = function(w,x,y,fn)  return mkEdit(UI.lowerBlock, w, INPUT_H, x, y+_LO, fn) end
+    local btn      = function(t,w,x,y,f) return mkButton(UI.lowerBlock, t, w, BTN_H, x, y+_LO, f) end
+    local smallBtn = function(t,w,x,y,f) return mkButton(UI.lowerBlock, t, w, INPUT_H, x, y+_LO, f) end
+    local mkSectionHeader = function(text, y)
+      local ay = y + _LO
+      local fstr = UI.lowerBlock:CreateFontString(nil, "OVERLAY")
+      fstr:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+      fstr:SetPoint("TOP", UI.lowerBlock, "TOP", 0, ay)
+      fstr:SetWidth(BLOCK_W)
+      fstr:SetJustifyH("CENTER")
+      fstr:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+      fstr:SetShadowOffset(1, -1)
+      fstr:SetShadowColor(0, 0, 0, 0.60)
+      fstr:SetText(text)
+      local ul = UI.lowerBlock:CreateTexture(nil, "ARTWORK")
+      ul:SetTexture(TEX.FLAT)
+      ul:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  0, ay - 18)
+      ul:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", 0, ay - 18)
+      ul:SetHeight(1)
+      ul:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+    end
+    local mkSep = function(y)
+      local ay = y + _LO
+      local sep = UI.lowerBlock:CreateTexture(nil, "ARTWORK")
+      sep:SetTexture(TEX.FLAT)
+      sep:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  16, ay)
+      sep:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", -16, ay)
+      sep:SetHeight(1)
+      sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.16)
+    end
     mkSep(-178)
 
     -- Armure & Esquive
@@ -259,7 +301,7 @@ function ns.UI_BuildFicheTab(ctx)
       if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
     end)
     UI.manaShieldToggleBtn = mnsToggleBtn
-    mnsArmorLabel = mkLabel(cA, "Armure", 246, -756 + LBL_Y)
+    mnsArmorLabel = mkLabel(UI.lowerBlock, "Armure", 246, -756 + LBL_Y + _LO)
     UI.manaShieldArmorLabel = mnsArmorLabel
     mnsArmorEB = edt(100, 284, -756, applyAllManaShield)
     UI.manaShieldArmorEB = mnsArmorEB
@@ -286,9 +328,9 @@ function ns.UI_BuildFicheTab(ctx)
           tip = "Posture de Feu",
           desc = "Armure réduite à 0\nDégâts reçus +10\n+4 points de feu\n\nRequiert : 3 points de feu" },
       }
-      local postureSection = cA:CreateFontString(nil, "OVERLAY")
+      local postureSection = UI.lowerBlock:CreateFontString(nil, "OVERLAY")
       postureSection:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-      postureSection:SetPoint("TOP", cA, "TOP", 0, -986)
+      postureSection:SetPoint("TOP", UI.lowerBlock, "TOP", 0, -986 + _LO)
       postureSection:SetWidth(BLOCK_W)
       postureSection:SetJustifyH("CENTER")
       postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
@@ -296,10 +338,10 @@ function ns.UI_BuildFicheTab(ctx)
       postureSection:SetText("Postures Élémentaires")
       UI.postureSectionLabel = postureSection
 
-      local postureSepLine = cA:CreateTexture(nil, "ARTWORK")
+      local postureSepLine = UI.lowerBlock:CreateTexture(nil, "ARTWORK")
       postureSepLine:SetTexture(TEX.FLAT)
-      postureSepLine:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, -1004)
-      postureSepLine:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, -1004)
+      postureSepLine:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  0, -1004 + _LO)
+      postureSepLine:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", 0, -1004 + _LO)
       postureSepLine:SetHeight(1)
       postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
       UI.postureSepLine = postureSepLine
@@ -310,7 +352,7 @@ function ns.UI_BuildFicheTab(ctx)
       local startX = math.floor((BLOCK_W - totalW) / 2)
       for i, def in ipairs(POSTURE_DEFS) do
         local bx = startX + (i - 1) * (BTN_W + GAP)
-        local b = mkButton(cA, def.label, BTN_W, BTN_H2, bx, -1014)
+        local b = mkButton(UI.lowerBlock, def.label, BTN_W, BTN_H2, bx, -1014 + _LO)
         b._postureKey = def.key
         b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
         local tipTitle, tipDesc = def.tip, def.desc
@@ -994,6 +1036,11 @@ function ns.UI_BuildOnChangeCallback(ctx)
           UI.stabiliseBtn:SetBackdropColor(0.25, 0.03, 0.03, 0.95)
           UI.stabiliseBtn:SetBackdropBorderColor(0.85, 0.12, 0.12, 1.0)
         end
+      end
+      if UI.lowerBlock and UI.ficheParamChild then
+        UI.lowerBlock:ClearAllPoints()
+        UI.lowerBlock:SetPoint("TOPLEFT", UI.lowerBlock:GetParent(), "TOPLEFT", 0, isDead and -178 or -104)
+        UI.ficheParamChild:SetHeight(isDead and 1078 or 1004)
       end
     end
     ctx.setNumber(UI.inputs.armor,          s.armor)
