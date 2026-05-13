@@ -22,8 +22,10 @@ GrosOrteil_Main.lua
 GrosOrteil_Shared.lua
 GrosOrteil_History.lua
 GrosOrteil_Core.lua
+GrosOrteil_GMMarkers.lua
 GrosOrteil_UI_Tabs.lua
 GrosOrteil_UI.lua
+GrosOrteil_GMMarkersUI.lua
 GrosOrteil_Comm.lua
 GrosOrteil_TargetPopup.lua
 GrosOrteil_Bonus.lua

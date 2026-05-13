@@ -30,6 +30,7 @@ local TESTS = {
   "test_shared",
   "test_history",
   "test_core",
+  "test_gmmarkers",
   "test_comm",
   "test_popup",
   "test_e2e",         -- big cross-feature scenario tests

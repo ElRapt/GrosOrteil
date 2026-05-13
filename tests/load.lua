@@ -46,6 +46,7 @@ local SOURCES = {
   "GrosOrteil_Shared.lua",
   "GrosOrteil_History.lua",
   "GrosOrteil_Core.lua",
+  "GrosOrteil_GMMarkers.lua",
   "GrosOrteil_Comm.lua",
   "GrosOrteil_TargetPopup.lua",
 }
@@ -71,8 +72,9 @@ function M.load()
     loadAs(p, "GrosOrteil", ns)
   end
 
-  if type(ns.Core_Init) == "function" then ns.Core_Init() end
-  if type(ns.Comm_Init) == "function" then ns.Comm_Init() end
+  if type(ns.Core_Init)       == "function" then ns.Core_Init() end
+  if type(ns.GMMarkers_Init)  == "function" then ns.GMMarkers_Init() end
+  if type(ns.Comm_Init)       == "function" then ns.Comm_Init() end
   return ns
 end
 

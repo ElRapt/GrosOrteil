@@ -104,6 +104,20 @@ Shared.CLASS_ICONS = {
 }
 
 ---------------------------------------------------------------------------
+-- WoW raid target icon definitions (index matches SetRaidTarget icon arg)
+---------------------------------------------------------------------------
+Shared.RAID_MARKERS = {
+  { idx = 1, name = "Étoile",   texture = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_1" },
+  { idx = 2, name = "Cercle",   texture = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_2" },
+  { idx = 3, name = "Losange",  texture = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_3" },
+  { idx = 4, name = "Triangle", texture = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_4" },
+  { idx = 5, name = "Lune",     texture = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_5" },
+  { idx = 6, name = "Carré",    texture = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_6" },
+  { idx = 7, name = "Croix",    texture = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_7" },
+  { idx = 8, name = "Crâne",    texture = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8" },
+}
+
+---------------------------------------------------------------------------
 -- Resource index → state key mapping
 ---------------------------------------------------------------------------
 function Shared.GetKeysForIdx(i)
@@ -311,6 +325,63 @@ function Shared.MakeHpThresholdMarkers(bar)
   end
   local capMarker = Shared.MakeMarker(bar, 1.0, 1.0, 0.9, 0.2, 0.7, 3)
   return markers, capMarker
+end
+
+---------------------------------------------------------------------------
+-- Shared damage / heal computation (used by GMMarkers; Core may migrate later)
+---------------------------------------------------------------------------
+
+-- Total armor mitigation for a hit. withArmor=true includes the base armor field.
+function Shared.ComputeMitigation(t, withArmor)
+  local base = withArmor and (t.armor or 0) or 0
+  return math.max(0, base + (t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
+end
+
+-- Consume `amount` from a magic shield sub-table in-place.
+-- Returns: overflow (damage that leaks through), totalAbsorbed.
+function Shared.ConsumeMagicShield(ms, amount)
+  if not ms or amount <= 0 then return amount, 0 end
+  local cur = math.max(0, ms.hp or 0)
+  if cur <= 0 then return amount, 0 end
+  local shieldArmor = math.max(0, ms.armor or 0)
+  local afterArmor  = math.max(0, amount - shieldArmor)
+  local absorbed    = math.min(cur, afterArmor)
+  ms.hp = cur - absorbed
+  if ms.hp <= 0 then ms.hp = 0; ms.armor = 0; ms.maxHp = 0 end
+  local overflow   = afterArmor - absorbed
+  local totalEaten = amount - overflow
+  return overflow, totalEaten
+end
+
+-- Wound cap multiplier: 0.25 / 0.50 / 1.0 based on wound flags.
+function Shared.GetWoundCap(wounds)
+  if wounds and wounds.hit10 then return 0.25 end
+  if wounds and wounds.hit25 then return 0.50 end
+  return 1.0
+end
+
+-- Recompute wound flags from current hp/maxHp (non-sticky: clears as well as sets).
+-- Mutates t.wounds in-place. t must have { hp, maxHp, wounds }.
+function Shared.RecomputeWounds(t)
+  if type(t.wounds) ~= "table" then t.wounds = { hit25 = false, hit10 = false } end
+  if not t.maxHp or t.maxHp <= 0 then
+    t.wounds.hit25 = false; t.wounds.hit10 = false; return
+  end
+  local p = (t.hp or 0) / t.maxHp
+  if p < 0 then p = 0 elseif p > 1 then p = 1 end
+  if p <= 0.10 then t.wounds.hit25 = true;  t.wounds.hit10 = true
+  elseif p <= 0.25 then t.wounds.hit25 = true;  t.wounds.hit10 = false
+  else t.wounds.hit25 = false; t.wounds.hit10 = false end
+end
+
+-- Update wound flags in sticky mode (only upgrade, never clear). Used after damage.
+function Shared.UpdateWoundsSticky(t)
+  if type(t.wounds) ~= "table" then t.wounds = { hit25 = false, hit10 = false } end
+  if not t.maxHp or t.maxHp <= 0 then return end
+  local p = (t.hp or 0) / t.maxHp
+  if p < 0 then p = 0 elseif p > 1 then p = 1 end
+  if p <= 0.10 then t.wounds.hit10 = true; t.wounds.hit25 = true
+  elseif p <= 0.25 then t.wounds.hit25 = true end
 end
 
 ---------------------------------------------------------------------------

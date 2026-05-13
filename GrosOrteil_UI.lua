@@ -1758,3 +1758,6 @@ function ns.UI_ResetPosition()
   UI.frame:ClearAllPoints()
   UI.frame:SetPoint("CENTER")
 end
+
+-- Expose theme constants so GMMarkersUI can reuse them without duplication.
+ns.UITheme = { C = C, TEX = TEX }

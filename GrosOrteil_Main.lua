@@ -122,6 +122,12 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if ns.Bonus_Init then
       ns.Bonus_Init()
     end
+    if ns.GMMarkers_Init then
+      ns.GMMarkers_Init()
+    end
+    if ns.GMMarkersUI_Init then
+      ns.GMMarkersUI_Init()
+    end
     initMinimapIcon()
 
     f:UnregisterEvent("ADDON_LOADED")
@@ -189,8 +195,13 @@ f:SetScript("OnEvent", function(_, event, arg1)
           setMinimapHidden(not db.minimap.hide)
           print("|cFF00FF00GrosOrteil|r icone minimap " .. (db.minimap.hide and "masquee" or "affichee") .. ".")
         end
+      elseif cmd == "gm" or cmd == "marqueurs" then
+        if ns.GMMarkersUI_Show then
+          local shown = ns.GMMarkersUI and ns.GMMarkersUI.frame and ns.GMMarkersUI.frame:IsShown()
+          ns.GMMarkersUI_Show(not shown)
+        end
       else
-        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go pet | /go minimap [show|hide]")
+        print("|cFF00FF00GrosOrteil|r : /go [show|hide|reset|clearhistory|class X|pet|minimap|gm]")
       end
     end
   end
