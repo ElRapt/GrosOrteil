@@ -137,8 +137,12 @@ local ownerScanTooltip
 
 local function stripColorCodes(text)
   if type(text) ~= "string" then return nil end
-  local t = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-  t = t:gsub("^%s+", ""):gsub("%s+$", "")
+  -- Use string.gsub (global) instead of text:gsub (metatable) because WoW
+  -- GetText() can return a 'secret string' that blocks metatable indexing under taint.
+  local t = (string.gsub(text, "|c%x%x%x%x%x%x%x%x", ""))
+  t = (string.gsub(t, "|r", ""))
+  t = (string.gsub(t, "^%s+", ""))
+  t = (string.gsub(t, "%s+$", ""))
   if t == "" then return nil end
   return t
 end
