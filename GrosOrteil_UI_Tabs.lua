@@ -830,6 +830,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
 
   return function(s)
     lastStateRef.v = s
+    local ficheVisibleRows = 0   -- updated in resource block; used for adaptive height
     if ctx.refreshHpDisplay then ctx.refreshHpDisplay(s) end
 
     -- Resources (character section only)
@@ -959,6 +960,15 @@ function ns.UI_BuildOnChangeCallback(ctx)
         end
       end
 
+      -- Tally visible rows for adaptive scroll height
+      if s.classKey == "SHAMAN" then
+        for _, p in ipairs(profile) do
+          if p.idx <= 4 then ficheVisibleRows = ficheVisibleRows + 1 end
+        end
+      else
+        ficheVisibleRows = rowCount
+      end
+
     else
       -- Familiar section: collapse resource bars
       for i = 1, 5 do
@@ -1040,7 +1050,16 @@ function ns.UI_BuildOnChangeCallback(ctx)
       if UI.lowerBlock and UI.ficheParamChild then
         UI.lowerBlock:ClearAllPoints()
         UI.lowerBlock:SetPoint("TOPLEFT", UI.lowerBlock:GetParent(), "TOPLEFT", 0, isDead and -178 or -104)
-        UI.ficheParamChild:SetHeight(isDead and 1078 or 1004)
+        local lbYAbs = isDead and 178 or 104
+        local depth
+        if ficheVisibleRows == 0 then
+          depth = 702   -- noResHint bottom
+        elseif s.classKey == "SHAMAN" and ficheVisibleRows >= 4 then
+          depth = 862   -- posture buttons bottom
+        else
+          depth = 682 + (ficheVisibleRows - 1) * 28  -- row-n bottom
+        end
+        UI.ficheParamChild:SetHeight(lbYAbs + depth + 38)
       end
     end
     ctx.setNumber(UI.inputs.armor,          s.armor)
