@@ -707,14 +707,24 @@ function ns.UI_Init()
       end)
     iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -50, 20)
 
+    local iconRegenParTour = mkActionIcon(frame,
+      "Interface/Icons/ability_toughness",
+      "Régénération par tour",
+      "Restaure le montant de rég./tour configuré, dans la limite des seuils de PV.",
+      function()
+        if activeSectionRef.v ~= 2 then Core.RegenParTour() end
+      end)
+    iconRegenParTour:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
+    UI.iconRegenParTour = iconRegenParTour
+
     local iconRegenHP = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_rejuvenation_empowered",
       "Régénération quotidienne PV",
-      "Restaure 10 % du max de PV, ignorant les seuils de blessure.",
+      "Restaure 10 % du max de PV, ignorant les seuils de PV.",
       function()
         if activeSectionRef.v == 2 then Core.PetDailyRegenHP() else Core.DailyRegenHP() end
       end)
-    iconRegenHP:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
+    iconRegenHP:SetPoint("RIGHT", iconRegenParTour, "LEFT", -ICON_GAP, 0)
 
     local iconRegenRes = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_starfall_empowered",
@@ -1473,6 +1483,10 @@ function ns.UI_Init()
     -- Mystic-regen icon has no pet equivalent, so hide it in the pet section.
     if UI.iconRegenRes then
       if sect == 2 then UI.iconRegenRes:Hide() else UI.iconRegenRes:Show() end
+    end
+    -- Rég./tour is a character-only stat, so hide its icon in the pet section.
+    if UI.iconRegenParTour then
+      if sect == 2 then UI.iconRegenParTour:Hide() else UI.iconRegenParTour:Show() end
     end
     -- Full re-render for the newly active section.
     if lastState and onChangeCallback then onChangeCallback(lastState) end

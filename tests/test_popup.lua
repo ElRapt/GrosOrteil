@@ -50,6 +50,23 @@ T.describe("TargetPopup color stripping", function()
     T.assertNil(h.stripColorCodes(""))
     T.assertNil(h.stripColorCodes(nil))
   end)
+
+  T.it("stripColorCodes survives WoW secret string (taint blocks string metatable access)", function()
+    -- In WoW, GetText() returns a 'secret string' when the frame is protected and
+    -- addon code is tainted. type() still returns "string" but indexing via the
+    -- string metatable (text:gsub) is blocked. string.gsub(text, ...) still works.
+    -- Simulate by redirecting :gsub through __index to raise an error.
+    local mt = getmetatable("")
+    local saved = mt.__index
+    mt.__index = setmetatable({}, { __index = function(_, k)
+      if k == "gsub" then error("attempt to index a secret string value") end
+      return saved[k]
+    end })
+    local ok, result = pcall(h.stripColorCodes, "|cFF00FF00Hello|r")
+    mt.__index = saved  -- always restore before any assert
+    T.assertTrue(ok, "stripColorCodes must not error on secret-like string")
+    T.assertEq(result, "Hello")
+  end)
 end)
 
 T.describe("TargetPopup owner-tooltip parser", function()

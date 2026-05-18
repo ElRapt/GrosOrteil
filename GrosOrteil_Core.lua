@@ -559,6 +559,7 @@ function ns.Core_Init()
   if db.state.chance          == nil then db.state.chance          = 1 end
   if db.state.maxChance       == nil then db.state.maxChance       = 1 end
   if db.state.perception      == nil then db.state.perception      = 0 end
+  if db.state.regenParTour    == nil then db.state.regenParTour    = 1 end
   -- stabilise is only valid when hp == 0; clear it on load if hp > 0.
   if (db.state.hp or 0) > 0 then db.state.stabilise = nil end
   clampHpToEffectiveMax(db.state)
@@ -1378,7 +1379,20 @@ function Core.RestoreHP()
   bump(); notify()
 end
 
--- Régénération quotidienne PV : +10 % du max de base, ignore les seuils de blessure.
+function Core.SetRegenParTour(v)
+  local s = Core.state
+  if not s then return end
+  s.regenParTour = math.floor(clampNumber(v, 0, 1e9) + 0.5)
+  bump(); notify()
+end
+
+function Core.RegenParTour()
+  local s = Core.state
+  if not s then return end
+  applyHeal(s, s, s.regenParTour or 0, { kind = "HEAL" })
+end
+
+-- Régénération quotidienne PV : +10 % du max de base, ignore les seuils de PV.
 function Core.DailyRegenHP()
   local s = Core.state
   if not s then return end

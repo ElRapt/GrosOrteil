@@ -33,6 +33,7 @@ function ns.UI_BuildFicheTab(ctx)
   local mnsArmorEB, mnsToggleBtn, mnsLabel, mnsArmorLabel
   local actValEB
   local attaqueMeleeEB, attaqueDistanceEB, chanceCurEB, chanceMaxEB, perceptionEB
+  local regenParTourEB
 
   local function applyAllHP()
     Core.SetHP(ctx.getNumber(hpCur), ctx.getNumber(hpMax))
@@ -64,6 +65,9 @@ function ns.UI_BuildFicheTab(ctx)
   end
   local function applyAllPerception()
     if Core and Core.SetPerception then Core.SetPerception(ctx.getNumber(perceptionEB)) end
+  end
+  local function applyAllRegenParTour()
+    if Core and Core.SetRegenParTour then Core.SetRegenParTour(ctx.getNumber(regenParTourEB)) end
   end
   local function applyAllMagicShield()
     local vHp    = ctx.getNumber(msHpEB)
@@ -202,7 +206,9 @@ function ns.UI_BuildFicheTab(ctx)
     lbl("PV", 0, -38); lbl("/", 148, -38)
     hpCur = edt(110, 26,  -36, applyAllHP)
     hpMax = edt(110, 166, -36, applyAllHP)
-    UI.stabiliseBtn = btn("Stabilisé", 330, 55, -106, function()
+    lbl("Rég. / tour", 0, -106)
+    regenParTourEB = edt(110, 166, -104, applyAllRegenParTour)
+    UI.stabiliseBtn = btn("Stabilisé", 330, 55, -140, function()
       if Core and Core.SetStabilise and Core.state then
         Core.SetStabilise(not Core.state.stabilise)
       end
@@ -382,6 +388,7 @@ function ns.UI_BuildFicheTab(ctx)
     attaqueMelee = attaqueMeleeEB, attaqueDistance = attaqueDistanceEB,
     chanceCur = chanceCurEB, chanceMax = chanceMaxEB,
     perception = perceptionEB,
+    regenParTour = regenParTourEB,
   }
 end
 
@@ -1049,8 +1056,8 @@ function ns.UI_BuildOnChangeCallback(ctx)
       end
       if UI.lowerBlock and UI.ficheParamChild then
         UI.lowerBlock:ClearAllPoints()
-        UI.lowerBlock:SetPoint("TOPLEFT", UI.lowerBlock:GetParent(), "TOPLEFT", 0, isDead and -178 or -104)
-        local lbYAbs = isDead and 178 or 104
+        UI.lowerBlock:SetPoint("TOPLEFT", UI.lowerBlock:GetParent(), "TOPLEFT", 0, isDead and -178 or -138)
+        local lbYAbs = isDead and 178 or 138
         local depth
         if ficheVisibleRows == 0 then
           depth = 702   -- noResHint bottom
@@ -1072,6 +1079,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
     ctx.setNumber(UI.inputs.chanceCur,      s.chance)
     ctx.setNumber(UI.inputs.chanceMax,      s.maxChance)
     ctx.setNumber(UI.inputs.perception,     s.perception)
+    ctx.setNumber(UI.inputs.regenParTour,   s.regenParTour)
     local ms = s.magicShield or {}
     ctx.setNumber(UI.inputs.msHp,    ms.hp)
     ctx.setNumber(UI.inputs.msMaxHp, ms.maxHp)
