@@ -647,11 +647,10 @@ function ns.UI_Init()
   end)
 
   -- ── Action icons (bottom-right, all tabs) ───────────────────────
-  do
-    local ICON_SIZE = 18
-    local ICON_GAP  = 3
+  local ICON_SIZE = 18
+  local ICON_GAP  = 3
 
-    local function mkActionIcon(parent, icon, tipTitle, desc, onClick)
+  local function mkActionIcon(parent, icon, tipTitle, desc, onClick)
       local btn = CreateFrame("Button", nil, parent)
       btn:SetSize(ICON_SIZE, ICON_SIZE)
       btn:SetFrameLevel(parent:GetFrameLevel() + 10)
@@ -707,16 +706,6 @@ function ns.UI_Init()
       end)
     iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -50, 20)
 
-    local iconRegenParTour = mkActionIcon(frame,
-      "Interface/Icons/ability_toughness",
-      "Régénération par tour",
-      "Restaure le montant de rég./tour configuré, dans la limite des seuils de PV.",
-      function()
-        if activeSectionRef.v ~= 2 then Core.RegenParTour() end
-      end)
-    iconRegenParTour:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
-    UI.iconRegenParTour = iconRegenParTour
-
     local iconRegenHP = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_rejuvenation_empowered",
       "Régénération quotidienne PV",
@@ -724,7 +713,7 @@ function ns.UI_Init()
       function()
         if activeSectionRef.v == 2 then Core.PetDailyRegenHP() else Core.DailyRegenHP() end
       end)
-    iconRegenHP:SetPoint("RIGHT", iconRegenParTour, "LEFT", -ICON_GAP, 0)
+    iconRegenHP:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
 
     local iconRegenRes = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_starfall_empowered",
@@ -737,7 +726,6 @@ function ns.UI_Init()
     -- Pet section has no primary resource (PetDailyRegenRes is a no-op), so
     -- hide the icon while in pet section instead of letting clicks do nothing.
     UI.iconRegenRes = iconRegenRes
-  end
 
   -- Main body: sidebar (left) + content (right)
   local body = CreateFrame("Frame", nil, frame)
@@ -1632,6 +1620,8 @@ function ns.UI_Init()
     activeSectionRef = activeSectionRef,
     lastStateRef     = lastStateRef,
     refreshHpDisplay = nil,  -- patched below after refreshHpDisplay is assigned
+    mkActionIcon     = mkActionIcon,
+    ICON_GAP         = ICON_GAP,
   }
 
   -- Onglet 1 : Fiche

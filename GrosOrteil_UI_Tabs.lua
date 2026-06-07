@@ -25,6 +25,9 @@ function ns.UI_BuildFicheTab(ctx)
   local mkRowAnchor = ctx.mkRowAnchor
   local getNumber   = ctx.getNumber
   local BLOCK_W     = ctx.BLOCK_W
+  local mkActionIcon     = ctx.mkActionIcon
+  local ICON_GAP         = ctx.ICON_GAP
+  local activeSectionRef = ctx.activeSectionRef
 
   -- Forward-declared widget refs (returned via ctx.inputs at end).
   local hpCur, hpMax
@@ -208,6 +211,15 @@ function ns.UI_BuildFicheTab(ctx)
     hpMax = edt(110, 166, -36, applyAllHP)
     lbl("Rég. / tour", 0, -106)
     regenParTourEB = edt(110, 166, -104, applyAllRegenParTour)
+    local iconRegenParTour = mkActionIcon(cA,
+      "Interface/Icons/ability_toughness",
+      "Régénération par tour",
+      "Restaure le montant de rég./tour configuré, dans la limite des seuils de PV.",
+      function()
+        if activeSectionRef.v ~= 2 then Core.RegenParTour() end
+      end)
+    iconRegenParTour:SetPoint("LEFT", regenParTourEB, "RIGHT", ICON_GAP + 5, 0)
+    UI.iconRegenParTour = iconRegenParTour
     UI.stabiliseBtn = btn("Stabilisé", 330, 55, -140, function()
       if Core and Core.SetStabilise and Core.state then
         Core.SetStabilise(not Core.state.stabilise)

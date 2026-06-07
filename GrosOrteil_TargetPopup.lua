@@ -170,7 +170,7 @@ local function resolveOwnerNameFromTooltip(unit)
   end
 
   ownerScanTooltip:ClearLines()
-  ownerScanTooltip:SetUnit(unit)
+  securecall(ownerScanTooltip.SetUnit, ownerScanTooltip, unit)
 
   for i = 2, 6 do
     local left = _G["GrosOrteilOwnerScanTooltipTextLeft" .. i]
