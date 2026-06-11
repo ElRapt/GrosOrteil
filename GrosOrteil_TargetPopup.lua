@@ -36,6 +36,7 @@ local pendingTarget
 local pendingTargetIsPet = false
 local pendingHoverUnit   -- cache key of the unit we last requested on hover
 local pendingHoverTime   = 0
+local arrivedCallbacks   = {}
 local HOVER_REQUEST_COOLDOWN = 5  -- seconds between requests for the same unit
 local popupFrame
 local currentShownSender
@@ -978,6 +979,10 @@ function Popup:OnStateReceived(sender, state)
   -- Always refresh cache with latest data.
   setCached(toCacheKey(sender), state)
 
+  for _, cb in ipairs(arrivedCallbacks) do
+    xpcall(cb, geterrorhandler(), sender, state)
+  end
+
   -- Refresh hover popup if it is showing for this sender, or try to show it
   -- if the user is currently hovering this unit (state just became available).
   if tryShowHover then tryShowHover() end
@@ -1250,6 +1255,26 @@ end
 
 hideHoverPopup = function()
   if hoverFrame then hoverFrame:Hide() end
+end
+
+-- Public: subscribe to incoming states. Returns an unsubscribe function.
+function Popup.OnStateArrived(fn)
+  table.insert(arrivedCallbacks, fn)
+  return function()
+    for i, cb in ipairs(arrivedCallbacks) do
+      if cb == fn then table.remove(arrivedCallbacks, i); break end
+    end
+  end
+end
+
+-- Public: read cache by display name (for RaidPanel.Refresh).
+function Popup.GetCachedState(name)
+  return getCached(toCacheKey(name))
+end
+
+-- Public: write cache by display name (for /go raidtest simulation).
+function Popup.InjectState(name, state)
+  setCached(toCacheKey(name), state)
 end
 
 local function showHoverForState(state, petOnly)
@@ -1544,6 +1569,7 @@ Popup._test = {
   cache                          = stateCache,
   CACHE_TTL                      = CACHE_TTL,
   CACHE_MAX                      = CACHE_MAX,
+  arrivedCallbacks               = arrivedCallbacks,
 }
 
 function ns.TargetPopup_Init()
