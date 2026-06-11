@@ -130,6 +130,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if ns.RaidPanel_Init then
       ns.RaidPanel_Init()
     end
+    if ns.Heal_Init then
+      ns.Heal_Init()
+    end
     initMinimapIcon()
 
     f:UnregisterEvent("ADDON_LOADED")
@@ -185,29 +188,6 @@ f:SetScript("OnEvent", function(_, event, arg1)
         end
       elseif cmd == "raid" then
         if ns.RaidPanel then ns.RaidPanel.Toggle() end
-      elseif cmd == "raidtest" then
-        local SIM = {
-          { name="Archimonde",  classKey="MAGE",        hp=80,  maxHp=100, res=70, maxRes=100 },
-          { name="Illidan",     classKey="WARLOCK",      hp=45,  maxHp=120, res=50, maxRes=100, res2=30, maxRes2=60, res3=2, maxRes3=5 },
-          { name="Sylvanas",    classKey="SHADOWPRIEST", hp=0,   maxHp=90,  res=15, maxRes=100, res2=20, maxRes2=25, stabilise=true },
-          { name="Thrall",      classKey="SHAMAN",       hp=95,  maxHp=110, res=88, maxRes=100, res3=1,  maxRes3=3,  res4=2,  maxRes4=3 },
-          { name="Jaina",       classKey="MAGE",         hp=60,  maxHp=100, res=40, maxRes=100 },
-          { name="Anduin",      classKey="PALADIN",      hp=100, maxHp=100, res=70, maxRes=100 },
-          { name="Garrosh",     classKey="ROGUE",        hp=55,  maxHp=130, res=90, maxRes=100 },
-          { name="Malfurion",   classKey="DRUID",        hp=0,   maxHp=120, stabilise=false },
-          { name="Khadgar",     classKey="MONK",         hp=70,  maxHp=100, res=60, maxRes=100, res2=4, maxRes2=8 },
-          { name="Tyrande",     classKey="MEDIC",        hp=85,  maxHp=100, res=55, maxRes=100 },
-        }
-        local names = {}
-        if ns.TargetPopup then
-          for _, s in ipairs(SIM) do
-            ns.TargetPopup.InjectState(s.name, s)
-            names[#names + 1] = { name = s.name }
-          end
-        end
-        if ns.RaidPanel then
-          ns.RaidPanel.Show({ members = names, skipRequest = true })
-        end
       elseif cmd == "minimap" then
         local sub = (rest or ""):match("^(%S*)"):lower()
         if sub == "hide" then
@@ -223,7 +203,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
           print("|cFF00FF00GrosOrteil|r icone minimap " .. (db.minimap.hide and "masquee" or "affichee") .. ".")
         end
       else
-        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go pet | /go minimap [show|hide] | /go raid | /go raidtest")
+        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go pet | /go minimap [show|hide] | /go raid")
       end
     end
   end

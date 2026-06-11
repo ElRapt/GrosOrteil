@@ -48,6 +48,7 @@ local SOURCES = {
   "GrosOrteil_Core.lua",
   "GrosOrteil_Comm.lua",
   "GrosOrteil_TargetPopup.lua",
+  "GrosOrteil_Heal.lua",
   "GrosOrteil_RaidPanel.lua",
 }
 

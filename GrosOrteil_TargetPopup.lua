@@ -1272,9 +1272,18 @@ function Popup.GetCachedState(name)
   return getCached(toCacheKey(name))
 end
 
--- Public: write cache by display name (for /go raidtest simulation).
+-- Public: write cache by display name (cache-priming primitive; used by tests).
 function Popup.InjectState(name, state)
   setCached(toCacheKey(name), state)
+end
+
+-- Public: best available display name (TRP3/RP name if known, else the
+-- character name). Guarded so a missing/erroring RP lib never breaks callers.
+function Popup.GetRPDisplayName(name)
+  if type(name) ~= "string" or name == "" then return name end
+  local ok, rp = pcall(getRPDisplayName, name)
+  if ok and type(rp) == "string" and rp ~= "" then return rp end
+  return name
 end
 
 local function showHoverForState(state, petOnly)

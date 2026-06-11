@@ -199,9 +199,13 @@ function History.FormatEntry(e)
 		})
 		return table.concat(lines, "\n")
 	elseif e.kind == "HEAL" then
+		local healLabel = "Soins reçus"
+		if type(e.healer) == "string" and e.healer ~= "" then
+			healLabel = "Soins reçus (de " .. e.healer .. ")"
+		end
 		return block(
 			sep({
-				prefix("Soins reçus", COLORS.HEAL),
+				prefix(healLabel, COLORS.HEAL),
 				"Valeur " .. fmtInt(e.input),
 			}),
 			sep({

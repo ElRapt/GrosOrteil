@@ -119,6 +119,14 @@ local function getDisplayData(name, state)
   local style = Shared.CLASS_STYLES and Shared.CLASS_STYLES[classKey]
   local nameColor = style and { style.r, style.g, style.b } or NAME_DEFAULT
 
+  -- Points de Chance (gold bar, only when the character has a chance pool).
+  local chMax   = tonumber(state.maxChance) or 0
+  local chance  = nil
+  if chMax > 0 then
+    local chCur = tonumber(state.chance) or 0
+    chance = { cur = math.max(0, math.min(chCur, chMax)), max = chMax }
+  end
+
   local status = nil
   if hp == 0 then
     status = state.stabilise and "stabilise" or "agonie"
@@ -132,6 +140,7 @@ local function getDisplayData(name, state)
     hp         = hp,
     maxHp      = effMaxHp,
     resources  = resources,
+    chance     = chance,
     status     = status,
   }
 end
@@ -178,6 +187,7 @@ local function collectData(members)
   for _, m in ipairs(members or {}) do
     local st   = ns.TargetPopup and ns.TargetPopup.GetCachedState(m.name)
     local data = (st and getDisplayData(m.name, st)) or { name = m.name }
+    data.unit = m.unit  -- carried for click-to-target (nil for nameless injects)
     list[#list + 1] = data
   end
   return list
@@ -186,8 +196,14 @@ end
 -- ── Frame layer (WoW-only; lazily built, sections pooled to avoid leaks) ───────
 
 local frame, scrollFrame, content, headerFs
-local sectionPool   = {}
+local sectionPool    = {}
 local currentMembers = nil
+local pendingRelayout = false  -- a relayout was requested while in combat
+
+local InCombatLockdown = rawget(_G, "InCombatLockdown")
+local function inCombat()
+  return InCombatLockdown and InCombatLockdown()
+end
 
 local function applyBarText(fs)
   fs:SetTextColor(1, 1, 1, 1)
@@ -227,6 +243,35 @@ local function hideMarkers(barObj)
   end
 end
 
+-- Best display name: TRP3/RP name if known, else the character name. Guarded
+-- so a missing or erroring RP lib never breaks the layout.
+local function resolveDisplayName(name)
+  local popup = ns.TargetPopup
+  if popup and popup.GetRPDisplayName then
+    local ok, rp = pcall(popup.GetRPDisplayName, name)
+    if ok and type(rp) == "string" and rp ~= "" then return rp end
+  end
+  return name
+end
+
+-- Right-click context menu: "Soigner" -> heal prompt. Uses MenuUtil when
+-- present (modern retail); otherwise falls back straight to the heal prompt.
+local function openMemberMenu(sec)
+  local name = sec._name
+  if not name or name == "" then return end
+  local menuUtil = rawget(_G, "MenuUtil")
+  if menuUtil and menuUtil.CreateContextMenu then
+    menuUtil.CreateContextMenu(sec, function(_, root)
+      root:CreateTitle(sec._displayName or name)
+      root:CreateButton("Soigner", function()
+        if ns.Heal and ns.Heal.PromptAndSend then ns.Heal.PromptAndSend(name) end
+      end)
+    end)
+  elseif ns.Heal and ns.Heal.PromptAndSend then
+    ns.Heal.PromptAndSend(name)
+  end
+end
+
 local function makeBar(parent)
   local bf = Shared.MakeBarFrame(parent, BAR_W, ROW_H)
   local label = bf.bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -238,13 +283,29 @@ local function makeBar(parent)
 end
 
 local function buildSection()
-  local sec = CreateFrame("Frame", nil, content, "BackdropTemplate")
+  -- A SecureActionButton so left-click can target the member without tainting
+  -- (insecure TargetUnit is blocked by Blizzard). Bars don't enable mouse, so
+  -- their clicks fall through to this parent. Right-click opens the action menu.
+  local sec = CreateFrame("Button", nil, content, "SecureActionButtonTemplate, BackdropTemplate")
   sec:SetWidth(SCROLL_W)
   if sec.SetBackdrop then
     sec:SetBackdrop(BACKDROP_CARD)
     sec:SetBackdropColor(0.10, 0.09, 0.08, 0.85)
     sec:SetBackdropBorderColor(0.45, 0.36, 0.18, 0.80)
   end
+  sec:RegisterForClicks("AnyUp")
+  -- Wildcard form (matches Blizzard's CompactUnitFrame): left-click targets the
+  -- `unit` attribute regardless of held modifiers.
+  if sec.SetAttribute then sec:SetAttribute("*type1", "target") end
+  -- The right-click menu is wired on OnMouseUp, a SEPARATE handler, on purpose:
+  -- hooking the secure OnClick taints it and Blizzard then blocks the protected
+  -- target action. OnMouseUp leaves OnClick pristine so left-click can target.
+  sec:HookScript("OnMouseUp", function(self, button)
+    if button == "RightButton" then openMemberMenu(self) end
+  end)
+  sec:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
+  local hl = sec.GetHighlightTexture and sec:GetHighlightTexture()
+  if hl then hl:SetVertexColor(1.0, 0.95, 0.6, 0.10) end
 
   local nameFs = sec:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   nameFs:SetPoint("TOPLEFT",  sec, "TOPLEFT",  CARD_PAD, -CARD_TOP_PAD)
@@ -260,6 +321,7 @@ local function buildSection()
   for i = 1, MAX_RES_BARS do
     sec.res[i] = makeBar(sec)
   end
+  sec.chanceBar = makeBar(sec)
 
   local statusFs = sec:CreateFontString(nil, "OVERLAY")
   statusFs:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
@@ -279,14 +341,24 @@ local function getSection(i)
 end
 
 -- Fill a pooled section with one member's data; returns its total height.
+-- Only ever called out of combat (relayout defers otherwise), so the secure
+-- SetAttribute is safe.
 local function updateSection(sec, data)
   local hasState = data.hp ~= nil
+  sec._unit = data.unit
+  sec._name = data.name
+  local shown = resolveDisplayName(data.name)
+  sec._displayName = shown
+  if not inCombat() and sec.SetAttribute then
+    sec:SetAttribute("unit", data.unit)  -- left-click target
+  end
+
   local col = data.nameColor or NAME_DEFAULT
   sec.nameFs:SetTextColor(col[1], col[2], col[3], 1)
   if data.classLabel and data.classLabel ~= "" then
-    sec.nameFs:SetText(string.format("%s  |cffb0a08c— %s|r", data.name or "?", data.classLabel))
+    sec.nameFs:SetText(string.format("%s  |cffb0a08c— %s|r", shown or "?", data.classLabel))
   else
-    sec.nameFs:SetText(data.name or "?")
+    sec.nameFs:SetText(shown or "?")
   end
 
   local top = CARD_TOP_PAD + NAME_H + 2
@@ -334,6 +406,24 @@ local function updateSection(sec, data)
       rb.frame:Hide()
       hideMarkers(rb)
     end
+  end
+
+  -- Points de Chance (gold), shown only when the member has a chance pool.
+  if hasState and data.chance then
+    local cb = sec.chanceBar
+    cb.frame:ClearAllPoints()
+    cb.frame:SetPoint("TOPLEFT", sec, "TOPLEFT", CARD_PAD, -top)
+    cb.bar:SetMinMaxValues(0, data.chance.max)
+    cb.bar:SetValue(data.chance.cur)
+    cb.bar:SetStatusBarColor(0.95, 0.78, 0.20, 1)
+    cb.label:SetText(string.format("PC : %d / %d",
+      math.floor(data.chance.cur + 0.5), math.floor(data.chance.max + 0.5)))
+    hideMarkers(cb)
+    cb.frame:Show()
+    top = top + ROW_H + ROW_GAP
+  else
+    sec.chanceBar.frame:Hide()
+    hideMarkers(sec.chanceBar)
   end
 
   -- Status line (only at 0 HP)
@@ -438,18 +528,30 @@ local function ensureFrame()
     if nv < 0 then nv = 0 elseif nv > range then nv = range end
     sf:SetVerticalScroll(nv)
   end)
+
+  -- Secure section buttons can't be moved/shown/re-attributed in combat, so a
+  -- relayout requested during combat is deferred until combat ends.
+  frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+  frame:SetScript("OnEvent", function()
+    if pendingRelayout and frame:IsShown() then
+      pendingRelayout = false
+      layoutSections(collectData(currentMembers))
+    end
+  end)
 end
 
 -- ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 local function relayout()
   if not frame then return end
+  if inCombat() then pendingRelayout = true; return end
   layoutSections(collectData(currentMembers))
 end
 
-local function Refresh(membersOverride, skipRequest)
-  currentMembers = membersOverride or getRaidMembers()
-  if not skipRequest and ns.Comm and ns.Comm.RequestState then
+local function Refresh()
+  currentMembers = getRaidMembers()
+  -- Fire-and-forget fresh requests; replies refresh rows via OnStateArrived.
+  if ns.Comm and ns.Comm.RequestState then
     for _, m in ipairs(currentMembers) do
       ns.Comm:RequestState(m.name)
     end
@@ -457,10 +559,9 @@ local function Refresh(membersOverride, skipRequest)
   relayout()
 end
 
--- opts = { members = {...}, skipRequest = bool } | nil
-function RaidPanel.Show(opts)
+function RaidPanel.Show()
   ensureFrame()
-  Refresh(opts and opts.members, opts and opts.skipRequest)
+  Refresh()
   if scrollFrame then scrollFrame:SetVerticalScroll(0) end
   frame:Show()
   frame:Raise()

@@ -469,4 +469,55 @@ T.describe("RaidPanel.collectData — maps members to cached display data", func
     local list = RaidPanel._collectData({})
     T.assertEq(#list, 0)
   end)
+
+  T.it("threads the member unit onto cached data (for click-to-target)", function()
+    Popup.InjectState("UnitCached", makeState({ hp = 50 }))
+    local list = RaidPanel._collectData({ { name = "UnitCached", unit = "raid7" } })
+    T.assertEq(list[1].unit, "raid7")
+  end)
+
+  T.it("threads the member unit onto placeholder rows too", function()
+    local list = RaidPanel._collectData({ { name = "NoCacheUnit_q", unit = "party2" } })
+    T.assertNil(list[1].hp)        -- placeholder
+    T.assertEq(list[1].unit, "party2")
+  end)
+end)
+
+-- ── RaidPanel.getDisplayData — Points de Chance ───────────────────────────────
+
+T.describe("RaidPanel.getDisplayData — chance pool", function()
+  T.it("chance is nil when maxChance is 0 / absent", function()
+    local d = RaidPanel._getDisplayData("X", makeState())
+    T.assertNil(d.chance)
+  end)
+
+  T.it("chance carries cur/max when maxChance > 0", function()
+    local d = RaidPanel._getDisplayData("X", makeState({ chance = 3, maxChance = 5 }))
+    T.assertNotNil(d.chance)
+    T.assertEq(d.chance.cur, 3)
+    T.assertEq(d.chance.max, 5)
+  end)
+
+  T.it("chance.cur is clamped to maxChance", function()
+    local d = RaidPanel._getDisplayData("X", makeState({ chance = 99, maxChance = 5 }))
+    T.assertEq(d.chance.cur, 5)
+  end)
+
+  T.it("chance.cur floors at 0", function()
+    local d = RaidPanel._getDisplayData("X", makeState({ chance = -4, maxChance = 5 }))
+    T.assertEq(d.chance.cur, 0)
+  end)
+end)
+
+-- ── French class name rename (Voleur -> Furtif) ───────────────────────────────
+
+T.describe("Rogue French label is 'Furtif'", function()
+  T.it("Shared.GetClassNameFr('ROGUE') returns 'Furtif'", function()
+    T.assertEq(ns.Shared.GetClassNameFr("ROGUE"), "Furtif")
+  end)
+
+  T.it("getDisplayData tags a Rogue with classLabel 'Furtif'", function()
+    local d = RaidPanel._getDisplayData("X", makeState({ classKey = "ROGUE" }))
+    T.assertEq(d.classLabel, "Furtif")
+  end)
 end)

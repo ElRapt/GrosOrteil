@@ -26,6 +26,7 @@ GrosOrteil_UI_Tabs.lua
 GrosOrteil_UI.lua
 GrosOrteil_Comm.lua
 GrosOrteil_TargetPopup.lua
+GrosOrteil_Heal.lua
 GrosOrteil_RaidPanel.lua
 GrosOrteil_Bonus.lua
 GrosOrteil_Tests.lua

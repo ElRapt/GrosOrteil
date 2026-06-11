@@ -323,6 +323,22 @@ function Comm:RequestState(targetPlayer)
   sendAddonMessage(self.PREFIX, "REQUEST_STATE", "WHISPER", targetPlayer)
 end
 
+-- Heal handshake (raid panel). Healer -> target: "HEAL_REQ:<amount>".
+function Comm:SendHealRequest(targetPlayer, amount)
+  if not targetPlayer or targetPlayer == "" then return end
+  local amt = math.floor(tonumber(amount) or 0)
+  if amt <= 0 then return end
+  sendAddonMessage(self.PREFIX, "HEAL_REQ:" .. amt, "WHISPER", targetPlayer)
+end
+
+-- Target -> healer: "HEAL_RESP:<1|0>:<amount>" (1 = accepted, 0 = refused).
+function Comm:SendHealResponse(healerPlayer, accepted, amount)
+  if not healerPlayer or healerPlayer == "" then return end
+  local amt = math.floor(tonumber(amount) or 0)
+  local flag = accepted and "1" or "0"
+  sendAddonMessage(self.PREFIX, "HEAL_RESP:" .. flag .. ":" .. amt, "WHISPER", healerPlayer)
+end
+
 function Comm:HandleStateData(sender, cmd, rest)
   dbg("HandleStateData cmd=%s sender=%s restBytes=%d", tostring(cmd), tostring(sender), #(rest or ""))
   if cmd == "STATE_DATA" or cmd == "STATE_DATA_COMPRESSED" then
@@ -385,6 +401,21 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
     dbg("Message parse failed from %s", tostring(sender))
     return
   end
+
+  -- Heal handshake routes to the Heal module (raid panel feature).
+  if cmd == "HEAL_REQ" then
+    if ns.Heal and ns.Heal.OnRequest then
+      ns.Heal:OnRequest(sender, tonumber(rest))
+    end
+    return
+  elseif cmd == "HEAL_RESP" then
+    local flag, amt = strsplit(":", rest or "", 2)
+    if ns.Heal and ns.Heal.OnResponse then
+      ns.Heal:OnResponse(sender, flag == "1", tonumber(amt))
+    end
+    return
+  end
+
   self:HandleStateData(sender, cmd, rest)
 end
 

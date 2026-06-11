@@ -1262,7 +1262,7 @@ local function applyHeal(s, t, amount, opts)
                   capMax = capMax, effMax = maxBefore,
                   applied = (t.hp or 0) - hpBefore,
                   hpBefore = hpBefore, hpAfter = t.hp or 0, maxHp = maxBefore,
-                  woundCap = woundCapFn(target) })
+                  woundCap = woundCapFn(target), healer = opts.healer })
     updateWoundsSticky(t)
   end
 
@@ -1274,6 +1274,14 @@ function Core.Heal(amount)
   local s = Core.state
   if not s then return end
   applyHeal(s, s, amount, { kind = "HEAL" })
+end
+
+-- Same as Core.Heal but records who cast it (raid-panel heal accepted from a
+-- remote healer). The history entry is credited to `healerName`.
+function Core.HealFrom(amount, healerName)
+  local s = Core.state
+  if not s then return end
+  applyHeal(s, s, amount, { kind = "HEAL", healer = healerName })
 end
 
 function Core.DivineHeal()
