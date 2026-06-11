@@ -19,26 +19,44 @@ local UIParent    = rawget(_G, "UIParent")
 
 -- ── Layout constants ──────────────────────────────────────────────────────────
 
-local PANEL_W      = 320
-local PANEL_H      = 560
-local PAD          = 10
-local HEADER_H     = 24
-local SCROLL_W     = PANEL_W - PAD * 2
-local CARD_PAD     = 6
+local PANEL_W      = 360
+local PANEL_H      = 580
+local EDGE         = 4      -- gold tooltip-border inset around the board
+local WOOD         = 20     -- wooden rail thickness (bulletin-board frame)
+local PAD          = 8      -- gap between the rails and the cards
+local PLAQUE_H     = 30     -- header plaque height
+local FOOTER_H     = 14
+local CONTENT_X    = EDGE + WOOD + PAD
+local SCROLL_W     = PANEL_W - CONTENT_X * 2
+local CARD_PAD     = 10
+local ACCENT_W     = 3      -- class-colored stripe on the left card edge
+local ICON_SIZE    = 16
 local BAR_W        = SCROLL_W - CARD_PAD * 2
 local ROW_H        = 15
 local ROW_GAP      = 3
-local NAME_H       = 15
+local NAME_H       = 16
 local STATUS_H     = 16
-local SECTION_GAP  = 6
-local CARD_TOP_PAD = 5
-local CARD_BOT_PAD = 6
+local SECTION_GAP  = 7
+local CARD_TOP_PAD = 6
+local CARD_BOT_PAD = 7
 local MAX_RES_BARS = 5
 
 local HP_COLOR        = { 0.85, 0.16, 0.18 }
 local HP_DEAD_COLOR   = { 0.45, 0.08, 0.09 }
 local PLACEHOLDER_COL = { 0.30, 0.30, 0.32 }
 local NAME_DEFAULT    = { 0.95, 0.82, 0.30 }
+local CREAMY_BROWN    = { 0.48, 0.39, 0.32 }   -- TRP3's backdrop border color
+local GOLD            = { 1.00, 0.675, 0.125 }
+local CARD_BG         = { 0.085, 0.065, 0.045 }
+local BORDER_AGONIE   = { 0.78, 0.16, 0.13 }
+local BORDER_STAB     = { 0.28, 0.68, 0.30 }
+
+-- TRP3 bulletin-board art, used when TRP3 is installed (this addon already
+-- integrates with it); Blizzard's neutral parchment is the fallback.
+local TRP3_BG     = "Interface\\AddOns\\totalRP3\\Resources\\UI\\ui-frame-neutral-background"
+local TRP3_WOOD_V = "Interface\\AddOns\\totalRP3\\Resources\\UI\\!ui-frame-wooden-border"
+local TRP3_WOOD_H = "Interface\\AddOns\\totalRP3\\Resources\\UI\\_ui-frame-wooden-border"
+local BLIZZ_BG    = "Interface\\FrameGeneral\\UIFrameNeutralBackground"
 
 -- HP threshold markers (50% / 25% / 10%) — same definitions as the hover popup.
 local HP_MARKER_DEFS = {
@@ -48,15 +66,21 @@ local HP_MARKER_DEFS = {
 }
 
 local BACKDROP_PANEL = {
-  bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-  edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
-  tile = true, tileSize = 24, edgeSize = 16,
-  insets = { left = 4, right = 4, top = 4, bottom = 4 },
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  edgeSize = 16,
 }
+-- Cards are styled as tooltip "notes" pinned on the parchment board.
 local BACKDROP_CARD = {
   bgFile   = "Interface\\Buttons\\WHITE8x8",
-  edgeFile = "Interface\\Buttons\\WHITE8x8",
-  edgeSize = 1,
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  edgeSize = 12,
+  insets   = { left = 3, right = 3, top = 3, bottom = 3 },
+}
+local BACKDROP_PLAQUE = {
+  bgFile   = "Interface\\Buttons\\WHITE8x8",
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  edgeSize = 12,
+  insets   = { left = 3, right = 3, top = 3, bottom = 3 },
 }
 
 -- ── Pure data extraction (testable offline, no WoW frames) ─────────────────────
@@ -195,7 +219,7 @@ end
 
 -- ── Frame layer (WoW-only; lazily built, sections pooled to avoid leaks) ───────
 
-local frame, scrollFrame, content, headerFs
+local frame, scrollFrame, content, headerFs, countFs, fadeIn
 local sectionPool    = {}
 local currentMembers = nil
 local pendingRelayout = false  -- a relayout was requested while in combat
@@ -274,6 +298,13 @@ end
 
 local function makeBar(parent)
   local bf = Shared.MakeBarFrame(parent, BAR_W, ROW_H)
+  -- Top-half sheen for the glass effect used by the main window's bars.
+  local sheen = bf.bar:CreateTexture(nil, "OVERLAY", nil, -1)
+  sheen:SetTexture("Interface\\Buttons\\WHITE8x8")
+  sheen:SetVertexColor(1, 1, 1, 0.06)
+  sheen:SetPoint("TOPLEFT",  bf.bar, "TOPLEFT",  1, -1)
+  sheen:SetPoint("TOPRIGHT", bf.bar, "TOPRIGHT", -1, -1)
+  sheen:SetHeight(math.max(1, math.floor(ROW_H / 2)))
   local label = bf.bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   label:SetAllPoints(bf.bar)
   label:SetJustifyH("CENTER")
@@ -290,31 +321,86 @@ local function buildSection()
   sec:SetWidth(SCROLL_W)
   if sec.SetBackdrop then
     sec:SetBackdrop(BACKDROP_CARD)
-    sec:SetBackdropColor(0.10, 0.09, 0.08, 0.85)
-    sec:SetBackdropBorderColor(0.45, 0.36, 0.18, 0.80)
+    sec:SetBackdropColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 0.92)
+    sec:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
   end
   sec:RegisterForClicks("AnyUp")
-  -- Wildcard form (matches Blizzard's CompactUnitFrame): left-click targets the
-  -- `unit` attribute regardless of held modifiers.
-  if sec.SetAttribute then sec:SetAttribute("*type1", "target") end
-  -- The right-click menu is wired on OnMouseUp, a SEPARATE handler, on purpose:
-  -- hooking the secure OnClick taints it and Blizzard then blocks the protected
-  -- target action. OnMouseUp leaves OnClick pristine so left-click can target.
-  sec:HookScript("OnMouseUp", function(self, button)
+  -- Left-click targets the `unit` attribute. Both plain and wildcard forms are
+  -- set so it works with or without held modifiers.
+  if sec.SetAttribute then
+    sec:SetAttribute("type1", "target")
+    sec:SetAttribute("*type1", "target")
+  end
+  -- Custom right-click menu runs in PostClick — the blessed hook for insecure
+  -- work AFTER the secure action. Touching OnClick (HookScript) or any handler
+  -- that runs BEFORE it (OnMouseUp) taints the click and Blizzard then blocks
+  -- the protected target, which is why earlier attempts silently did nothing.
+  sec:SetScript("PostClick", function(self, button)
     if button == "RightButton" then openMemberMenu(self) end
   end)
   sec:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
   local hl = sec.GetHighlightTexture and sec:GetHighlightTexture()
-  if hl then hl:SetVertexColor(1.0, 0.95, 0.6, 0.10) end
+  if hl then hl:SetVertexColor(1.0, 0.95, 0.6, 0.08) end
+
+  -- Class-colored accent stripe along the left card edge.
+  local accent = sec:CreateTexture(nil, "BORDER")
+  accent:SetTexture("Interface\\Buttons\\WHITE8x8")
+  accent:SetPoint("TOPLEFT",    sec, "TOPLEFT",    3, -3)
+  accent:SetPoint("BOTTOMLEFT", sec, "BOTTOMLEFT", 3, 3)
+  accent:SetWidth(ACCENT_W)
+  sec.accent = accent
+
+  -- Class icon in front of the name.
+  local icon = sec:CreateTexture(nil, "ARTWORK")
+  icon:SetSize(ICON_SIZE, ICON_SIZE)
+  icon:SetPoint("TOPLEFT", sec, "TOPLEFT", CARD_PAD, -CARD_TOP_PAD)
+  sec.icon = icon
 
   local nameFs = sec:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  nameFs:SetPoint("TOPLEFT",  sec, "TOPLEFT",  CARD_PAD, -CARD_TOP_PAD)
-  nameFs:SetPoint("TOPRIGHT", sec, "TOPRIGHT", -CARD_PAD, -CARD_TOP_PAD)
+  nameFs:SetPoint("TOPLEFT",  icon, "TOPRIGHT", 5, 0)
+  nameFs:SetPoint("TOPRIGHT", sec,  "TOPRIGHT", -CARD_PAD, -CARD_TOP_PAD)
   nameFs:SetHeight(NAME_H)
   nameFs:SetJustifyH("LEFT")
   nameFs:SetShadowColor(0, 0, 0, 0.9)
   nameFs:SetShadowOffset(1, -1)
   sec.nameFs = nameFs
+
+  -- Thin class-tinted rule between the name row and the bars.
+  local rule = sec:CreateTexture(nil, "ARTWORK")
+  rule:SetTexture("Interface\\Buttons\\WHITE8x8")
+  rule:SetPoint("TOPLEFT",  sec, "TOPLEFT",  CARD_PAD, -(CARD_TOP_PAD + NAME_H + 1))
+  rule:SetPoint("TOPRIGHT", sec, "TOPRIGHT", -CARD_PAD, -(CARD_TOP_PAD + NAME_H + 1))
+  rule:SetHeight(1)
+  sec.rule = rule
+
+  -- Hover: gold border + info tooltip with the click hints.
+  sec:SetScript("OnEnter", function(self)
+    if self.SetBackdropBorderColor then
+      self:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
+    end
+    local tip = rawget(_G, "GameTooltip")
+    if not tip then return end
+    tip:SetOwner(self, "ANCHOR_RIGHT")
+    tip:ClearLines()
+    local col = self._nameColor or NAME_DEFAULT
+    tip:AddLine(self._displayName or self._name or "?", col[1], col[2], col[3])
+    if self._classLabel and self._classLabel ~= "" then
+      tip:AddLine(self._classLabel, 0.72, 0.62, 0.52)
+    end
+    if self._hpLine then tip:AddLine(self._hpLine, 0.95, 0.95, 0.95) end
+    tip:AddLine(" ")
+    tip:AddLine("Clic gauche : cibler", 0.55, 0.55, 0.55)
+    tip:AddLine("Clic droit : actions", 0.55, 0.55, 0.55)
+    tip:Show()
+  end)
+  sec:SetScript("OnLeave", function(self)
+    local c = self._borderColor or CREAMY_BROWN
+    if self.SetBackdropBorderColor then
+      self:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 0.90)
+    end
+    local tip = rawget(_G, "GameTooltip")
+    if tip then tip:Hide() end
+  end)
 
   sec.hp  = makeBar(sec)
   sec.res = {}
@@ -328,6 +414,14 @@ local function buildSection()
   statusFs:SetJustifyH("CENTER")
   statusFs:Hide()
   sec.statusFs = statusFs
+  -- Soft pulse for the "EN AGONIE" state.
+  if statusFs.CreateAnimationGroup then
+    local pulse = statusFs:CreateAnimationGroup()
+    pulse:SetLooping("BOUNCE")
+    local a = pulse:CreateAnimation("Alpha")
+    a:SetFromAlpha(1); a:SetToAlpha(0.35); a:SetDuration(0.7)
+    sec.statusPulse = pulse
+  end
 
   return sec
 end
@@ -354,6 +448,8 @@ local function updateSection(sec, data)
   end
 
   local col = data.nameColor or NAME_DEFAULT
+  sec._nameColor  = col
+  sec._classLabel = data.classLabel
   sec.nameFs:SetTextColor(col[1], col[2], col[3], 1)
   if data.classLabel and data.classLabel ~= "" then
     sec.nameFs:SetText(string.format("%s  |cffb0a08c— %s|r", shown or "?", data.classLabel))
@@ -361,7 +457,34 @@ local function updateSection(sec, data)
     sec.nameFs:SetText(shown or "?")
   end
 
-  local top = CARD_TOP_PAD + NAME_H + 2
+  -- Class icon (question mark while waiting for data).
+  if hasState and data.classKey and data.classKey ~= "" then
+    Shared.SetClassIconTexCoords(sec.icon, data.classKey)
+    if sec.icon.SetDesaturated then sec.icon:SetDesaturated(false) end
+  else
+    sec.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    sec.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    if sec.icon.SetDesaturated then sec.icon:SetDesaturated(true) end
+  end
+
+  -- Accent stripe + border follow the member's condition.
+  local accentCol, borderCol = col, CREAMY_BROWN
+  if not hasState then
+    accentCol = PLACEHOLDER_COL
+  elseif data.status == "agonie" then
+    accentCol, borderCol = BORDER_AGONIE, BORDER_AGONIE
+  elseif data.status == "stabilise" then
+    accentCol, borderCol = BORDER_STAB, BORDER_STAB
+  end
+  sec._borderColor = borderCol
+  sec.accent:SetVertexColor(accentCol[1], accentCol[2], accentCol[3], 0.90)
+  sec.rule:SetVertexColor(col[1], col[2], col[3], hasState and 0.30 or 0.12)
+  if sec.SetBackdropBorderColor and not (sec.IsMouseOver and sec:IsMouseOver()) then
+    sec:SetBackdropBorderColor(borderCol[1], borderCol[2], borderCol[3], 0.90)
+  end
+  sec:SetAlpha(hasState and 1 or 0.65)
+
+  local top = CARD_TOP_PAD + NAME_H + 5
 
   -- HP bar
   sec.hp.frame:ClearAllPoints()
@@ -373,14 +496,17 @@ local function updateSection(sec, data)
     sec.hp.bar:SetValue(hp)
     local c = (data.hp == 0) and HP_DEAD_COLOR or HP_COLOR
     sec.hp.bar:SetStatusBarColor(c[1], c[2], c[3], 1)
-    sec.hp.label:SetText(string.format("PV : %d / %d",
-      math.floor(data.hp + 0.5), math.floor(maxHp + 0.5)))
+    local hpLine = string.format("PV : %d / %d  (%d%%)",
+      math.floor(data.hp + 0.5), math.floor(maxHp + 0.5), Shared.RoundPct(hp / maxHp))
+    sec.hp.label:SetText(hpLine)
+    sec._hpLine = hpLine
     applyMarkers(sec.hp, HP_MARKER_DEFS)
   else
     sec.hp.bar:SetMinMaxValues(0, 1)
     sec.hp.bar:SetValue(0)
     sec.hp.bar:SetStatusBarColor(PLACEHOLDER_COL[1], PLACEHOLDER_COL[2], PLACEHOLDER_COL[3], 1)
     sec.hp.label:SetText("En attente...")
+    sec._hpLine = "En attente de données..."
     hideMarkers(sec.hp)
   end
   sec.hp.frame:Show()
@@ -426,7 +552,7 @@ local function updateSection(sec, data)
     hideMarkers(sec.chanceBar)
   end
 
-  -- Status line (only at 0 HP)
+  -- Status line (only at 0 HP); "EN AGONIE" pulses softly.
   if hasState and data.status then
     sec.statusFs:ClearAllPoints()
     sec.statusFs:SetPoint("TOPLEFT",  sec, "TOPLEFT",  CARD_PAD, -top)
@@ -434,12 +560,15 @@ local function updateSection(sec, data)
     sec.statusFs:SetHeight(STATUS_H)
     if data.status == "stabilise" then
       sec.statusFs:SetText("|cff44ee44** STABILISE **|r")
+      if sec.statusPulse then sec.statusPulse:Stop() end
     else
       sec.statusFs:SetText("|cffee2222** EN AGONIE **|r")
+      if sec.statusPulse and not sec.statusPulse:IsPlaying() then sec.statusPulse:Play() end
     end
     sec.statusFs:Show()
     top = top + STATUS_H + ROW_GAP
   else
+    if sec.statusPulse then sec.statusPulse:Stop() end
     sec.statusFs:Hide()
   end
 
@@ -463,13 +592,17 @@ local function layoutSections(dataList)
     sectionPool[i]:Hide()
   end
   content:SetHeight(math.max(y, 1))
-  if headerFs then
-    headerFs:SetText(string.format("Ressources du Groupe  (%d)", #dataList))
+  if countFs then
+    countFs:SetText(#dataList == 1 and "1 membre" or (#dataList .. " membres"))
   end
 end
 
 local function ensureFrame()
   if frame then return end
+
+  -- TRP3's bulletin-board art when TRP3 is around (this addon already
+  -- integrates with it); plain warm rails otherwise.
+  local hasTRP3 = rawget(_G, "TRP3_API") ~= nil
 
   frame = CreateFrame("Frame", "GrosOrteilRaidPanel", UIParent, "BackdropTemplate")
   frame:SetSize(PANEL_W, PANEL_H)
@@ -483,42 +616,135 @@ local function ensureFrame()
   frame:SetScript("OnDragStop",  function(f) f:StopMovingOrSizing() end)
   if frame.SetBackdrop then
     frame:SetBackdrop(BACKDROP_PANEL)
-    frame:SetBackdropColor(0.04, 0.04, 0.05, 0.95)
+    frame:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 1)
   end
+
+  -- Tiled parchment board behind everything (TRP3 tints it 0.6 grey).
+  local board = frame:CreateTexture(nil, "BACKGROUND")
+  board:SetTexture(hasTRP3 and TRP3_BG or BLIZZ_BG, "REPEAT", "REPEAT")
+  board:SetHorizTile(true)
+  board:SetVertTile(true)
+  board:SetPoint("TOPLEFT",     frame, "TOPLEFT",     EDGE, -EDGE)
+  board:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -EDGE, EDGE)
+  board:SetVertexColor(0.60, 0.60, 0.60)
+
+  -- Wooden rails around the board, like TRP3's main frame.
+  if hasTRP3 then
+    local function woodV(point, xOfs, flip)
+      local t = frame:CreateTexture(nil, "BORDER", nil, -3)
+      t:SetTexture(TRP3_WOOD_V, "REPEAT", "REPEAT")
+      t:SetVertTile(true)
+      t:SetWidth(WOOD)
+      t:SetPoint("TOP" .. point,    frame, "TOP" .. point,    xOfs, -EDGE)
+      t:SetPoint("BOTTOM" .. point, frame, "BOTTOM" .. point, xOfs, EDGE)
+      if flip then t:SetTexCoord(0.2265625, 0.0078125, 0, 1)
+      else         t:SetTexCoord(0.0078125, 0.2265625, 0, 1) end
+      t:SetVertexColor(1, 0.8, 0.8)
+    end
+    local function woodH(point, yOfs, top, bottom)
+      local t = frame:CreateTexture(nil, "BORDER", nil, -2)
+      t:SetTexture(TRP3_WOOD_H, "REPEAT", "REPEAT")
+      t:SetHorizTile(true)
+      t:SetHeight(WOOD)
+      t:SetPoint(point .. "LEFT",  frame, point .. "LEFT",  EDGE, yOfs)
+      t:SetPoint(point .. "RIGHT", frame, point .. "RIGHT", -EDGE, yOfs)
+      t:SetTexCoord(0, 1, top, bottom)
+      t:SetVertexColor(1, 0.8, 0.8)
+    end
+    woodV("LEFT",  EDGE, false)
+    woodV("RIGHT", -EDGE, true)
+    woodH("TOP",    -EDGE, 0.484375, 0.921875)
+    woodH("BOTTOM", EDGE,  0.015625, 0.453125)
+  else
+    local function plainRail()
+      local t = frame:CreateTexture(nil, "BORDER", nil, -2)
+      t:SetColorTexture(0.23, 0.16, 0.10, 1)
+      return t
+    end
+    local left, right, topT, botT = plainRail(), plainRail(), plainRail(), plainRail()
+    left:SetPoint("TOPLEFT", EDGE, -EDGE);  left:SetPoint("BOTTOMLEFT", EDGE, EDGE);   left:SetWidth(WOOD)
+    right:SetPoint("TOPRIGHT", -EDGE, -EDGE); right:SetPoint("BOTTOMRIGHT", -EDGE, EDGE); right:SetWidth(WOOD)
+    topT:SetPoint("TOPLEFT", EDGE, -EDGE);  topT:SetPoint("TOPRIGHT", -EDGE, -EDGE);   topT:SetHeight(WOOD)
+    botT:SetPoint("BOTTOMLEFT", EDGE, EDGE); botT:SetPoint("BOTTOMRIGHT", -EDGE, EDGE); botT:SetHeight(WOOD)
+  end
+
   -- ESC closes it (standard pattern; taint-safe for a non-protected frame).
   local specials = rawget(_G, "UISpecialFrames")
   if type(specials) == "table" then
     table.insert(specials, "GrosOrteilRaidPanel")
   end
 
-  headerFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  headerFs:SetPoint("TOPLEFT",  frame, "TOPLEFT",  PAD + 2, -PAD)
-  headerFs:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(PAD + 22), -PAD)
-  headerFs:SetHeight(HEADER_H)
+  -- Header plaque: a dark tooltip-style nameplate pinned over the top rail.
+  local plaque = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  plaque:SetPoint("TOPLEFT",  frame, "TOPLEFT",  EDGE + 8, -(EDGE + 6))
+  plaque:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(EDGE + 8), -(EDGE + 6))
+  plaque:SetHeight(PLAQUE_H)
+  if plaque.SetBackdrop then
+    plaque:SetBackdrop(BACKDROP_PLAQUE)
+    plaque:SetBackdropColor(0.10, 0.075, 0.05, 0.97)
+    plaque:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 1)
+  end
+
+  headerFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  headerFs:SetPoint("LEFT",  plaque, "LEFT",  10, 0)
   headerFs:SetJustifyH("LEFT")
-  headerFs:SetTextColor(0.98, 0.86, 0.36, 1)
+  headerFs:SetTextColor(1.00, 0.84, 0.30, 1)
+  headerFs:SetShadowColor(0, 0, 0, 0.8)
+  headerFs:SetShadowOffset(1, -1)
   headerFs:SetText("Ressources du Groupe")
 
-  local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-  closeBtn:SetSize(28, 28)
-  closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(PAD - 4), -(PAD - 4))
+  local closeBtn = CreateFrame("Button", nil, plaque, "UIPanelCloseButton")
+  closeBtn:SetSize(24, 24)
+  closeBtn:SetPoint("RIGHT", plaque, "RIGHT", -2, 0)
   closeBtn:SetScript("OnClick", function() RaidPanel.Hide() end)
 
-  -- Divider under the header
-  local divider = frame:CreateTexture(nil, "ARTWORK")
-  divider:SetColorTexture(0.55, 0.44, 0.18, 0.55)
-  divider:SetHeight(1)
-  divider:SetPoint("TOPLEFT",  frame, "TOPLEFT",  PAD, -(PAD + HEADER_H))
-  divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -(PAD + HEADER_H))
+  countFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  countFs:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+  countFs:SetJustifyH("RIGHT")
+  countFs:SetTextColor(0.78, 0.66, 0.46, 1)
+  countFs:SetText("")
 
-  local scrollH = PANEL_H - PAD - HEADER_H - 6 - PAD
+  -- Footer hint just above the bottom rail.
+  local hintFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  hintFs:SetPoint("BOTTOM", frame, "BOTTOM", 0, EDGE + WOOD + 3)
+  hintFs:SetHeight(FOOTER_H)
+  hintFs:SetTextColor(0.42, 0.34, 0.25, 1)
+  hintFs:SetText("Clic gauche : cibler  —  Clic droit : actions")
+
+  local scrollTop = EDGE + 6 + PLAQUE_H + PAD
+  local scrollBot = EDGE + WOOD + 3 + FOOTER_H + 4
+  local scrollH   = PANEL_H - scrollTop - scrollBot
   scrollFrame = CreateFrame("ScrollFrame", "GrosOrteilRaidPanelScroll", frame)
   scrollFrame:SetSize(SCROLL_W, scrollH)
-  scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(PAD + HEADER_H + 6))
+  scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_X, -scrollTop)
 
   content = CreateFrame("Frame", nil, scrollFrame)
   content:SetSize(SCROLL_W, 1)
   scrollFrame:SetScrollChild(content)
+
+  -- Slim scroll indicator in the gap between the cards and the right rail.
+  local rail = frame:CreateTexture(nil, "ARTWORK")
+  rail:SetColorTexture(0, 0, 0, 0.20)
+  rail:SetWidth(3)
+  rail:SetPoint("TOPRIGHT",    frame, "TOPRIGHT", -(EDGE + WOOD + 2), -scrollTop)
+  rail:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(EDGE + WOOD + 2), scrollBot)
+  rail:Hide()
+  local thumb = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+  thumb:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.55)
+  thumb:SetWidth(3)
+  thumb:Hide()
+
+  local function updateScrollThumb()
+    local range = scrollFrame:GetVerticalScrollRange() or 0
+    if range <= 0 then rail:Hide(); thumb:Hide(); return end
+    rail:Show(); thumb:Show()
+    local h      = scrollFrame:GetHeight() or 1
+    local thumbH = math.max(24, h * h / (h + range))
+    local ofs    = (h - thumbH) * ((scrollFrame:GetVerticalScroll() or 0) / range)
+    thumb:SetHeight(thumbH)
+    thumb:ClearAllPoints()
+    thumb:SetPoint("TOPRIGHT", rail, "TOPRIGHT", 0, -ofs)
+  end
 
   scrollFrame:EnableMouseWheel(true)
   scrollFrame:SetScript("OnMouseWheel", function(sf, delta)
@@ -527,7 +753,17 @@ local function ensureFrame()
     local nv    = cur - delta * 30
     if nv < 0 then nv = 0 elseif nv > range then nv = range end
     sf:SetVerticalScroll(nv)
+    updateScrollThumb()
   end)
+  scrollFrame:SetScript("OnScrollRangeChanged", updateScrollThumb)
+  scrollFrame:SetScript("OnVerticalScroll", updateScrollThumb)
+
+  -- Gentle fade-in when the panel opens.
+  if frame.CreateAnimationGroup then
+    fadeIn = frame:CreateAnimationGroup()
+    local a = fadeIn:CreateAnimation("Alpha")
+    a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.18)
+  end
 
   -- Secure section buttons can't be moved/shown/re-attributed in combat, so a
   -- relayout requested during combat is deferred until combat ends.
@@ -565,6 +801,7 @@ function RaidPanel.Show()
   if scrollFrame then scrollFrame:SetVerticalScroll(0) end
   frame:Show()
   frame:Raise()
+  if fadeIn then fadeIn:Play() end
 end
 
 function RaidPanel.Hide()
