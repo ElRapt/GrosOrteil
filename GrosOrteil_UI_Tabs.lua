@@ -505,6 +505,116 @@ function ns.UI_BuildClassesTab(ctx)
   end
 
   for i = 1, #CLASS_KEYS do mkClassButton(i, CLASS_KEYS[i]) end
+
+  -- ── Selected-class info card (fills the empty space under the strip) ──────
+  -- Persistent version of the class-button tooltip: icon, name and resources
+  -- of the currently selected class, on a subtle inset note.
+  local infoCard = CreateFrame("Frame", nil, page, "BackdropTemplate")
+  infoCard:SetPoint("TOPLEFT",  classStrip, "BOTTOMLEFT",  20, -16)
+  infoCard:SetPoint("TOPRIGHT", classStrip, "BOTTOMRIGHT", -20, -16)
+  infoCard:SetHeight(110)
+  Shared.ApplyNoteSkin(infoCard, 0.45)
+
+  -- Round class-hall crest: transparent background, no backing plate needed.
+  local cardIcon = infoCard:CreateTexture(nil, "ARTWORK")
+  cardIcon:SetSize(52, 52)
+  cardIcon:SetPoint("TOPLEFT", infoCard, "TOPLEFT", 12, -12)
+
+  local cardName = infoCard:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  cardName:SetPoint("TOPLEFT", cardIcon, "TOPRIGHT", 12, -4)
+  cardName:SetJustifyH("LEFT")
+  cardName:SetShadowOffset(1, -1)
+  cardName:SetShadowColor(0, 0, 0, 0.80)
+
+  local cardRule = infoCard:CreateTexture(nil, "ARTWORK")
+  cardRule:SetTexture(TEX.FLAT)
+  cardRule:SetPoint("TOPLEFT",  cardName, "BOTTOMLEFT", 0, -3)
+  cardRule:SetPoint("RIGHT",    infoCard, "RIGHT", -14, 0)
+  cardRule:SetHeight(1)
+
+  local cardLines = {}
+  for i = 1, 5 do
+    local fs = infoCard:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    fs:SetJustifyH("LEFT")
+    fs:SetPoint("TOPLEFT",  cardIcon, "TOPRIGHT", 12, -(28 + (i - 1) * 15))
+    fs:SetPoint("RIGHT",    infoCard, "RIGHT", -14, 0)
+    fs:SetShadowOffset(1, -1)
+    fs:SetShadowColor(0, 0, 0, 0.70)
+    fs:Hide()
+    cardLines[i] = fs
+  end
+
+  -- Big faded class emblem in the remaining empty space below the card.
+  local watermark = page:CreateTexture(nil, "BORDER", nil, 2)
+  watermark:SetSize(140, 140)
+  watermark:SetPoint("BOTTOM", page, "BOTTOM", 0, 6)
+  watermark:SetDesaturated(true)
+  watermark:SetVertexColor(1.0, 0.85, 0.60, 0.08)
+
+  local updateClassPageLayout  -- forward declaration; defined below
+  local watermarkValid = false -- no class chosen yet → no watermark
+
+  function UI.refreshClassInfoCard(s)
+    local key = (type(s.classKey) == "string") and s.classKey or ""
+    if key ~= "" then
+      Shared.SetClassEmblem(cardIcon, key)
+      Shared.SetClassEmblem(watermark, key)
+      watermarkValid = true
+    else
+      cardIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+      cardIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+      watermarkValid = false
+    end
+
+    local style = Shared.CLASS_STYLES and Shared.CLASS_STYLES[key]
+    local r, g, b = C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3]
+    if style then r, g, b = style.r, style.g, style.b end
+    cardName:SetText(Shared.GetClassNameFr(key))
+    cardName:SetTextColor(r, g, b, 1)
+    cardRule:SetColorTexture(r, g, b, 0.30)
+
+    -- Resource lines: per-class profile, style label fallback, else "none".
+    local lines = {}
+    local profile = Shared.RES_PROFILES_BY_CLASS and Shared.RES_PROFILES_BY_CLASS[key]
+    if profile and #profile > 0 then
+      for i = 1, #profile do
+        local p = profile[i]
+        lines[#lines + 1] = { text = p.label or "Ressource", r = p.r, g = p.g, b = p.b }
+      end
+    elseif not profile and style and style.label then
+      lines[1] = { text = style.label, r = style.r, g = style.g, b = style.b }
+    end
+
+    for i = 1, #cardLines do
+      local fs, line = cardLines[i], lines[i]
+      if line then
+        fs:SetText("•  " .. line.text)
+        fs:SetTextColor(line.r or 0.9, line.g or 0.84, line.b or 0.68, 1)
+        fs:Show()
+      elseif i == 1 then
+        fs:SetText("Aucune ressource")
+        fs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+        fs:Show()
+      else
+        fs:Hide()
+      end
+    end
+
+    infoCard:SetHeight(46 + math.max(1, #lines) * 15 + 16)
+    updateClassPageLayout()
+  end
+
+  -- Hide the card / watermark when the page is too short for them, so they
+  -- never spill over the content card onto the bottom rail.
+  local STRIP_BOTTOM = 20 + classStrip:GetHeight() + 16
+  updateClassPageLayout = function()
+    local h = page:GetHeight() or 0
+    if h <= 0 then return end  -- not laid out yet; keep current visibility
+    local cardH = infoCard:GetHeight() or 0
+    infoCard:SetShown(h >= STRIP_BOTTOM + cardH + 8)
+    watermark:SetShown(watermarkValid and h >= STRIP_BOTTOM + cardH + 130)
+  end
+  page:SetScript("OnSizeChanged", updateClassPageLayout)
 end
 
 -- ── Tab 7 (Historique) ───────────────────────────────────────────────────────
@@ -565,6 +675,15 @@ function ns.UI_BuildHistoryTab(ctx)
   clearBtn:SetScript("OnClick", function()
     if Core and Core.ClearHistory then Core.ClearHistory() end
   end)
+  clearBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("Effacer l'historique", C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+    GameTooltip:AddLine("Supprime tous les évènements du journal.", 1, 1, 1, true)
+    GameTooltip:AddLine("Cette action est irréversible.", 1, 0.4, 0.3, true)
+    GameTooltip:Show()
+  end)
+  clearBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
   UI.historyClear = clearBtn
 end
 
@@ -821,6 +940,15 @@ function ns.UI_BuildPetHistoryTab(ctx)
   petClearBtn:SetScript("OnClick", function()
     if Core and Core.ClearHistory then Core.ClearHistory() end
   end)
+  petClearBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("Effacer l'historique", C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+    GameTooltip:AddLine("Supprime tous les évènements du journal.", 1, 1, 1, true)
+    GameTooltip:AddLine("Cette action est irréversible.", 1, 0.4, 0.3, true)
+    GameTooltip:Show()
+  end)
+  petClearBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
 -- ── onChangeCallback builder ─────────────────────────────────────────────────
@@ -1017,6 +1145,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
         end
       end
     end
+    if UI.refreshClassInfoCard then UI.refreshClassInfoCard(s) end
 
     -- Postures Élémentaires
     do

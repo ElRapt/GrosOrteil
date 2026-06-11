@@ -88,18 +88,6 @@ local BACKDROP_SIDEBAR = {
   tile = true, tileSize = 32, edgeSize = 1,
   insets   = { left = 0, right = 0, top = 0, bottom = 0 },
 }
-local BACKDROP_FRAME = {
-  bgFile   = TEX.BG_STONE,
-  edgeFile = TEX.BORDER_GOLD,
-  tile = true, tileSize = 32, edgeSize = 32,
-  insets   = { left = 10, right = 10, top = 10, bottom = 10 },
-}
-local BACKDROP_CONTENT = {
-  bgFile   = TEX.BG_STONE,
-  edgeFile = TEX.TOOLTIP_BD,
-  tile = true, tileSize = 32, edgeSize = 10,
-  insets   = { left = 2, right = 2, top = 2, bottom = 2 },
-}
 local BACKDROP_TAB = {
   edgeFile = TEX.FLAT,
   edgeSize = 1,
@@ -413,20 +401,24 @@ function ns.UI_Init()
   end
 
   local FRAME_W, FRAME_H = 880, 460
-  local MIN_W, MIN_H     = 640, 360
+  local MIN_W, MIN_H     = 680, 380
   local MAX_W, MAX_H     = 1500, 1000
-  local PAD_X = 14
+  -- Board geometry: content sits inside the wooden rails, below the plaque.
+  local BODY_X      = 32   -- EDGE(4) + WOOD(20) + 8
+  local BODY_TOP    = 48   -- EDGE(4) + 6 + plaque(30) + 8
+  local BODY_BOTTOM = 30   -- EDGE(4) + WOOD(20) + 6
   local applyContentHostLayout  -- forward declaration; defined below
   local activeSectionRef        -- forward declaration; assigned below with initial value
 
   -- Left sidebar navigation (vertical tabs) + right content area.
   local SIDEBAR_W = 160
   local GUTTER = 12
-  local CONTENT_W = FRAME_W - (PAD_X * 2) - SIDEBAR_W - GUTTER
+  local CONTENT_W = FRAME_W - (BODY_X * 2) - SIDEBAR_W - GUTTER
 
   local frame = CreateFrame("Frame", "GrosOrteilFrame", UIParent, "BackdropTemplate")
   UI.frame = frame
-  frame:SetSize(db.ui.w or FRAME_W, db.ui.h or FRAME_H)
+  -- Clamp saved sizes from older versions that allowed a smaller minimum.
+  frame:SetSize(math.max(MIN_W, db.ui.w or FRAME_W), math.max(MIN_H, db.ui.h or FRAME_H))
 
   -- QoL: allow ESC to close the window.
   -- WoW closes frames listed in UISpecialFrames when pressing Escape.
@@ -469,62 +461,38 @@ function ns.UI_Init()
     end
   end)
 
-  frame:SetBackdrop(BACKDROP_FRAME)
-  frame:SetBackdropColor(0.95, 0.90, 0.80, 0.98)
+  -- Bulletin-board skin: parchment + creamy tooltip border + wooden rails.
+  Shared.ApplyBoardSkin(frame)
+  Shared.ApplyBoardRails(frame)
 
-  -- Inner shadow frame for depth (inset below the gold border).
-  local innerShadow = CreateFrame("Frame", nil, frame)
-  innerShadow:SetPoint("TOPLEFT", 8, -8)
-  innerShadow:SetPoint("BOTTOMRIGHT", -8, 8)
-  innerShadow:SetFrameLevel(frame:GetFrameLevel() + 1)
-  local shadowTop = innerShadow:CreateTexture(nil, "OVERLAY")
-  shadowTop:SetTexture(TEX.FLAT)
-  shadowTop:SetColorTexture(0, 0, 0, 0.18)
-  shadowTop:SetPoint("TOPLEFT")
-  shadowTop:SetPoint("TOPRIGHT")
-  shadowTop:SetHeight(3)
-  local shadowLeft = innerShadow:CreateTexture(nil, "OVERLAY")
-  shadowLeft:SetTexture(TEX.FLAT)
-  shadowLeft:SetColorTexture(0, 0, 0, 0.12)
-  shadowLeft:SetPoint("TOPLEFT", 0, -3)
-  shadowLeft:SetPoint("BOTTOMLEFT")
-  shadowLeft:SetWidth(2)
+  -- Header plaque pinned over the top rail (holds title + close button).
+  local plaque = Shared.MakePlaque(frame, 30)
+  UI.plaque = plaque
 
-  -- Header band: warm dark gradient behind the title area.
-  local headerBand = frame:CreateTexture(nil, "ARTWORK")
-  headerBand:SetPoint("TOPLEFT",  frame, "TOPLEFT",  10, -10)
-  headerBand:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
-  headerBand:SetHeight(28)
-  headerBand:SetTexture(TEX.FLAT)
-  headerBand:SetColorTexture(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.50)
-
-  -- Gold separator below header band.
-  local headerLine = frame:CreateTexture(nil, "ARTWORK")
-  headerLine:SetPoint("TOPLEFT",  frame, "TOPLEFT",  PAD_X, -38)
-  headerLine:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD_X, -38)
-  headerLine:SetHeight(2)
-  headerLine:SetTexture(TEX.FLAT)
-  headerLine:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.45)
-  frame._headerLine = headerLine
-
-  -- Subtle second line for depth effect.
-  local headerLine2 = frame:CreateTexture(nil, "ARTWORK")
-  headerLine2:SetPoint("TOPLEFT",  headerLine, "BOTTOMLEFT",  0, 0)
-  headerLine2:SetPoint("TOPRIGHT", headerLine, "BOTTOMRIGHT", 0, 0)
-  headerLine2:SetHeight(1)
-  headerLine2:SetTexture(TEX.FLAT)
-  headerLine2:SetColorTexture(0, 0, 0, 0.20)
+  -- Gentle fade-in whenever the window opens; fade-out when closed.
+  local fadeIn
+  if frame.CreateAnimationGroup then
+    fadeIn = frame:CreateAnimationGroup()
+    local fa = fadeIn:CreateAnimation("Alpha")
+    fa:SetFromAlpha(0); fa:SetToAlpha(1); fa:SetDuration(0.18)
+  end
+  frame:HookScript("OnShow", function()
+    if fadeIn then fadeIn:Play() end
+  end)
+  local fadeOut = Shared.MakeFadeOut(frame, 0.15)
+  UI.fadeOut = fadeOut
 
   frame:SetPoint(db.ui.point, UIParent, db.ui.point, db.ui.x, db.ui.y)
   if db.ui.shown then frame:Show() else frame:Hide() end
 
-  -- Title: large gold text with shadow.
-  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  -- Title: gold text on the plaque.
+  local title = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   UI.title = title
-  title:SetPoint("TOP", 0, -15)
+  title:SetPoint("LEFT", plaque, "LEFT", 10, 0)
+  title:SetJustifyH("LEFT")
   title:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
   title:SetShadowOffset(1, -1)
-  title:SetShadowColor(0, 0, 0, 0.65)
+  title:SetShadowColor(0, 0, 0, 0.80)
   updateWindowTitle()
 
   -- Retry TRP3 hook once after a delay in case TRP3 initializes after us.
@@ -535,9 +503,24 @@ function ns.UI_Init()
     end)
   end
 
-  local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", -4, -4)
-  close:SetSize(22, 22)
+  local close = CreateFrame("Button", nil, plaque, "UIPanelCloseButton")
+  close:SetPoint("RIGHT", plaque, "RIGHT", -2, 0)
+  close:SetSize(24, 24)
+  close:SetScript("OnClick", function()
+    if fadeOut and frame:IsShown() and not fadeOut:IsPlaying() then
+      fadeOut:Play()
+    else
+      frame:Hide()
+    end
+  end)
+
+  -- Plaque subtitle: current class (or "Familier"), right-aligned by the close button.
+  local plaqueSub = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  plaqueSub:SetPoint("RIGHT", close, "LEFT", -6, 0)
+  plaqueSub:SetJustifyH("RIGHT")
+  plaqueSub:SetTextColor(0.72, 0.62, 0.50, 1)
+  plaqueSub:SetText("")
+  UI.plaqueSub = plaqueSub
 
   -- popupToggleBtn is defined after the sidebar sect buttons (needs sidebar reference).
 
@@ -573,6 +556,15 @@ function ns.UI_Init()
   grip:SetHighlightTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Highlight")
   grip:SetPushedTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Down")
   grip:SetFrameLevel(frame:GetFrameLevel() + 10)
+  grip:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("Redimensionner", C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+    GameTooltip:AddLine("Glisser : ajuster la taille de la fenêtre", 1, 1, 1, true)
+    GameTooltip:AddLine("Clic droit : taille par défaut", 0.72, 0.62, 0.50, true)
+    GameTooltip:Show()
+  end)
+  grip:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
   local function onResizeUpdate()
     local cx, cy = GetCursorPosition()
@@ -704,7 +696,7 @@ function ns.UI_Init()
       function()
         if activeSectionRef.v == 2 then Core.PetRestoreHP() else Core.RestoreHP() end
       end)
-    iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -50, 20)
+    iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -50, 34)
 
     local iconRegenHP = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_rejuvenation_empowered",
@@ -727,10 +719,10 @@ function ns.UI_Init()
     -- hide the icon while in pet section instead of letting clicks do nothing.
     UI.iconRegenRes = iconRegenRes
 
-  -- Main body: sidebar (left) + content (right)
+  -- Main body: sidebar (left) + content (right), pinned on the parchment.
   local body = CreateFrame("Frame", nil, frame)
-  body:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD_X, -40)
-  body:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD_X, PAD_X)
+  body:SetPoint("TOPLEFT", frame, "TOPLEFT", BODY_X, -BODY_TOP)
+  body:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -BODY_X, BODY_BOTTOM)
   UI.body = body
 
   -- ── Sidebar ───────────────────────────────────────────────────────────
@@ -738,15 +730,13 @@ function ns.UI_Init()
   sidebar:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
   sidebar:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
   sidebar:SetWidth(SIDEBAR_W)
-  sidebar:SetBackdrop(BACKDROP_SIDEBAR)
-  sidebar:SetBackdropColor(0.12, 0.08, 0.04, 0.98)
-  sidebar:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.50)
+  Shared.ApplyNoteSkin(sidebar, 0.96)
   UI.sidebar = sidebar
 
   -- Top gradient overlay on sidebar for depth.
   local sidebarTopGrad = sidebar:CreateTexture(nil, "ARTWORK")
-  sidebarTopGrad:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 1, -1)
-  sidebarTopGrad:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -1, -1)
+  sidebarTopGrad:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 3, -3)
+  sidebarTopGrad:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -3, -3)
   sidebarTopGrad:SetHeight(40)
   sidebarTopGrad:SetTexture(TEX.FLAT)
   sidebarTopGrad:SetColorTexture(0, 0, 0, 0.18)
@@ -754,36 +744,40 @@ function ns.UI_Init()
 
   -- Bottom gradient overlay on sidebar.
   local sidebarBotGrad = sidebar:CreateTexture(nil, "ARTWORK")
-  sidebarBotGrad:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", 1, 1)
-  sidebarBotGrad:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -1, 1)
+  sidebarBotGrad:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", 3, 3)
+  sidebarBotGrad:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -3, 3)
   sidebarBotGrad:SetHeight(30)
   sidebarBotGrad:SetTexture(TEX.FLAT)
   sidebarBotGrad:SetColorTexture(0, 0, 0, 0.15)
   sidebarBotGrad:SetGradient("VERTICAL", CreateColor(0, 0, 0, 1), CreateColor(0, 0, 0, 0))
 
+  -- Faded class emblem filling the sidebar's empty middle (TRP3-style watermark).
+  local emblem = sidebar:CreateTexture(nil, "BORDER", nil, 2)
+  emblem:SetSize(92, 92)
+  emblem:SetPoint("CENTER", sidebar, "CENTER", 0, -14)
+  emblem:SetDesaturated(true)
+  emblem:SetVertexColor(1.0, 0.85, 0.60, 0.10)
 
-  -- Gold vertical divider (double line for depth).
-  local sidebarDiv = body:CreateTexture(nil, "ARTWORK")
-  sidebarDiv:SetWidth(2)
-  sidebarDiv:SetPoint("TOPLEFT",    sidebar, "TOPRIGHT",    0, 0)
-  sidebarDiv:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMRIGHT", 0, 0)
-  sidebarDiv:SetTexture(TEX.FLAT)
-  sidebarDiv:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.35)
-
-  local sidebarShadow = body:CreateTexture(nil, "ARTWORK")
-  sidebarShadow:SetWidth(4)
-  sidebarShadow:SetPoint("TOPLEFT",    sidebarDiv, "TOPRIGHT",    0, 0)
-  sidebarShadow:SetPoint("BOTTOMLEFT", sidebarDiv, "BOTTOMRIGHT", 0, 0)
-  sidebarShadow:SetTexture(TEX.FLAT)
-  sidebarShadow:SetColorTexture(0, 0, 0, 0.12)
+  function UI.updateSidebarEmblem(classKey, isPet)
+    if isPet then
+      emblem:Show()
+      Shared.SetClassEmblem(emblem, "HUNTER")
+    elseif classKey and classKey ~= "" then
+      emblem:Show()
+      Shared.SetClassEmblem(emblem, classKey)
+    else
+      emblem:Hide()
+    end
+  end
+  UI.updateSidebarEmblem(nil, false)
 
   -- ── Content area ──────────────────────────────────────────────────────
+  -- A second note card; the parchment gutter between the two cards is what
+  -- gives the "frames puzzled onto one board" look.
   local content = CreateFrame("Frame", nil, body, "BackdropTemplate")
   content:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", GUTTER, 0)
   content:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
-  content:SetBackdrop(BACKDROP_CONTENT)
-  content:SetBackdropColor(C.CREAM[1], C.CREAM[2], C.CREAM[3], 0.25)
-  content:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.30)
+  Shared.ApplyNoteSkin(content, 0.92)
   UI.content = content
 
   -- Inner top shadow for inset depth on content.
@@ -1307,6 +1301,15 @@ function ns.UI_Init()
   local NAV_GAP = 1
   local NAV_BTN_H = 30
 
+  -- Short descriptions shown when hovering the sidebar tabs.
+  local TAB_TIPS = {
+    [1] = "Points de vie, armure, attaque, actions et ressources du personnage.",
+    [6] = "Choix de la classe : couleurs, ressources et seuils associés.",
+    [7] = "Journal des évènements du personnage.",
+    [8] = "Fiche du familier : PV, armure, attaque et actions.",
+    [9] = "Journal des évènements du familier.",
+  }
+
   local function mkTab(text, idx)
     local tab = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
     tab:SetSize(SIDEBAR_W - (NAV_PAD * 2), NAV_BTN_H)
@@ -1367,6 +1370,19 @@ function ns.UI_Init()
     tab._text = fs
 
     tab:SetScript("OnClick", function() setTab(idx) end)
+
+    -- Tooltip (also shown on the active/disabled tab via motion scripts).
+    if TAB_TIPS[idx] then
+      tab:SetMotionScriptsWhileDisabled(true)
+      tab:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(text, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+        GameTooltip:AddLine(TAB_TIPS[idx], 1, 1, 1, true)
+        GameTooltip:Show()
+      end)
+      tab:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
 
     if idx == 1 then
       tab:SetPoint("TOPLEFT", sidebar, "TOPLEFT", NAV_PAD, -NAV_PAD)
@@ -1480,7 +1496,7 @@ function ns.UI_Init()
     if lastState and onChangeCallback then onChangeCallback(lastState) end
   end
 
-  local function makeSectBtn(btn, label, x, onClick)
+  local function makeSectBtn(btn, label, x, onClick, tip)
     btn:SetSize(SECT_BTN_W, SECT_BTN_H)
     btn:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", x, NAV_PAD)
     btn:SetBackdrop(BACKDROP_SIDEBAR)
@@ -1507,10 +1523,22 @@ function ns.UI_Init()
     lbl:SetText(label)
     btn._text = lbl
     btn:SetScript("OnClick", onClick)
+    if tip then
+      btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(label, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+        GameTooltip:AddLine(tip, 1, 1, 1, true)
+        GameTooltip:Show()
+      end)
+      btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
   end
 
-  makeSectBtn(sectChar, "Personnage", NAV_PAD,                    function() setSidebarSection(1) end)
-  makeSectBtn(sectPet,  "Familier",   NAV_PAD + SECT_BTN_W + 4,  function() setSidebarSection(2) end)
+  makeSectBtn(sectChar, "Personnage", NAV_PAD,                    function() setSidebarSection(1) end,
+    "Affiche les onglets du personnage (fiche, classes, historique).")
+  makeSectBtn(sectPet,  "Familier",   NAV_PAD + SECT_BTN_W + 4,  function() setSidebarSection(2) end,
+    "Affiche les onglets du familier (fiche, historique).")
 
   -- Popup-on-target toggle icon button, centered above the two sect buttons.
   local popupToggleBtn = CreateFrame("Button", nil, sidebar)
@@ -1665,6 +1693,8 @@ function ns.UI_Init()
       -- Familiar section: show pet HP on the main bar.
       local pet       = type(s.pet) == "table" and s.pet or {}
       local petEnabled = not not pet.enabled
+      if UI.updateSidebarEmblem then UI.updateSidebarEmblem(nil, true) end
+      if UI.plaqueSub then UI.plaqueSub:SetText("Familier") end
       if petEnabled then
         if UI.title then UI.title:SetText(pet.name or "Familier") end
         local petHp    = tonumber(pet.hp)    or 0
@@ -1703,6 +1733,8 @@ function ns.UI_Init()
     else
       -- Character section: show character HP.
       updateWindowTitle()
+      if UI.updateSidebarEmblem then UI.updateSidebarEmblem(s.classKey, false) end
+      if UI.plaqueSub then UI.plaqueSub:SetText(Shared.GetClassNameFr(s.classKey)) end
       local baseMaxHp = (s.maxHp or 0)
       local hpNow     = (s.hp or 0)
       local hpPct     = (baseMaxHp > 0) and (hpNow / baseMaxHp) or 0
@@ -1752,7 +1784,13 @@ function ns.UI_Show(show)
   local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
   db.ui = db.ui or {}
   db.ui.shown = not not show
-  if show then UI.frame:Show() else UI.frame:Hide() end
+  if show then
+    -- Cancel a pending close fade so a re-open lands at full opacity.
+    if UI.fadeOut then UI.fadeOut:Stop() end
+    UI.frame:Show()
+  else
+    UI.frame:Hide()
+  end
 end
 
 function ns.UI_ResetPosition()

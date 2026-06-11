@@ -301,7 +301,11 @@ end
 
 local function hidePopup()
   if popupFrame then
-    popupFrame:Hide()
+    if popupFrame.fadeOut and popupFrame:IsShown() and not popupFrame.fadeOut:IsPlaying() then
+      popupFrame.fadeOut:Play()
+    else
+      popupFrame:Hide()
+    end
   end
   currentShownSender = nil
   currentShownIsPet  = false
@@ -379,8 +383,21 @@ local function applyClassIcon(classKey)
     popupFrame.classIcon:Hide()
     return
   end
-  Shared.SetClassIconTexCoords(popupFrame.classIcon, classKey)
+  Shared.SetClassEmblem(popupFrame.classIcon, classKey)
   popupFrame.classIcon:Show()
+end
+
+-- Tint the header accent stripe: class color for players, warm orange for pets.
+local function applyHeaderAccent(classKey, isPet)
+  if not popupFrame or not popupFrame.headerAccent then return end
+  local r, g, b = 1.00, 0.675, 0.125
+  if isPet then
+    r, g, b = 0.95, 0.62, 0.18
+  else
+    local style = Shared.CLASS_STYLES and Shared.CLASS_STYLES[classKey]
+    if style then r, g, b = style.r, style.g, style.b end
+  end
+  popupFrame.headerAccent:SetVertexColor(r, g, b, 0.90)
 end
 
 local function createPopup()
@@ -395,23 +412,31 @@ local function createPopup()
   popupFrame:SetScript("OnDragStart", popupFrame.StartMoving)
   popupFrame:SetScript("OnDragStop", popupFrame.StopMovingOrSizing)
 
-  popupFrame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
-    tile = true,
-    tileSize = 24,
-    edgeSize = 24,
-    insets = { left = 6, right = 6, top = 6, bottom = 6 },
-  })
-  popupFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.95)
+  -- Dark tooltip-note skin, matching the cards pinned on the boards.
+  Shared.ApplyNoteSkin(popupFrame, 0.96)
   popupFrame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -56, 220)
 
+  -- Header plaque band with a gold underline and a class-colored accent.
   popupFrame.header = popupFrame:CreateTexture(nil, "BORDER")
   popupFrame.header:SetTexture("Interface\\Buttons\\WHITE8x8")
-  popupFrame.header:SetVertexColor(0.17, 0.12, 0.06, 0.60)
-  popupFrame.header:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 14, -14)
-  popupFrame.header:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -14, -14)
-  popupFrame.header:SetHeight(42)
+  popupFrame.header:SetVertexColor(0.10, 0.075, 0.05, 0.92)
+  popupFrame.header:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 10, -10)
+  popupFrame.header:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -10, -10)
+  popupFrame.header:SetHeight(46)
+
+  popupFrame.headerLine = popupFrame:CreateTexture(nil, "BORDER", nil, 1)
+  popupFrame.headerLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+  popupFrame.headerLine:SetVertexColor(1.00, 0.675, 0.125, 0.35)
+  popupFrame.headerLine:SetPoint("TOPLEFT",  popupFrame.header, "BOTTOMLEFT",  0, 0)
+  popupFrame.headerLine:SetPoint("TOPRIGHT", popupFrame.header, "BOTTOMRIGHT", 0, 0)
+  popupFrame.headerLine:SetHeight(1)
+
+  popupFrame.headerAccent = popupFrame:CreateTexture(nil, "BORDER", nil, 1)
+  popupFrame.headerAccent:SetTexture("Interface\\Buttons\\WHITE8x8")
+  popupFrame.headerAccent:SetVertexColor(1.00, 0.675, 0.125, 0.90)
+  popupFrame.headerAccent:SetPoint("TOPLEFT",    popupFrame.header, "TOPLEFT",    0, 0)
+  popupFrame.headerAccent:SetPoint("BOTTOMLEFT", popupFrame.header, "BOTTOMLEFT", 0, 0)
+  popupFrame.headerAccent:SetWidth(3)
 
   popupFrame.title = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
   popupFrame.title:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 22, -22)
@@ -527,9 +552,21 @@ local function createPopup()
     popupFrame.chanceSegments[i] = seg
   end
 
+  -- Discrete pips (round indicator gems): the readable display for the usual
+  -- small pools. One gem per point — lit gold when available, grey when spent.
+  -- The bar above stays as fallback for pools larger than 12.
+  popupFrame.chancePips = {}
+  for i = 1, 12 do
+    local pip = popupFrame.chanceHolder:CreateTexture(nil, "ARTWORK")
+    pip:SetSize(15, 15)
+    pip:Hide()
+    popupFrame.chancePips[i] = pip
+  end
+
+  -- Round class-hall crest (transparent background, crisp at any size).
   popupFrame.classIcon = popupFrame:CreateTexture(nil, "ARTWORK")
-  popupFrame.classIcon:SetSize(28, 28)
-  popupFrame.classIcon:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -26, -24)
+  popupFrame.classIcon:SetSize(34, 34)
+  popupFrame.classIcon:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -24, -20)
 
   popupFrame.hpRow = createStatBar(popupFrame, -92)
 
@@ -632,7 +669,7 @@ local function createPopup()
   popupFrame.closeButton:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -3, -2)
   popupFrame.closeButton:SetScript("OnClick", hidePopup)
 
-  -- Stabilisé/Agonie banner (shown only when HP == 0)
+  -- Stabilisé/Agonie banner (shown only when HP == 0); agonie pulses.
   popupFrame.statusBanner = popupFrame:CreateFontString(nil, "OVERLAY")
   popupFrame.statusBanner:SetFont("Fonts\\FRIZQT__.TTF", 15, "OUTLINE")
   popupFrame.statusBanner:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -36, -22)
@@ -640,6 +677,16 @@ local function createPopup()
   popupFrame.statusBanner:SetShadowOffset(1, -1)
   popupFrame.statusBanner:SetShadowColor(0, 0, 0, 1)
   popupFrame.statusBanner:Hide()
+  popupFrame.statusPulse = Shared.MakePulse(popupFrame.statusBanner)
+
+  -- Gentle fade-in when the popup first opens (not on in-place refreshes),
+  -- and fade-out when it closes.
+  if popupFrame.CreateAnimationGroup then
+    popupFrame.fadeIn = popupFrame:CreateAnimationGroup()
+    local fa = popupFrame.fadeIn:CreateAnimation("Alpha")
+    fa:SetFromAlpha(0); fa:SetToAlpha(1); fa:SetDuration(0.15)
+  end
+  popupFrame.fadeOut = Shared.MakeFadeOut(popupFrame, 0.15)
 end
 
 local function applyPopupTitle(rpName, rpColor)
@@ -652,6 +699,11 @@ end
 
 local function showForState(targetName, state, petOnly)
   createPopup()
+  -- Cancel a pending close fade (e.g. retarget during the fade).
+  if popupFrame.fadeOut and popupFrame.fadeOut:IsPlaying() then
+    popupFrame.fadeOut:Stop()
+  end
+  local wasShown = popupFrame:IsShown()
   currentShownSender = targetName
 
   -- Resolve petOnly: if the pet unit is disabled, suppress the popup entirely.
@@ -670,6 +722,7 @@ local function showForState(targetName, state, petOnly)
     popupFrame.title:SetText(petName)
     popupFrame.classText:SetText("Familier")
     applyClassIcon(nil)
+    applyHeaderAccent(nil, true)
 
     local petArmor     = tonumber(pet.armor)     or 0
     local petTrueArmor = tonumber(pet.trueArmor) or 0
@@ -734,12 +787,16 @@ local function showForState(targetName, state, petOnly)
     if popupFrame.petHpCapMarker then popupFrame.petHpCapMarker:Hide() end
     hideOverlay(popupFrame.petHpRow.blockOverlay)
     hideOverlay(popupFrame.petHpRow.magicOverlay)
-    if popupFrame.statusBanner then popupFrame.statusBanner:Hide() end
+    if popupFrame.statusBanner then
+      if popupFrame.statusPulse then popupFrame.statusPulse:Stop() end
+      popupFrame.statusBanner:Hide()
+    end
 
     local dynamicHeight = 162
     if dynamicHeight < 180 then dynamicHeight = 180 end
     popupFrame:SetHeight(dynamicHeight)
     popupFrame:Show()
+    if not wasShown and popupFrame.fadeIn then popupFrame.fadeIn:Play() end
     return
   end
 
@@ -769,6 +826,7 @@ local function showForState(targetName, state, petOnly)
   local className = getClassNameFr(state.classKey)
   popupFrame.classText:SetText("Classe: " .. className)
   applyClassIcon(state.classKey)
+  applyHeaderAccent(state.classKey, false)
 
   local armor = tonumber(state.armor) or 0
   local trueArmor = tonumber(state.trueArmor) or 0
@@ -807,23 +865,51 @@ local function showForState(targetName, state, petOnly)
     local maxv = chMax > 0 and chMax or 1
     local cur  = chCur < 0 and 0 or chCur
     if cur > maxv then cur = maxv end
-    popupFrame.chanceBar:SetMinMaxValues(0, maxv)
-    popupFrame.chanceBar:SetValue(cur)
-    popupFrame.chanceText:SetText(string.format("PC : %d / %d", roundNumber(chCur), roundNumber(chMax)))
 
-    -- Position segment dividers at integer boundaries when 2..20 points.
-    local segCount = math.min(20, math.max(0, maxv - 1))
-    local barWidth = popupFrame.chanceBar:GetWidth() or 0
-    if barWidth <= 0 then barWidth = 280 end
-    for i = 1, #popupFrame.chanceSegments do
-      local seg = popupFrame.chanceSegments[i]
-      if i <= segCount and maxv > 1 then
-        seg:ClearAllPoints()
-        seg:SetPoint("TOP", popupFrame.chanceBar, "TOPLEFT", math.floor(barWidth * (i / maxv)), 0)
-        seg:SetPoint("BOTTOM", popupFrame.chanceBar, "BOTTOMLEFT", math.floor(barWidth * (i / maxv)), 0)
-        seg:Show()
-      else
-        seg:Hide()
+    -- Small pools (the usual case) render as one gem per point; bigger pools
+    -- fall back to the segmented bar.
+    local usePips = chMax >= 1 and chMax <= 12
+    if usePips then
+      popupFrame.chanceBarFrame:Hide()
+      for i = 1, #popupFrame.chancePips do
+        local pip = popupFrame.chancePips[i]
+        if i <= chMax then
+          pip:SetTexture(i <= cur
+            and "Interface\\COMMON\\Indicator-Yellow"
+            or  "Interface\\COMMON\\Indicator-Gray")
+          pip:ClearAllPoints()
+          pip:SetPoint("LEFT", popupFrame.chanceIcon, "RIGHT", 8 + (i - 1) * 17, 0)
+          pip:Show()
+        else
+          pip:Hide()
+        end
+      end
+      popupFrame.chanceText:ClearAllPoints()
+      popupFrame.chanceText:SetPoint("RIGHT", popupFrame.chanceHolder, "RIGHT", 0, 0)
+      popupFrame.chanceText:SetText(string.format("%d / %d", roundNumber(cur), roundNumber(chMax)))
+    else
+      for i = 1, #popupFrame.chancePips do popupFrame.chancePips[i]:Hide() end
+      popupFrame.chanceBarFrame:Show()
+      popupFrame.chanceBar:SetMinMaxValues(0, maxv)
+      popupFrame.chanceBar:SetValue(cur)
+      popupFrame.chanceText:ClearAllPoints()
+      popupFrame.chanceText:SetPoint("CENTER", popupFrame.chanceBarFrame, "CENTER", 0, 0)
+      popupFrame.chanceText:SetText(string.format("PC : %d / %d", roundNumber(chCur), roundNumber(chMax)))
+
+      -- Position segment dividers at integer boundaries when 2..20 points.
+      local segCount = math.min(20, math.max(0, maxv - 1))
+      local barWidth = popupFrame.chanceBar:GetWidth() or 0
+      if barWidth <= 0 then barWidth = 280 end
+      for i = 1, #popupFrame.chanceSegments do
+        local seg = popupFrame.chanceSegments[i]
+        if i <= segCount and maxv > 1 then
+          seg:ClearAllPoints()
+          seg:SetPoint("TOP", popupFrame.chanceBar, "TOPLEFT", math.floor(barWidth * (i / maxv)), 0)
+          seg:SetPoint("BOTTOM", popupFrame.chanceBar, "BOTTOMLEFT", math.floor(barWidth * (i / maxv)), 0)
+          seg:Show()
+        else
+          seg:Hide()
+        end
       end
     end
   end
@@ -841,17 +927,22 @@ local function showForState(targetName, state, petOnly)
   local effMaxHp = tonumber(state.maxHp) or 0
   if effMaxHp <= 0 then effMaxHp = 1 end
 
-  -- Stabilisé/Agonie banner
+  -- Stabilisé/Agonie banner ("EN AGONIE" pulses softly)
   if popupFrame.statusBanner then
     local isDead = (tonumber(state.hp) or 0) == 0
     if isDead then
       if state.stabilise then
         popupFrame.statusBanner:SetText("|cff44ee44** STABILISE **|r")
+        if popupFrame.statusPulse then popupFrame.statusPulse:Stop() end
       else
         popupFrame.statusBanner:SetText("|cffee2222** EN AGONIE **|r")
+        if popupFrame.statusPulse and not popupFrame.statusPulse:IsPlaying() then
+          popupFrame.statusPulse:Play()
+        end
       end
       popupFrame.statusBanner:Show()
     else
+      if popupFrame.statusPulse then popupFrame.statusPulse:Stop() end
       popupFrame.statusBanner:Hide()
     end
   end
@@ -963,6 +1054,7 @@ local function showForState(targetName, state, petOnly)
   popupFrame:SetHeight(dynamicHeight)
 
   popupFrame:Show()
+  if not wasShown and popupFrame.fadeIn then popupFrame.fadeIn:Play() end
 end
 
 function Popup:OnStateReceived(sender, state)
@@ -1182,15 +1274,17 @@ local function createHoverPopup()
   hoverFrame:SetFrameLevel(10)
   hoverFrame:SetWidth(HOVER_BAR_W + HOVER_PAD * 2)
   hoverFrame:SetHeight(HOVER_PAD * 2 + HOVER_BAR_H)
-  hoverFrame:SetBackdrop({
-    bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
-    tile     = true,
-    tileSize = 24,
-    edgeSize = 16,
-    insets   = { left = 4, right = 4, top = 4, bottom = 4 },
-  })
-  hoverFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.92)
+  -- Same dark tooltip-note skin as the rest of the addon.
+  Shared.ApplyNoteSkin(hoverFrame, 0.94)
+
+  -- Quick fade-in when the hover first appears (not on refreshes), and
+  -- fade-out when the mouse leaves.
+  if hoverFrame.CreateAnimationGroup then
+    hoverFrame.fadeIn = hoverFrame:CreateAnimationGroup()
+    local fa = hoverFrame.fadeIn:CreateAnimation("Alpha")
+    fa:SetFromAlpha(0); fa:SetToAlpha(1); fa:SetDuration(0.12)
+  end
+  hoverFrame.fadeOut = Shared.MakeFadeOut(hoverFrame, 0.12)
 
   -- HP bar + overlays + markers
   hoverFrame.hpBar = createHoverBar(hoverFrame)
@@ -1231,6 +1325,7 @@ local function createHoverPopup()
   hoverFrame.statusLabel:SetShadowColor(0, 0, 0, 1)
   hoverFrame.statusLabel:SetJustifyH("CENTER")
   hoverFrame.statusLabel:Hide()
+  hoverFrame.statusPulse = Shared.MakePulse(hoverFrame.statusLabel)
 
   hoverFrame:Hide()
 end
@@ -1254,7 +1349,12 @@ reanchorHover = function()
 end
 
 hideHoverPopup = function()
-  if hoverFrame then hoverFrame:Hide() end
+  if not hoverFrame then return end
+  if hoverFrame.fadeOut and hoverFrame:IsShown() and not hoverFrame.fadeOut:IsPlaying() then
+    hoverFrame.fadeOut:Play()
+  else
+    hoverFrame:Hide()
+  end
 end
 
 -- Public: subscribe to incoming states. Returns an unsubscribe function.
@@ -1295,6 +1395,11 @@ local function showHoverForState(state, petOnly)
     end
   end
   createHoverPopup()
+  -- Cancel a pending fade so a quick re-hover lands at full opacity.
+  if hoverFrame.fadeOut and hoverFrame.fadeOut:IsPlaying() then
+    hoverFrame.fadeOut:Stop()
+  end
+  local wasShown = hoverFrame:IsShown()
 
   if petOnly then
     local pet = state.pet
@@ -1334,13 +1439,17 @@ local function showHoverForState(state, petOnly)
       if rb then rb.frame:Hide(); hideMarkers(rb.markers) end
     end
     if hoverFrame.chanceBar then hoverFrame.chanceBar.frame:Hide() end
-    if hoverFrame.statusLabel then hoverFrame.statusLabel:Hide() end
+    if hoverFrame.statusLabel then
+      if hoverFrame.statusPulse then hoverFrame.statusPulse:Stop() end
+      hoverFrame.statusLabel:Hide()
+    end
 
     hoverFrame.hpBar.frame:ClearAllPoints()
     hoverFrame.hpBar.frame:SetPoint("TOPLEFT", hoverFrame, "TOPLEFT", HOVER_PAD, -HOVER_PAD)
     hoverFrame:SetHeight(HOVER_PAD * 2 + HOVER_BAR_H)
     reanchorHover()
     hoverFrame:Show()
+    if not wasShown and hoverFrame.fadeIn then hoverFrame.fadeIn:Play() end
     return
   end
 
@@ -1480,11 +1589,16 @@ local function showHoverForState(state, petOnly)
     hoverFrame.statusLabel:SetPoint("TOPRIGHT", hoverFrame, "TOPRIGHT", -HOVER_PAD, yOff)
     if state.stabilise then
       hoverFrame.statusLabel:SetText("|cff44ee44** STABILISE **|r")
+      if hoverFrame.statusPulse then hoverFrame.statusPulse:Stop() end
     else
       hoverFrame.statusLabel:SetText("|cffee2222** EN AGONIE **|r")
+      if hoverFrame.statusPulse and not hoverFrame.statusPulse:IsPlaying() then
+        hoverFrame.statusPulse:Play()
+      end
     end
     hoverFrame.statusLabel:Show()
   elseif hoverFrame.statusLabel then
+    if hoverFrame.statusPulse then hoverFrame.statusPulse:Stop() end
     hoverFrame.statusLabel:Hide()
   end
 
@@ -1496,6 +1610,7 @@ local function showHoverForState(state, petOnly)
 
   reanchorHover()
   hoverFrame:Show()
+  if not wasShown and hoverFrame.fadeIn then hoverFrame.fadeIn:Play() end
 end
 
 tryShowHover = function()

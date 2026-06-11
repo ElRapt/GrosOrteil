@@ -219,7 +219,7 @@ end
 
 -- ── Frame layer (WoW-only; lazily built, sections pooled to avoid leaks) ───────
 
-local frame, scrollFrame, content, headerFs, countFs, fadeIn
+local frame, scrollFrame, content, headerFs, countFs, fadeIn, fadeOut
 local sectionPool    = {}
 local currentMembers = nil
 local pendingRelayout = false  -- a relayout was requested while in combat
@@ -324,7 +324,10 @@ local function buildSection()
     sec:SetBackdropColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 0.92)
     sec:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
   end
-  sec:RegisterForClicks("AnyUp")
+  -- Both down and up must be registered: since 10.x, secure action buttons
+  -- fire on the edge selected by the ActionButtonUseKeyDown cvar, so an
+  -- "AnyUp"-only registration can silently drop the protected target click.
+  sec:RegisterForClicks("AnyDown", "AnyUp")
   -- Left-click targets the `unit` attribute. Both plain and wildcard forms are
   -- set so it works with or without held modifiers.
   if sec.SetAttribute then
@@ -335,8 +338,9 @@ local function buildSection()
   -- work AFTER the secure action. Touching OnClick (HookScript) or any handler
   -- that runs BEFORE it (OnMouseUp) taints the click and Blizzard then blocks
   -- the protected target, which is why earlier attempts silently did nothing.
-  sec:SetScript("PostClick", function(self, button)
-    if button == "RightButton" then openMemberMenu(self) end
+  -- With both click edges registered, only act on release so it fires once.
+  sec:SetScript("PostClick", function(self, button, down)
+    if button == "RightButton" and not down then openMemberMenu(self) end
   end)
   sec:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
   local hl = sec.GetHighlightTexture and sec:GetHighlightTexture()
@@ -373,33 +377,18 @@ local function buildSection()
   rule:SetHeight(1)
   sec.rule = rule
 
-  -- Hover: gold border + info tooltip with the click hints.
+  -- Hover: gold border glow only (no tooltip — the footer carries the hints,
+  -- and a tooltip here got in the way of click-to-target).
   sec:SetScript("OnEnter", function(self)
     if self.SetBackdropBorderColor then
       self:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
     end
-    local tip = rawget(_G, "GameTooltip")
-    if not tip then return end
-    tip:SetOwner(self, "ANCHOR_RIGHT")
-    tip:ClearLines()
-    local col = self._nameColor or NAME_DEFAULT
-    tip:AddLine(self._displayName or self._name or "?", col[1], col[2], col[3])
-    if self._classLabel and self._classLabel ~= "" then
-      tip:AddLine(self._classLabel, 0.72, 0.62, 0.52)
-    end
-    if self._hpLine then tip:AddLine(self._hpLine, 0.95, 0.95, 0.95) end
-    tip:AddLine(" ")
-    tip:AddLine("Clic gauche : cibler", 0.55, 0.55, 0.55)
-    tip:AddLine("Clic droit : actions", 0.55, 0.55, 0.55)
-    tip:Show()
   end)
   sec:SetScript("OnLeave", function(self)
     local c = self._borderColor or CREAMY_BROWN
     if self.SetBackdropBorderColor then
       self:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 0.90)
     end
-    local tip = rawget(_G, "GameTooltip")
-    if tip then tip:Hide() end
   end)
 
   sec.hp  = makeBar(sec)
@@ -448,8 +437,6 @@ local function updateSection(sec, data)
   end
 
   local col = data.nameColor or NAME_DEFAULT
-  sec._nameColor  = col
-  sec._classLabel = data.classLabel
   sec.nameFs:SetTextColor(col[1], col[2], col[3], 1)
   if data.classLabel and data.classLabel ~= "" then
     sec.nameFs:SetText(string.format("%s  |cffb0a08c— %s|r", shown or "?", data.classLabel))
@@ -457,9 +444,9 @@ local function updateSection(sec, data)
     sec.nameFs:SetText(shown or "?")
   end
 
-  -- Class icon (question mark while waiting for data).
+  -- Class crest (question mark while waiting for data).
   if hasState and data.classKey and data.classKey ~= "" then
-    Shared.SetClassIconTexCoords(sec.icon, data.classKey)
+    Shared.SetClassEmblem(sec.icon, data.classKey)
     if sec.icon.SetDesaturated then sec.icon:SetDesaturated(false) end
   else
     sec.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
@@ -496,17 +483,14 @@ local function updateSection(sec, data)
     sec.hp.bar:SetValue(hp)
     local c = (data.hp == 0) and HP_DEAD_COLOR or HP_COLOR
     sec.hp.bar:SetStatusBarColor(c[1], c[2], c[3], 1)
-    local hpLine = string.format("PV : %d / %d  (%d%%)",
-      math.floor(data.hp + 0.5), math.floor(maxHp + 0.5), Shared.RoundPct(hp / maxHp))
-    sec.hp.label:SetText(hpLine)
-    sec._hpLine = hpLine
+    sec.hp.label:SetText(string.format("PV : %d / %d  (%d%%)",
+      math.floor(data.hp + 0.5), math.floor(maxHp + 0.5), Shared.RoundPct(hp / maxHp)))
     applyMarkers(sec.hp, HP_MARKER_DEFS)
   else
     sec.hp.bar:SetMinMaxValues(0, 1)
     sec.hp.bar:SetValue(0)
     sec.hp.bar:SetStatusBarColor(PLACEHOLDER_COL[1], PLACEHOLDER_COL[2], PLACEHOLDER_COL[3], 1)
     sec.hp.label:SetText("En attente...")
-    sec._hpLine = "En attente de données..."
     hideMarkers(sec.hp)
   end
   sec.hp.frame:Show()
@@ -758,12 +742,13 @@ local function ensureFrame()
   scrollFrame:SetScript("OnScrollRangeChanged", updateScrollThumb)
   scrollFrame:SetScript("OnVerticalScroll", updateScrollThumb)
 
-  -- Gentle fade-in when the panel opens.
+  -- Gentle fade-in when the panel opens, fade-out when it closes.
   if frame.CreateAnimationGroup then
     fadeIn = frame:CreateAnimationGroup()
     local a = fadeIn:CreateAnimation("Alpha")
     a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.18)
   end
+  fadeOut = Shared.MakeFadeOut(frame, 0.15)
 
   -- Secure section buttons can't be moved/shown/re-attributed in combat, so a
   -- relayout requested during combat is deferred until combat ends.
@@ -797,6 +782,7 @@ end
 
 function RaidPanel.Show()
   ensureFrame()
+  if fadeOut then fadeOut:Stop() end  -- cancel a pending close fade
   Refresh()
   if scrollFrame then scrollFrame:SetVerticalScroll(0) end
   frame:Show()
@@ -805,11 +791,17 @@ function RaidPanel.Show()
 end
 
 function RaidPanel.Hide()
-  if frame then frame:Hide() end
+  if not frame then return end
+  if fadeOut and frame:IsShown() and not fadeOut:IsPlaying() then
+    fadeOut:Play()
+  else
+    frame:Hide()
+  end
 end
 
 function RaidPanel.Toggle()
-  if frame and frame:IsShown() then
+  -- A panel mid-fade-out counts as hidden, so toggling reopens it.
+  if frame and frame:IsShown() and not (fadeOut and fadeOut:IsPlaying()) then
     RaidPanel.Hide()
   else
     RaidPanel.Show()

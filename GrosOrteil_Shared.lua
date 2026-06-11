@@ -320,3 +320,184 @@ function Shared.GetClassNameFr(classKey)
   local key = type(classKey) == "string" and classKey or ""
   return Shared.CLASS_NAMES_FR[key] or (key ~= "" and key) or "Inconnue"
 end
+
+---------------------------------------------------------------------------
+-- Bulletin-board theme, shared by the main window, raid panel and popups.
+-- "Board" = tiled parchment + creamy tooltip border (+ wooden rails);
+-- "Note"  = dark warm card with a tooltip border, pinned on the board.
+---------------------------------------------------------------------------
+Shared.THEME = {
+  CREAMY_BROWN = { 0.48, 0.39, 0.32 },   -- TRP3's backdrop border color
+  GOLD         = { 1.00, 0.675, 0.125 },
+  CARD_BG      = { 0.085, 0.065, 0.045 },
+  PLAQUE_BG    = { 0.10, 0.075, 0.05 },
+  EDGE         = 4,    -- tooltip-border inset around a board
+  WOOD         = 20,   -- wooden rail thickness
+}
+
+-- TRP3 board art, used when TRP3 is installed (this addon already integrates
+-- with it); Blizzard's neutral parchment is the fallback.
+local TRP3_BG     = "Interface\\AddOns\\totalRP3\\Resources\\UI\\ui-frame-neutral-background"
+local TRP3_WOOD_V = "Interface\\AddOns\\totalRP3\\Resources\\UI\\!ui-frame-wooden-border"
+local TRP3_WOOD_H = "Interface\\AddOns\\totalRP3\\Resources\\UI\\_ui-frame-wooden-border"
+local BLIZZ_BG    = "Interface\\FrameGeneral\\UIFrameNeutralBackground"
+
+Shared.BACKDROP_BOARD = {
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  edgeSize = 16,
+}
+Shared.BACKDROP_NOTE = {
+  bgFile   = "Interface\\Buttons\\WHITE8x8",
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  edgeSize = 12,
+  insets   = { left = 3, right = 3, top = 3, bottom = 3 },
+}
+
+-- Parchment board: creamy tooltip border + tiled parchment (TRP3 tints it
+-- 0.6 grey). The frame must inherit BackdropTemplate. Returns the texture.
+function Shared.ApplyBoardSkin(frame)
+  local T = Shared.THEME
+  if frame.SetBackdrop then
+    frame:SetBackdrop(Shared.BACKDROP_BOARD)
+    frame:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 1)
+  end
+  local hasTRP3 = rawget(_G, "TRP3_API") ~= nil
+  local board = frame:CreateTexture(nil, "BACKGROUND")
+  board:SetTexture(hasTRP3 and TRP3_BG or BLIZZ_BG, "REPEAT", "REPEAT")
+  board:SetHorizTile(true)
+  board:SetVertTile(true)
+  board:SetPoint("TOPLEFT",     frame, "TOPLEFT",     T.EDGE, -T.EDGE)
+  board:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -T.EDGE, T.EDGE)
+  board:SetVertexColor(0.60, 0.60, 0.60)
+  return board
+end
+
+-- Wooden rails along the four board edges (like TRP3's main frame).
+function Shared.ApplyBoardRails(frame)
+  local T = Shared.THEME
+  local EDGE, WOOD = T.EDGE, T.WOOD
+  if rawget(_G, "TRP3_API") ~= nil then
+    local function woodV(point, xOfs, flip)
+      local t = frame:CreateTexture(nil, "BORDER", nil, -3)
+      t:SetTexture(TRP3_WOOD_V, "REPEAT", "REPEAT")
+      t:SetVertTile(true)
+      t:SetWidth(WOOD)
+      t:SetPoint("TOP" .. point,    frame, "TOP" .. point,    xOfs, -EDGE)
+      t:SetPoint("BOTTOM" .. point, frame, "BOTTOM" .. point, xOfs, EDGE)
+      if flip then t:SetTexCoord(0.2265625, 0.0078125, 0, 1)
+      else         t:SetTexCoord(0.0078125, 0.2265625, 0, 1) end
+      t:SetVertexColor(1, 0.8, 0.8)
+    end
+    local function woodH(point, yOfs, top, bottom)
+      local t = frame:CreateTexture(nil, "BORDER", nil, -2)
+      t:SetTexture(TRP3_WOOD_H, "REPEAT", "REPEAT")
+      t:SetHorizTile(true)
+      t:SetHeight(WOOD)
+      t:SetPoint(point .. "LEFT",  frame, point .. "LEFT",  EDGE, yOfs)
+      t:SetPoint(point .. "RIGHT", frame, point .. "RIGHT", -EDGE, yOfs)
+      t:SetTexCoord(0, 1, top, bottom)
+      t:SetVertexColor(1, 0.8, 0.8)
+    end
+    woodV("LEFT",  EDGE, false)
+    woodV("RIGHT", -EDGE, true)
+    woodH("TOP",    -EDGE, 0.484375, 0.921875)
+    woodH("BOTTOM", EDGE,  0.015625, 0.453125)
+  else
+    local function plainRail()
+      local t = frame:CreateTexture(nil, "BORDER", nil, -2)
+      t:SetColorTexture(0.23, 0.16, 0.10, 1)
+      return t
+    end
+    local left, right, topT, botT = plainRail(), plainRail(), plainRail(), plainRail()
+    left:SetPoint("TOPLEFT", EDGE, -EDGE);   left:SetPoint("BOTTOMLEFT", EDGE, EDGE);    left:SetWidth(WOOD)
+    right:SetPoint("TOPRIGHT", -EDGE, -EDGE); right:SetPoint("BOTTOMRIGHT", -EDGE, EDGE); right:SetWidth(WOOD)
+    topT:SetPoint("TOPLEFT", EDGE, -EDGE);   topT:SetPoint("TOPRIGHT", -EDGE, -EDGE);    topT:SetHeight(WOOD)
+    botT:SetPoint("BOTTOMLEFT", EDGE, EDGE); botT:SetPoint("BOTTOMRIGHT", -EDGE, EDGE);  botT:SetHeight(WOOD)
+  end
+end
+
+-- Dark tooltip-note card (the frame must inherit BackdropTemplate).
+function Shared.ApplyNoteSkin(frame, bgAlpha)
+  local T = Shared.THEME
+  if not frame.SetBackdrop then return end
+  frame:SetBackdrop(Shared.BACKDROP_NOTE)
+  frame:SetBackdropColor(T.CARD_BG[1], T.CARD_BG[2], T.CARD_BG[3], bgAlpha or 0.92)
+  frame:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 0.90)
+end
+
+-- Header plaque pinned over the board's top rail. Returns the plaque frame.
+function Shared.MakePlaque(frame, height)
+  local T = Shared.THEME
+  local plaque = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  plaque:SetPoint("TOPLEFT",  frame, "TOPLEFT",  T.EDGE + 8, -(T.EDGE + 6))
+  plaque:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(T.EDGE + 8), -(T.EDGE + 6))
+  plaque:SetHeight(height or 30)
+  if plaque.SetBackdrop then
+    plaque:SetBackdrop(Shared.BACKDROP_NOTE)
+    plaque:SetBackdropColor(T.PLAQUE_BG[1], T.PLAQUE_BG[2], T.PLAQUE_BG[3], 0.97)
+    plaque:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 1)
+  end
+  return plaque
+end
+
+-- Soft looping alpha pulse on a region (used by "EN AGONIE" labels).
+-- Returns the animation group, or nil when animations are unavailable.
+function Shared.MakePulse(region)
+  if not region or not region.CreateAnimationGroup then return nil end
+  local pulse = region:CreateAnimationGroup()
+  pulse:SetLooping("BOUNCE")
+  local a = pulse:CreateAnimation("Alpha")
+  a:SetFromAlpha(1); a:SetToAlpha(0.35); a:SetDuration(0.7)
+  return pulse
+end
+
+-- Fade-out that hides the frame when done (alpha restored for the next Show).
+-- Hide sites: play it if available and not already playing, else Hide directly.
+-- Show sites must Stop() it first so a re-show cancels a pending fade.
+function Shared.MakeFadeOut(frame, duration)
+  if not frame or not frame.CreateAnimationGroup then return nil end
+  local ag = frame:CreateAnimationGroup()
+  local a = ag:CreateAnimation("Alpha")
+  a:SetFromAlpha(1); a:SetToAlpha(0); a:SetDuration(duration or 0.15)
+  ag:SetScript("OnFinished", function()
+    frame:Hide()
+    frame:SetAlpha(1)
+  end)
+  return ag
+end
+
+---------------------------------------------------------------------------
+-- High-resolution class emblems: the round Legion class-hall crests
+-- (transparent background, crisp at large sizes). Custom classes map to the
+-- closest real class; falls back to the icon sheet when the atlas is missing.
+---------------------------------------------------------------------------
+local CLASS_EMBLEM_ATLAS = {
+  WARRIOR      = "classhall-circle-warrior",
+  MAGE         = "classhall-circle-mage",
+  ROGUE        = "classhall-circle-rogue",
+  DRUID        = "classhall-circle-druid",
+  HUNTER       = "classhall-circle-hunter",
+  SHAMAN       = "classhall-circle-shaman",
+  PRIEST       = "classhall-circle-priest",
+  SHADOWPRIEST = "classhall-circle-priest",
+  WARLOCK      = "classhall-circle-warlock",
+  PALADIN      = "classhall-circle-paladin",
+  DEATHKNIGHT  = "classhall-circle-deathknight",
+  MONK         = "classhall-circle-monk",
+  DEMONHUNTER  = "classhall-circle-demonhunter",
+  MEDIC        = "classhall-circle-priest",
+}
+
+function Shared.SetClassEmblem(tex, classKey)
+  if not tex then return false end
+  local atlas = CLASS_EMBLEM_ATLAS[classKey]
+  local cTexture = rawget(_G, "C_Texture")
+  local info = atlas and cTexture and cTexture.GetAtlasInfo and cTexture.GetAtlasInfo(atlas)
+  if info and tex.SetAtlas then
+    tex:SetTexCoord(0, 1, 0, 1)
+    tex:SetAtlas(atlas, false)
+    return true
+  end
+  Shared.SetClassIconTexCoords(tex, classKey)
+  return false
+end
