@@ -32,6 +32,21 @@ local hideOverlay      = Shared.HideOverlay
 local roundNumber      = Shared.Round
 local getClassNameFr   = Shared.GetClassNameFr
 
+-- Lazily build (once per row) and position the class-resource threshold
+-- markers; defs come from Shared so all displays agree. `positionFn` differs
+-- between the target popup (live bar width) and the hover (fixed width).
+local function applyResMarkers(row, classKey, idx, positionFn)
+  hideMarkers(row.markers)
+  local defs = Shared.GetResMarkerDefs(classKey, idx)
+  if #defs == 0 then return end
+  if #row.markers == 0 then
+    for i, d in ipairs(defs) do
+      row.markers[i] = makeMarker(row.bar, d.pct, d.r, d.g, d.b, d.a, d.w)
+    end
+  end
+  positionFn(row.markers, row.bar)
+end
+
 local pendingTarget
 local pendingTargetIsPet = false
 local pendingHoverUnit   -- cache key of the unit we last requested on hover
@@ -446,7 +461,7 @@ local function createPopup()
   popupFrame.classText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   popupFrame.classText:SetPoint("TOPLEFT", popupFrame.title, "BOTTOMLEFT", 0, -3)
   popupFrame.classText:SetJustifyH("LEFT")
-  popupFrame.classText:SetText("Classe: Inconnue")
+  popupFrame.classText:SetText("Classe : Inconnue")
 
   -- 2x2 stat grid: col1 X=18, col2 X=170; row1 Y=-60, row2 Y=-92
   popupFrame.armorIcon = popupFrame:CreateTexture(nil, "ARTWORK")
@@ -457,7 +472,7 @@ local function createPopup()
   popupFrame.armorText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.armorText:SetPoint("LEFT", popupFrame.armorIcon, "RIGHT", 4, 0)
   popupFrame.armorText:SetJustifyH("LEFT")
-  popupFrame.armorText:SetText("Armure: 0")
+  popupFrame.armorText:SetText("Armure : 0")
 
   popupFrame.dodgeIcon = popupFrame:CreateTexture(nil, "ARTWORK")
   popupFrame.dodgeIcon:SetSize(14, 14)
@@ -467,7 +482,7 @@ local function createPopup()
   popupFrame.dodgeText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.dodgeText:SetPoint("LEFT", popupFrame.dodgeIcon, "RIGHT", 4, 0)
   popupFrame.dodgeText:SetJustifyH("LEFT")
-  popupFrame.dodgeText:SetText("Esquive: 0")
+  popupFrame.dodgeText:SetText("Esquive : 0")
 
   -- Attaque (row 1: combined or C-C)
   popupFrame.attaqueIcon = popupFrame:CreateTexture(nil, "ARTWORK")
@@ -605,7 +620,7 @@ local function createPopup()
   popupFrame.petArmorText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.petArmorText:SetPoint("LEFT", popupFrame.petArmorIcon, "RIGHT", 4, 0)
   popupFrame.petArmorText:SetJustifyH("LEFT")
-  popupFrame.petArmorText:SetText("Armure: 0")
+  popupFrame.petArmorText:SetText("Armure : 0")
   popupFrame.petArmorText:Hide()
 
   popupFrame.petDodgeIcon = popupFrame:CreateTexture(nil, "ARTWORK")
@@ -617,7 +632,7 @@ local function createPopup()
   popupFrame.petDodgeText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.petDodgeText:SetPoint("LEFT", popupFrame.petDodgeIcon, "RIGHT", 4, 0)
   popupFrame.petDodgeText:SetJustifyH("LEFT")
-  popupFrame.petDodgeText:SetText("Esquive: 0")
+  popupFrame.petDodgeText:SetText("Esquive : 0")
   popupFrame.petDodgeText:Hide()
 
   popupFrame.petAttaqueIcon = popupFrame:CreateTexture(nil, "ARTWORK")
@@ -628,7 +643,7 @@ local function createPopup()
   popupFrame.petAttaqueText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.petAttaqueText:SetPoint("LEFT", popupFrame.petAttaqueIcon, "RIGHT", 4, 0)
   popupFrame.petAttaqueText:SetJustifyH("LEFT")
-  popupFrame.petAttaqueText:SetText("CaC: 0 | Dist: 0")
+  popupFrame.petAttaqueText:SetText("CaC : 0 | Dist : 0")
   popupFrame.petAttaqueText:Hide()
 
   popupFrame.petHpRow = createStatBar(popupFrame, -316)
@@ -653,13 +668,13 @@ local function createPopup()
   popupFrame.petTempArmorText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.petTempArmorText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -352)
   popupFrame.petTempArmorText:SetJustifyH("LEFT")
-  popupFrame.petTempArmorText:SetText("Arm. temp.: 0")
+  popupFrame.petTempArmorText:SetText("Arm. temp. : 0")
   popupFrame.petTempArmorText:Hide()
 
   popupFrame.petMagicShieldText = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   popupFrame.petMagicShieldText:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -366)
   popupFrame.petMagicShieldText:SetJustifyH("LEFT")
-  popupFrame.petMagicShieldText:SetText("Boucl.: 0/0 (+0 arm.)")
+  popupFrame.petMagicShieldText:SetText("Boucl. : 0/0 (+0 arm.)")
   popupFrame.petMagicShieldText:Hide()
 
   popupFrame.hpMarkers, popupFrame.hpCapMarker =
@@ -681,11 +696,7 @@ local function createPopup()
 
   -- Gentle fade-in when the popup first opens (not on in-place refreshes),
   -- and fade-out when it closes.
-  if popupFrame.CreateAnimationGroup then
-    popupFrame.fadeIn = popupFrame:CreateAnimationGroup()
-    local fa = popupFrame.fadeIn:CreateAnimation("Alpha")
-    fa:SetFromAlpha(0); fa:SetToAlpha(1); fa:SetDuration(0.15)
-  end
+  popupFrame.fadeIn  = Shared.MakeFadeIn(popupFrame, 0.15)
   popupFrame.fadeOut = Shared.MakeFadeOut(popupFrame, 0.15)
 end
 
@@ -730,8 +741,8 @@ local function showForState(targetName, state, petOnly)
     local petMaxHp     = math.max(1, tonumber(pet.maxHp) or 1)
     local petHp        = tonumber(pet.hp)        or 0
 
-    popupFrame.armorText:SetText(string.format("Armure: %d (+%d)", roundNumber(petArmor), roundNumber(petTrueArmor)))
-    popupFrame.dodgeText:SetText(string.format("Esquive: %d", roundNumber(petDodge)))
+    popupFrame.armorText:SetText(string.format("Armure : %d (+%d)", roundNumber(petArmor), roundNumber(petTrueArmor)))
+    popupFrame.dodgeText:SetText(string.format("Esquive : %d", roundNumber(petDodge)))
 
     setBarValue(popupFrame.hpRow, "PV", petHp, petMaxHp, { 0.95, 0.62, 0.18 })
     updateHpShieldOverlays(popupFrame.hpRow, petHp, petMaxHp, 0, (pet.magicShield and pet.magicShield.hp or 0))
@@ -742,9 +753,7 @@ local function showForState(targetName, state, petOnly)
     end
     positionMarkers(popupFrame.hpMarkers, popupFrame.hpRow.bar)
 
-    local petWoundCap = 1.0
-    if pet.wounds and pet.wounds.hit10 then petWoundCap = 0.25
-    elseif pet.wounds and pet.wounds.hit25 then petWoundCap = 0.50 end
+    local petWoundCap = Shared.WoundCap(pet.wounds)
     if petWoundCap >= 1.0 then
       popupFrame.hpCapMarker:Hide()
     else
@@ -762,7 +771,7 @@ local function showForState(targetName, state, petOnly)
     local petAttD = tonumber(pet.attaqueDistance) or 0
     popupFrame.attaqueIcon:ClearAllPoints()
     popupFrame.attaqueIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -92)
-    popupFrame.attaqueText:SetText(string.format("CaC: %d | Dist: %d", roundNumber(petAttM), roundNumber(petAttD)))
+    popupFrame.attaqueText:SetText(string.format("CaC : %d | Dist : %d", roundNumber(petAttM), roundNumber(petAttD)))
     popupFrame.attaqueIcon:Show()
     popupFrame.attaqueText:Show()
     popupFrame.perceptionIcon:Hide()
@@ -824,15 +833,15 @@ local function showForState(targetName, state, petOnly)
   end
 
   local className = getClassNameFr(state.classKey)
-  popupFrame.classText:SetText("Classe: " .. className)
+  popupFrame.classText:SetText("Classe : " .. className)
   applyClassIcon(state.classKey)
   applyHeaderAccent(state.classKey, false)
 
   local armor = tonumber(state.armor) or 0
   local trueArmor = tonumber(state.trueArmor) or 0
   local dodge = tonumber(state.dodge) or 0
-  popupFrame.armorText:SetText(string.format("Armure: %d (+%d)", roundNumber(armor), roundNumber(trueArmor)))
-  popupFrame.dodgeText:SetText(string.format("Esquive: %d", roundNumber(dodge)))
+  popupFrame.armorText:SetText(string.format("Armure : %d (+%d)", roundNumber(armor), roundNumber(trueArmor)))
+  popupFrame.dodgeText:SetText(string.format("Esquive : %d", roundNumber(dodge)))
 
   -- Attaque / Perception / Chance
   local attM  = tonumber(state.attaqueMelee)    or 0
@@ -844,13 +853,13 @@ local function showForState(targetName, state, petOnly)
   -- Attaque row at Y=-92: C-C and Dist on one line; Perception on right side
   popupFrame.attaqueIcon:ClearAllPoints()
   popupFrame.attaqueIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 18, -92)
-  popupFrame.attaqueText:SetText(string.format("CaC: %d | Dist: %d", roundNumber(attM), roundNumber(attD)))
+  popupFrame.attaqueText:SetText(string.format("CaC : %d | Dist : %d", roundNumber(attM), roundNumber(attD)))
   popupFrame.attaqueIcon:Show()
   popupFrame.attaqueText:Show()
 
   popupFrame.perceptionIcon:ClearAllPoints()
   popupFrame.perceptionIcon:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 170, -92)
-  popupFrame.perceptionText:SetText(string.format("Perception: %d", roundNumber(perc)))
+  popupFrame.perceptionText:SetText(string.format("Perception : %d", roundNumber(perc)))
   popupFrame.perceptionIcon:Show()
   popupFrame.perceptionText:Show()
 
@@ -963,12 +972,7 @@ local function showForState(targetName, state, petOnly)
   end
   positionMarkers(popupFrame.hpMarkers, popupFrame.hpRow.bar)
 
-  local woundCap = 1.0
-  if state.wounds and state.wounds.hit10 then
-    woundCap = 0.25
-  elseif state.wounds and state.wounds.hit25 then
-    woundCap = 0.50
-  end
+  local woundCap = Shared.WoundCap(state.wounds)
   if woundCap >= 1.0 then
     popupFrame.hpCapMarker:Hide()
   else
@@ -985,44 +989,10 @@ local function showForState(targetName, state, petOnly)
       local resKey, maxKey = getKeysForIdx(p.idx)
       local cur = state[resKey] or 0
       local maxv = state[maxKey] or 0
-      local displayMax = maxv
-
-      local isWarlockCorruption = (state.classKey == "WARLOCK"      and p.idx == 2)
-      local isShadowInsanity    = (state.classKey == "SHADOWPRIEST" and p.idx == 2)
-      local isMageArcaneCharge  = (state.classKey == "MAGE"         and p.idx == 2)
-
-      if isWarlockCorruption then
-        displayMax = 60
-      elseif isShadowInsanity then
-        displayMax = 25
-      elseif isMageArcaneCharge then
-        displayMax = 8
-      end
+      local displayMax = Shared.GetResDisplayMax(state.classKey, p.idx) or maxv
 
       setBarValue(row, p.label or "Ressource", cur, displayMax, { p.r, p.g, p.b })
-      hideMarkers(row.markers)
-      if isWarlockCorruption then
-        if #row.markers == 0 then
-          row.markers[1] = makeMarker(row.bar, 10 / 60, 0.65, 0.95, 0.65, 0.55, 2)
-          row.markers[2] = makeMarker(row.bar, 25 / 60, 1.00, 0.82, 0.22, 0.55, 2)
-          row.markers[3] = makeMarker(row.bar, 45 / 60, 1.00, 0.25, 0.25, 0.65, 3)
-        end
-        positionMarkers(row.markers, row.bar)
-      elseif isShadowInsanity then
-        if #row.markers == 0 then
-          row.markers[1] = makeMarker(row.bar, 4 / 25, 0.65, 0.95, 0.65, 0.45, 2)
-          row.markers[2] = makeMarker(row.bar, 12 / 25, 1.00, 0.82, 0.22, 0.55, 2)
-          row.markers[3] = makeMarker(row.bar, 20 / 25, 1.00, 0.55, 0.10, 0.60, 2)
-          row.markers[4] = makeMarker(row.bar, 25 / 25, 1.00, 0.25, 0.25, 0.70, 3)
-        end
-        positionMarkers(row.markers, row.bar)
-      elseif isMageArcaneCharge then
-        if #row.markers == 0 then
-          row.markers[1] = makeMarker(row.bar, 4 / 8, 1.00, 0.82, 0.22, 0.65, 2)
-          row.markers[2] = makeMarker(row.bar, 8 / 8, 0.75, 0.30, 1.00, 0.80, 3)
-        end
-        positionMarkers(row.markers, row.bar)
-      end
+      applyResMarkers(row, state.classKey, p.idx, positionMarkers)
 
       row.holder:Show()
       shownRes = shownRes + 1
@@ -1227,6 +1197,28 @@ function Popup:Initialize()
       end
     end)
   end
+
+  -- Refresh the popup title the moment TRP3 receives a profile update for
+  -- anyone, instead of relying only on the 2s deferred retry. Cheap: a single
+  -- name lookup, only while the popup is visible.
+  local function hookTRP3Register()
+    local api = rawget(_G, "TRP3_API")
+    local addon = rawget(_G, "TRP3_Addon")
+    if type(api) ~= "table" or type(api.RegisterCallback) ~= "function" then return false end
+    if type(addon) ~= "table" then return false end
+    pcall(api.RegisterCallback, addon, "REGISTER_DATA_UPDATED", function()
+      if popupFrame and popupFrame:IsShown() and currentShownSender and not currentShownIsPet then
+        local lrn = rawget(_G, "LibRPNames")
+        if lrn and lrn.ClearCache then lrn.ClearCache() end
+        local newName, newColor = getRPDisplayName(currentShownSender)
+        applyPopupTitle(newName, newColor)
+      end
+    end)
+    return true
+  end
+  if not hookTRP3Register() and C_Timer and C_Timer.After then
+    C_Timer.After(2, hookTRP3Register)  -- TRP3 may finish loading after us
+  end
 end
 
 -- ============================================================
@@ -1279,11 +1271,7 @@ local function createHoverPopup()
 
   -- Quick fade-in when the hover first appears (not on refreshes), and
   -- fade-out when the mouse leaves.
-  if hoverFrame.CreateAnimationGroup then
-    hoverFrame.fadeIn = hoverFrame:CreateAnimationGroup()
-    local fa = hoverFrame.fadeIn:CreateAnimation("Alpha")
-    fa:SetFromAlpha(0); fa:SetToAlpha(1); fa:SetDuration(0.12)
-  end
+  hoverFrame.fadeIn  = Shared.MakeFadeIn(hoverFrame, 0.12)
   hoverFrame.fadeOut = Shared.MakeFadeOut(hoverFrame, 0.12)
 
   -- HP bar + overlays + markers
@@ -1424,9 +1412,7 @@ local function showHoverForState(state, petOnly)
     end
     positionHoverMarkers(hoverFrame.hpMarkers, hoverFrame.hpBar.bar)
 
-    local petWoundCap = 1.0
-    if pet.wounds and pet.wounds.hit10 then petWoundCap = 0.25
-    elseif pet.wounds and pet.wounds.hit25 then petWoundCap = 0.50 end
+    local petWoundCap = Shared.WoundCap(pet.wounds)
     if petWoundCap >= 1.0 then
       hoverFrame.hpCapMarker:Hide()
     else
@@ -1478,9 +1464,7 @@ local function showHoverForState(state, petOnly)
   end
   positionHoverMarkers(hoverFrame.hpMarkers, hoverFrame.hpBar.bar)
 
-  local woundCap = 1.0
-  if state.wounds and state.wounds.hit10 then woundCap = 0.25
-  elseif state.wounds and state.wounds.hit25 then woundCap = 0.50 end
+  local woundCap = Shared.WoundCap(state.wounds)
   if woundCap >= 1.0 then
     hoverFrame.hpCapMarker:Hide()
   else
@@ -1502,15 +1486,7 @@ local function showHoverForState(state, petOnly)
       local resKey, maxKey = getKeysForIdx(p.idx)
       local cur     = state[resKey] or 0
       local maxv    = state[maxKey] or 0
-      local dispMax = maxv
-
-      local isWarlockCorr = (state.classKey == "WARLOCK"      and p.idx == 2)
-      local isShadowIns   = (state.classKey == "SHADOWPRIEST" and p.idx == 2)
-      local isMageArcane  = (state.classKey == "MAGE"         and p.idx == 2)
-
-      if isWarlockCorr then dispMax = 60
-      elseif isShadowIns then dispMax = 25
-      elseif isMageArcane then dispMax = 8 end
+      local dispMax = Shared.GetResDisplayMax(state.classKey, p.idx) or maxv
       if dispMax <= 0 then dispMax = 1 end
 
       local clamped = math.max(0, math.min(cur, dispMax))
@@ -1521,29 +1497,7 @@ local function showHoverForState(state, petOnly)
       local lbl = p.label or "Ressource"
       row.label:SetText(string.format("%s : %d / %d", lbl, roundNumber(clamped), roundNumber(dispMax)))
 
-      hideMarkers(row.markers)
-      if isWarlockCorr then
-        if #row.markers == 0 then
-          row.markers[1] = makeMarker(row.bar, 10/60, 0.65, 0.95, 0.65, 0.55, 2)
-          row.markers[2] = makeMarker(row.bar, 25/60, 1.00, 0.82, 0.22, 0.55, 2)
-          row.markers[3] = makeMarker(row.bar, 45/60, 1.00, 0.25, 0.25, 0.65, 3)
-        end
-        positionHoverMarkers(row.markers, row.bar)
-      elseif isShadowIns then
-        if #row.markers == 0 then
-          row.markers[1] = makeMarker(row.bar, 4/25,  0.65, 0.95, 0.65, 0.45, 2)
-          row.markers[2] = makeMarker(row.bar, 12/25, 1.00, 0.82, 0.22, 0.55, 2)
-          row.markers[3] = makeMarker(row.bar, 20/25, 1.00, 0.55, 0.10, 0.60, 2)
-          row.markers[4] = makeMarker(row.bar, 25/25, 1.00, 0.25, 0.25, 0.70, 3)
-        end
-        positionHoverMarkers(row.markers, row.bar)
-      elseif isMageArcane then
-        if #row.markers == 0 then
-          row.markers[1] = makeMarker(row.bar, 4/8, 1.00, 0.82, 0.22, 0.65, 2)
-          row.markers[2] = makeMarker(row.bar, 8/8, 0.75, 0.30, 1.00, 0.80, 3)
-        end
-        positionHoverMarkers(row.markers, row.bar)
-      end
+      applyResMarkers(row, state.classKey, p.idx, positionHoverMarkers)
 
       local yOff = -(HOVER_PAD + HOVER_BAR_H + HOVER_GAP + shownRes * (HOVER_BAR_H + HOVER_GAP))
       row.frame:ClearAllPoints()

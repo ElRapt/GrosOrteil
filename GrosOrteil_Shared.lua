@@ -144,6 +144,74 @@ function Shared.GetResProfile(state)
 end
 
 ---------------------------------------------------------------------------
+-- Wound cap from a wounds table ({hit25=bool, hit10=bool}): healing is
+-- capped at 25% of max HP after a 10% wound, 50% after a 25% wound.
+-- The single source of truth — Core, the main UI, the popup and the raid
+-- panel all derive the cap through here.
+---------------------------------------------------------------------------
+function Shared.WoundCap(wounds)
+  if type(wounds) == "table" then
+    if wounds.hit10 then return 0.25 end
+    if wounds.hit25 then return 0.50 end
+  end
+  return 1.0
+end
+
+---------------------------------------------------------------------------
+-- Fixed display maxima for special class resources (idx 2):
+-- Warlock Corruption caps at 60, Shadow Priest Insanity displays out of 25
+-- (the value itself may exceed it), Mage Arcane Charge caps at 8.
+-- Returns the fixed max, or nil when the resource has no special cap.
+---------------------------------------------------------------------------
+local RES_DISPLAY_MAX = {
+  WARLOCK      = { [2] = 60 },
+  SHADOWPRIEST = { [2] = 25 },
+  MAGE         = { [2] = 8 },
+}
+function Shared.GetResDisplayMax(classKey, idx)
+  local byIdx = RES_DISPLAY_MAX[classKey]
+  return byIdx and byIdx[idx] or nil
+end
+
+---------------------------------------------------------------------------
+-- Resource threshold marker definitions per class/idx — shared by the main
+-- UI bars, the target popup, the hover popup and the raid panel cards.
+-- Each def: { pct, r, g, b, a, w }.
+---------------------------------------------------------------------------
+local RES_MARKER_DEFS = {
+  WARLOCK = { [2] = {   -- Corruption (cap 60)
+    { pct = 10/60, r = 0.65, g = 0.95, b = 0.65, a = 0.55, w = 2 },
+    { pct = 25/60, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
+    { pct = 45/60, r = 1.00, g = 0.25, b = 0.25, a = 0.65, w = 3 },
+  } },
+  SHADOWPRIEST = { [2] = {   -- Insanité (display cap 25)
+    { pct = 4/25,  r = 0.65, g = 0.95, b = 0.65, a = 0.45, w = 2 },
+    { pct = 12/25, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
+    { pct = 20/25, r = 1.00, g = 0.55, b = 0.10, a = 0.60, w = 2 },
+    { pct = 25/25, r = 1.00, g = 0.25, b = 0.25, a = 0.70, w = 3 },
+  } },
+  MAGE = { [2] = {   -- Charge arcanique (cap 8)
+    { pct = 4/8, r = 1.00, g = 0.82, b = 0.22, a = 0.65, w = 2 },
+    { pct = 8/8, r = 0.75, g = 0.30, b = 1.00, a = 0.80, w = 3 },
+  } },
+}
+local EMPTY_DEFS = {}
+function Shared.GetResMarkerDefs(classKey, idx)
+  local byIdx = RES_MARKER_DEFS[classKey]
+  return byIdx and byIdx[idx] or EMPTY_DEFS
+end
+
+---------------------------------------------------------------------------
+-- Normalized roster key: short character name (realm stripped), lowercase,
+-- spaces removed. Used wherever member lists are matched by name.
+---------------------------------------------------------------------------
+function Shared.NormalizeNameKey(name)
+  if type(name) ~= "string" then return nil end
+  local base = name:match("^([^%-]+)") or name
+  return base:lower():gsub("%s+", "")
+end
+
+---------------------------------------------------------------------------
 -- Round a number to the nearest integer
 ---------------------------------------------------------------------------
 function Shared.Round(v)
@@ -303,6 +371,7 @@ local HP_MARKER_DEFS = {
   { pct = 0.25, r = 1.0, g = 0.65, b = 0.10, a = 0.45, w = 2 },
   { pct = 0.10, r = 1.0, g = 0.15, b = 0.15, a = 0.55, w = 2 },
 }
+Shared.HP_MARKER_DEFS = HP_MARKER_DEFS
 function Shared.MakeHpThresholdMarkers(bar)
   local markers = {}
   for i = 1, #HP_MARKER_DEFS do
@@ -449,6 +518,16 @@ function Shared.MakePulse(region)
   local a = pulse:CreateAnimation("Alpha")
   a:SetFromAlpha(1); a:SetToAlpha(0.35); a:SetDuration(0.7)
   return pulse
+end
+
+-- Fade-in played on Show. Returns the animation group, or nil when
+-- animations are unavailable (offline tests).
+function Shared.MakeFadeIn(frame, duration)
+  if not frame or not frame.CreateAnimationGroup then return nil end
+  local ag = frame:CreateAnimationGroup()
+  local a = ag:CreateAnimation("Alpha")
+  a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(duration or 0.18)
+  return ag
 end
 
 -- Fade-out that hides the frame when done (alpha restored for the next Show).

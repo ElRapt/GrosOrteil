@@ -236,9 +236,11 @@ local function mkEdit(parent, w, h, x, y, onEnter)
   eb:SetNumeric(true)
   eb:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
 
-  eb:SetScript("OnEditFocusGained", function()
+  eb:SetScript("OnEditFocusGained", function(self)
     wrap:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 0.90)
     wrap:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.95)
+    -- Select the current value so typing replaces it (no manual erase needed).
+    if self.HighlightText then self:HighlightText() end
   end)
   eb:SetScript("OnEditFocusLost", function()
     wrap:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
@@ -470,12 +472,7 @@ function ns.UI_Init()
   UI.plaque = plaque
 
   -- Gentle fade-in whenever the window opens; fade-out when closed.
-  local fadeIn
-  if frame.CreateAnimationGroup then
-    fadeIn = frame:CreateAnimationGroup()
-    local fa = fadeIn:CreateAnimation("Alpha")
-    fa:SetFromAlpha(0); fa:SetToAlpha(1); fa:SetDuration(0.18)
-  end
+  local fadeIn = Shared.MakeFadeIn(frame, 0.18)
   frame:HookScript("OnShow", function()
     if fadeIn then fadeIn:Play() end
   end)
@@ -793,7 +790,7 @@ function ns.UI_Init()
     local UBTN_W, UBTN_H = 22, 18
     local UBTN_PAD = 6
 
-    local function mkUndoBtn(parent, label, tipTitle, tipDesc, onClick)
+    local function mkUndoBtn(parent, label, tipTitle, tipDesc, tipKey, onClick)
       local btn = CreateFrame("Button", nil, parent)
       btn:SetSize(UBTN_W, UBTN_H)
       btn:SetFrameLevel(parent:GetFrameLevel() + 10)
@@ -841,6 +838,9 @@ function ns.UI_Init()
         GameTooltip:ClearLines()
         GameTooltip:AddLine(tipTitle, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
         GameTooltip:AddLine(tipDesc, 1, 1, 1, true)
+        if tipKey then
+          GameTooltip:AddLine("Raccourci : " .. tipKey, 0.60, 0.52, 0.36)
+        end
         GameTooltip:Show()
       end)
       btn:SetScript("OnLeave", function(self)
@@ -860,13 +860,13 @@ function ns.UI_Init()
     end
 
     local undoBtn = mkUndoBtn(content, "<", "Annuler",
-      "Annule la dernière action.",
+      "Annule la dernière action.", "Ctrl+Z",
       function() Core.Undo() end)
     undoBtn:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", UBTN_PAD, UBTN_PAD)
     UI.undoBtn = undoBtn
 
     local redoBtn = mkUndoBtn(content, ">", "Rétablir",
-      "Rétablit la dernière action annulée.",
+      "Rétablit la dernière action annulée.", "Ctrl+Y",
       function() Core.Redo() end)
     redoBtn:SetPoint("LEFT", undoBtn, "RIGHT", 3, 0)
     UI.redoBtn = redoBtn
@@ -1013,38 +1013,20 @@ function ns.UI_Init()
 
   local makeMarker = Shared.MakeMarker
 
-  -- Warlock Corruption thresholds (max always 60)
-  UI.corruptionMarkers = {}
-  do
-    local bar = UI.resBars[2]
+  -- Class-resource threshold markers on bar #2 (Corruption / Insanité /
+  -- Charge arcanique). Definitions are shared with the popup and raid panel.
+  local function mkResMarkerSet(bar, classKey)
+    local out = {}
     if bar then
-      UI.corruptionMarkers[1] = makeMarker(bar, 10/60, 0.65, 0.95, 0.65, 0.55, 2)
-      UI.corruptionMarkers[2] = makeMarker(bar, 25/60, 1.00, 0.82, 0.22, 0.55, 2)
-      UI.corruptionMarkers[3] = makeMarker(bar, 45/60, 1.00, 0.25, 0.25, 0.65, 3)
+      for i, d in ipairs(Shared.GetResMarkerDefs(classKey, 2)) do
+        out[i] = makeMarker(bar, d.pct, d.r, d.g, d.b, d.a, d.w)
+      end
     end
+    return out
   end
-
-  -- Shadow Priest Insanity thresholds (no max; bar display caps at 25)
-  UI.insanityMarkers = {}
-  do
-    local bar = UI.resBars[2]
-    if bar then
-      UI.insanityMarkers[1] = makeMarker(bar, 4/25,  0.65, 0.95, 0.65, 0.45, 2)
-      UI.insanityMarkers[2] = makeMarker(bar, 12/25, 1.00, 0.82, 0.22, 0.55, 2)
-      UI.insanityMarkers[3] = makeMarker(bar, 20/25, 1.00, 0.55, 0.10, 0.60, 2)
-      UI.insanityMarkers[4] = makeMarker(bar, 25/25, 1.00, 0.25, 0.25, 0.70, 3)
-    end
-  end
-
-  -- Mage Arcane Charge thresholds (max always 8): T4 at 4, T5 at 8
-  UI.arcaneChargeMarkers = {}
-  do
-    local bar = UI.resBars[2]
-    if bar then
-      UI.arcaneChargeMarkers[1] = makeMarker(bar, 4/8, 1.00, 0.82, 0.22, 0.65, 2)
-      UI.arcaneChargeMarkers[2] = makeMarker(bar, 8/8, 0.75, 0.30, 1.00, 0.80, 3)
-    end
-  end
+  UI.corruptionMarkers   = mkResMarkerSet(UI.resBars[2], "WARLOCK")
+  UI.insanityMarkers     = mkResMarkerSet(UI.resBars[2], "SHADOWPRIEST")
+  UI.arcaneChargeMarkers = mkResMarkerSet(UI.resBars[2], "MAGE")
 
   do
     local bar = UI.resBars[2]
@@ -1591,12 +1573,66 @@ function ns.UI_Init()
 
   refreshPopupToggleBtn()
 
+  -- Aura de distance toggle: spyglass icon just above the popup eye.
+  local auraToggleBtn = CreateFrame("Button", nil, sidebar)
+  auraToggleBtn:SetSize(26, 26)
+  auraToggleBtn:SetPoint("BOTTOM", popupToggleBtn, "TOP", 0, 6)
+  auraToggleBtn:SetFrameLevel(sidebar:GetFrameLevel() + 5)
+  auraToggleBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Spyglass_03")
+  auraToggleBtn:SetHighlightTexture("Interface\\Icons\\INV_Misc_Spyglass_03")
+
+  local function refreshAuraToggleBtn()
+    local D = ns.Distance
+    local lit = D and D.IsOverlayShown and D.IsOverlayShown()
+    local tex = auraToggleBtn:GetNormalTexture()
+    if tex then
+      if lit then
+        tex:SetVertexColor(1.00, 0.82, 0.22, 1)
+        tex:SetDesaturated(false)
+      else
+        tex:SetVertexColor(0.45, 0.40, 0.35, 1)
+        tex:SetDesaturated(true)
+      end
+    end
+  end
+  UI.refreshAuraToggleBtn = refreshAuraToggleBtn
+
+  auraToggleBtn:SetScript("OnClick", function()
+    local D = ns.Distance
+    if D and D.ToggleOverlay then D.ToggleOverlay() end  -- ground aura
+    refreshAuraToggleBtn()
+  end)
+  auraToggleBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("Aura de distance", 1, 0.82, 0.22)
+    GameTooltip:AddLine("Clic : aura au sol autour de votre personnage.", 1, 1, 1, true)
+    local D = ns.Distance
+    if D and D.CATEGORIES and D.RangeLabel then
+      GameTooltip:AddLine(" ")
+      for _, cat in ipairs(D.CATEGORIES) do
+        GameTooltip:AddDoubleLine(cat.label, D.RangeLabel(cat),
+          cat.r, cat.g, cat.b, 0.72, 0.62, 0.50)
+      end
+    end
+    GameTooltip:AddLine(" ")
+    if D and D.IsOverlayAuto and D.IsOverlayAuto() then
+      GameTooltip:AddLine("L'aura suit le zoom et l'inclinaison de la caméra.", 0.60, 0.52, 0.36, true)
+    else
+      GameTooltip:AddLine("Inclinaison manuelle (/go aura auto pour la suivre).", 0.60, 0.52, 0.36, true)
+    end
+    GameTooltip:AddLine("Ajustez avec /go aura taille|aplat|hauteur.", 0.60, 0.52, 0.36)
+    GameTooltip:Show()
+  end)
+  auraToggleBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  refreshAuraToggleBtn()
+
   -- Reset-to-defaults button: text button centred in the sidebar.
   local resetBtn = mkButton(sidebar, "Réinitialiser", SIDEBAR_W - (NAV_PAD * 2), 24, 0, 0, function()
     if StaticPopup_Show then StaticPopup_Show("GROSORTEIL_RESET_DEFAULTS") end
   end)
   resetBtn:ClearAllPoints()
-  resetBtn:SetPoint("BOTTOM", popupToggleBtn, "TOP", 0, 8)
+  resetBtn:SetPoint("BOTTOM", auraToggleBtn, "TOP", 0, 8)
   resetBtn:SetBackdropBorderColor(0.85, 0.30, 0.20, 0.80)
   if resetBtn._fs then
     resetBtn._fs:SetTextColor(1.00, 0.55, 0.40, 1)
@@ -1707,9 +1743,7 @@ function ns.UI_Init()
           UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
           petHp, petMaxHp, 0, tonumber(petMs.hp) or 0
         )
-        local petCap = 1.0
-        if pet.wounds and pet.wounds.hit10 then petCap = 0.25
-        elseif pet.wounds and pet.wounds.hit25 then petCap = 0.50 end
+        local petCap = Shared.WoundCap(pet.wounds)
         UI.hpMarkerCache.baseMaxHp = petMaxHp
         UI.hpMarkerCache.effMaxHp  = petMaxHp
         UI.hpMarkerCache.cap       = petCap
@@ -1744,11 +1778,7 @@ function ns.UI_Init()
         UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
         hpNow, baseMaxHp, s.tempBlock or 0, (s.magicShield and s.magicShield.hp or 0)
       )
-      local cap
-      local w2 = s.wounds
-      if w2 and w2.hit10 then cap = 0.25
-      elseif w2 and w2.hit25 then cap = 0.50
-      else cap = 1.0 end
+      local cap = Shared.WoundCap(s.wounds)
       UI.hpMarkerCache.baseMaxHp = baseMaxHp
       UI.hpMarkerCache.effMaxHp  = baseMaxHp
       UI.hpMarkerCache.cap       = cap
@@ -1789,7 +1819,12 @@ function ns.UI_Show(show)
     if UI.fadeOut then UI.fadeOut:Stop() end
     UI.frame:Show()
   else
-    UI.frame:Hide()
+    -- Fade out instead of vanishing (minimap-button and slash closes land here).
+    if UI.fadeOut and UI.frame:IsShown() and not UI.fadeOut:IsPlaying() then
+      UI.fadeOut:Play()
+    else
+      UI.frame:Hide()
+    end
   end
 end
 

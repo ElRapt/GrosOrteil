@@ -97,6 +97,15 @@ local function buildPayload(src, petSrc, classKey)
   out.stabilise = src.stabilise and true or false
   out.classKey = classKey
 
+  -- Running damage-taken / healing-received counters for the raid-panel group
+  -- meter. History never crosses the wire, so these two numbers are the only
+  -- remote source the meter has.
+  local sm = type(src.meter) == "table" and src.meter or {}
+  out.meter = {
+    dmg  = tonumber(sm.dmg)  or 0,
+    heal = tonumber(sm.heal) or 0,
+  }
+
   -- Player magic shield (mirrors the per-pet block below). Without this peer
   -- popups always show 0 for the player's magic-shield overlay.
   local sms = type(src.magicShield) == "table" and src.magicShield or {}

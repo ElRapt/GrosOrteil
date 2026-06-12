@@ -93,8 +93,9 @@ local function initMinimapIcon()
       end,
       OnTooltipShow = function(tt)
         tt:AddLine("GrosOrteil")
-        tt:AddLine("Clic gauche: afficher/masquer la fenetre", 0.8, 0.8, 0.8)
-        tt:AddLine("Clic droit: panel de raid", 0.8, 0.8, 0.8)
+        tt:AddLine("Clic gauche : afficher/masquer la fenêtre", 0.8, 0.8, 0.8)
+        tt:AddLine("Clic droit : panel de groupe", 0.8, 0.8, 0.8)
+        tt:AddLine("/go help : liste des commandes", 0.6, 0.52, 0.36)
       end,
     })
   end
@@ -133,6 +134,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if ns.Heal_Init then
       ns.Heal_Init()
     end
+    if ns.Distance_Init then
+      ns.Distance_Init()  -- restore the ground aura if it was left enabled
+    end
     initMinimapIcon()
 
     f:UnregisterEvent("ADDON_LOADED")
@@ -140,6 +144,22 @@ f:SetScript("OnEvent", function(_, event, arg1)
 
     _G.SLASH_GROSORTEIL1 = "/grosorteil"
     _G.SLASH_GROSORTEIL2 = "/go"
+
+    local function printHelp()
+      local G, D = "|cFF00FF00", "|cFFB0A08C"
+      print(G .. "GrosOrteil|r — commandes :")
+      print(G .. "/go|r " .. D .. "— affiche/masque la fenêtre principale|r")
+      print(G .. "/go raid|r " .. D .. "— panel de groupe (fiches + compteur)|r")
+      print(G .. "/go aura|r " .. D .. "— aura de distance au sol|r")
+      print(G .. "/go aura auto [on|off]|r " .. D .. "— l'aura suit l'inclinaison de la caméra|r")
+      print(G .. "/go aura taille|aplat|hauteur <valeur>|r " .. D .. "— calibration de l'aura|r")
+      print(G .. "/go pet [on|off|name <NOM>]|r " .. D .. "— familier|r")
+      print(G .. "/go class <CLASSE>|r " .. D .. "— change la classe de la fiche|r")
+      print(G .. "/go clearhistory|r " .. D .. "— vide le journal des évènements|r")
+      print(G .. "/go minimap [show|hide]|r " .. D .. "— icône minimap|r")
+      print(G .. "/go reset|r " .. D .. "— recentre la fenêtre|r")
+    end
+
     _G.SlashCmdList["GROSORTEIL"] = function(msg)
       local raw = (msg or "")
       local cmd, rest = raw:match("^(%S+)%s*(.-)$")
@@ -188,6 +208,34 @@ f:SetScript("OnEvent", function(_, event, arg1)
         end
       elseif cmd == "raid" then
         if ns.RaidPanel then ns.RaidPanel.Toggle() end
+      elseif cmd == "aura" or cmd == "distance" then
+        local sub, val = rest:match("^(%S*)%s*(.-)$")
+        sub = (sub or ""):lower()
+        if sub == "" then
+          if ns.Distance then ns.Distance.ToggleOverlay() end
+        elseif sub == "taille" or sub == "aplat" or sub == "hauteur" then
+          local out = ns.Distance and ns.Distance.SetOverlayOption(sub, tonumber(val))
+          if out then
+            print(string.format("|cFF00FF00GrosOrteil|r aura %s = %.2f", sub, out))
+            if sub == "aplat" then
+              print("|cFF00FF00GrosOrteil|r inclinaison auto desactivee (/go aura auto pour la retablir).")
+            end
+          else
+            print("|cFF00FF00GrosOrteil|r usage: /go aura " .. sub .. " <valeur>")
+          end
+        elseif sub == "auto" then
+          local v = val:lower()
+          local want  -- nil = toggle
+          if v == "on" or v == "oui" then want = true
+          elseif v == "off" or v == "non" then want = false end
+          local state = ns.Distance and ns.Distance.SetOverlayAuto(want)
+          if state ~= nil then
+            print("|cFF00FF00GrosOrteil|r inclinaison auto " .. (state and "activee" or "desactivee")
+              .. (state and " : l'aura suit la camera." or " : reglage manuel via /go aura aplat."))
+          end
+        else
+          print("|cFF00FF00GrosOrteil|r usage: /go aura | /go aura auto [on|off] | /go aura taille|aplat|hauteur <valeur>")
+        end
       elseif cmd == "minimap" then
         local sub = (rest or ""):match("^(%S*)"):lower()
         if sub == "hide" then
@@ -202,8 +250,10 @@ f:SetScript("OnEvent", function(_, event, arg1)
           setMinimapHidden(not db.minimap.hide)
           print("|cFF00FF00GrosOrteil|r icone minimap " .. (db.minimap.hide and "masquee" or "affichee") .. ".")
         end
+      elseif cmd == "help" or cmd == "aide" then
+        printHelp()
       else
-        print("|cFF00FF00GrosOrteil|r commandes : /go (toggle) | /go show | /go hide | /go reset | /go clearhistory | /go class <CLASS> | /go pet | /go minimap [show|hide] | /go raid")
+        print("|cFF00FF00GrosOrteil|r commande inconnue : « " .. cmd .. " ». Tapez /go help pour la liste.")
       end
     end
   end

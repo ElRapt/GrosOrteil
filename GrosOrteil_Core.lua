@@ -163,6 +163,8 @@ local function deepCopyState(s)
   local spb = s.shamanPostureBase
   c.shamanPostureBase = spb and copyKeys(spb, SNAPSHOT_POSTURE_BASE) or nil
   c.wounds = { hit25 = s.wounds.hit25, hit10 = s.wounds.hit10 }
+  local mt = s.meter
+  c.meter = mt and { dmg = mt.dmg or 0, heal = mt.heal or 0 } or nil
   local p = s.pet or {}
   local pc = copyKeys(p, SNAPSHOT_PET_FIELDS)
   local pw = p.wounds or {}
@@ -198,6 +200,13 @@ local function restoreSnapshot(snap)
   s.shamanPostureBase = spb and copyKeys(spb, SNAPSHOT_POSTURE_BASE) or nil
   s.wounds.hit25 = snap.wounds.hit25
   s.wounds.hit10 = snap.wounds.hit10
+  if snap.meter then
+    s.meter = s.meter or {}
+    s.meter.dmg  = snap.meter.dmg  or 0
+    s.meter.heal = snap.meter.heal or 0
+  else
+    s.meter = { dmg = 0, heal = 0 }
+  end
   local p = s.pet; local sp = snap.pet
   for i = 1, #SNAPSHOT_PET_FIELDS do
     local k = SNAPSHOT_PET_FIELDS[i]
@@ -299,10 +308,7 @@ local function pushHistory(entry)
 end
 
 local function getWoundCap(s)
-  local w = s and s.wounds
-  if w and w.hit10 then return 0.25 end
-  if w and w.hit25 then return 0.50 end
-  return 1.0
+  return ns.Shared.WoundCap(s and s.wounds)
 end
 
 local function woundsFromPct(p)
@@ -397,10 +403,7 @@ local function ensurePet(s)
 end
 
 local function getPetWoundCap(p)
-  local w = p and p.wounds
-  if w and w.hit10 then return 0.25 end
-  if w and w.hit25 then return 0.50 end
-  return 1.0
+  return ns.Shared.WoundCap(p and p.wounds)
 end
 
 local function updatePetWoundsSticky(p) if p then applyWounds(p, true)  end end
@@ -478,6 +481,11 @@ function ns.Core_Init()
 
     history = {},
 
+    -- Running totals for the raid-panel group meter (damage taken / healing
+    -- received, character + pet combined). Kept inside the state so undo/redo
+    -- snapshots roll them back together with the HP they explain.
+    meter = { dmg = 0, heal = 0 },
+
     rev = 0,
   }
 
@@ -539,6 +547,11 @@ function ns.Core_Init()
   end
   ensureHistory(db.state)
   ensurePet(db.state)
+
+  -- Meter counters (added later): normalize old saves.
+  if type(db.state.meter) ~= "table" then db.state.meter = {} end
+  db.state.meter.dmg  = tonumber(db.state.meter.dmg)  or 0
+  db.state.meter.heal = tonumber(db.state.meter.heal) or 0
 
   -- Ensure multi-resource fields exist (Warlock/Shadow Priest/Shaman).
   if db.state.res2 == nil then db.state.res2 = 0 end
@@ -769,7 +782,10 @@ function Core.SetStabilise(v)
   local s = Core.state
   if not s then return end
   if (s.hp or 0) > 0 then return end
-  s.stabilise = v and true or false
+  local nv = v and true or false
+  if (not not s.stabilise) == nv then return end
+  s.stabilise = nv
+  pushHistory({ kind = "STABILISE", on = nv })
   bump(); notify()
 end
 
@@ -1177,6 +1193,10 @@ local function applyHit(s, t, rawAmount, opts)
       t.hp = (t.hp or 0) - dmg
       clampHpToEffectiveMax(s)
     end
+    -- Group-meter counter: effective damage taken (same value the history
+    -- entry reports as "Résultat"). Pet hits count toward the owner.
+    if type(s.meter) ~= "table" then s.meter = {} end
+    s.meter.dmg = (s.meter.dmg or 0) + dmg
   end
 
   local entry = {
@@ -1284,6 +1304,20 @@ function Core.HealFrom(amount, healerName)
   applyHeal(s, s, amount, { kind = "HEAL", healer = healerName })
 end
 
+-- Group-meter "Soins" counter: heals GIVEN to others. Credited when a target
+-- accepts a heal-others request and reports back the amount actually applied
+-- (post wound-cap). Self, divine, surgery and pet heals deliberately don't
+-- count — the meter measures help provided to the group.
+function Core.CreditHealGiven(amount)
+  local s = Core.state
+  if not s then return end
+  amount = clampNumber(amount, 0, 1e9) or 0
+  if amount <= 0 then return end
+  if type(s.meter) ~= "table" then s.meter = {} end
+  s.meter.heal = (s.meter.heal or 0) + amount
+  bump(); notify()
+end
+
 function Core.DivineHeal()
   local s = Core.state
   if not s then return end
@@ -1379,11 +1413,14 @@ end
 function Core.RestoreHP()
   local s = Core.state
   if not s then return end
+  local hpBefore = s.hp or 0
   local baseMax = math.max(1, s.maxHp or 1)
   s.hp = baseMax
   clampHpToEffectiveMax(s)
   recomputeWounds(s)
   s.stabilise = nil
+  pushHistory({ kind = "RESTORE_HP",
+                hpBefore = hpBefore, hpAfter = s.hp, maxHp = baseMax })
   bump(); notify()
 end
 
@@ -1404,12 +1441,15 @@ end
 function Core.DailyRegenHP()
   local s = Core.state
   if not s then return end
+  local hpBefore = s.hp or 0
   local baseMax = math.max(1, s.maxHp or 1)
   local gain    = math.floor(baseMax * 0.10 + 0.5)
   s.hp = math.min((s.hp or 0) + gain, baseMax)
   clampHpToEffectiveMax(s)
   recomputeWounds(s)
   if (s.hp or 0) > 0 then s.stabilise = nil end
+  pushHistory({ kind = "DAILY_REGEN_HP",
+                gain = gain, hpBefore = hpBefore, hpAfter = s.hp, maxHp = baseMax })
   bump(); notify()
 end
 
@@ -1417,9 +1457,12 @@ end
 function Core.DailyRegenRes()
   local s = Core.state
   if not s then return end
+  local resBefore = s.res or 0
   local maxRes = math.max(1, s.maxRes or 1)
   local gain   = math.floor(maxRes * 0.20 + 0.5)
   s.res = math.min((s.res or 0) + gain, maxRes)
+  pushHistory({ kind = "DAILY_REGEN_RES",
+                gain = gain, resBefore = resBefore, resAfter = s.res, maxRes = maxRes })
   bump(); notify()
 end
 

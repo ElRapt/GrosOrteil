@@ -14,8 +14,20 @@ local type     = type
 local math     = math
 local tonumber = tonumber
 local string   = string
+local GetTime  = rawget(_G, "GetTime")
 
 local MAX_HEAL = 1000000  -- sanity cap on a single heal
+
+-- No-answer warning: if the target neither accepts nor refuses within this
+-- delay, tell the healer (target offline, addon missing, popup ignored...).
+Heal.RESPONSE_TIMEOUT = 10
+-- Per-sender floor between incoming heal popups, so a misbehaving peer can't
+-- spam StaticPopups.
+Heal.REQUEST_MIN_INTERVAL = 2
+
+local function now()
+  return (GetTime and GetTime()) or 0
+end
 
 -- ── Pure helpers (testable offline) ───────────────────────────────────────────
 
@@ -29,13 +41,73 @@ function Heal.SanitizeAmount(x)
   return n
 end
 
--- Chat line shown to the healer once the target answers.
+-- Chat line shown to the healer once the target answers. An accepted heal
+-- that applied 0 PV (full HP or wound cap) gets its own wording — "accepté
+-- votre soin de 0" read like a bug.
 function Heal.FormatResponseMessage(targetDisplay, accepted, amount)
   local who = targetDisplay or "Quelqu'un"
   if accepted then
+    if (tonumber(amount) or 0) <= 0 then
+      return string.format(
+        "%s a accepté votre soin, mais il n'a eu aucun effet (PV déjà au plafond).", who)
+    end
     return string.format("%s a accepté votre soin de %d.", who, amount or 0)
   end
   return string.format("%s a refusé votre soin de %d.", who, amount or 0)
+end
+
+-- ── Pending requests (healer side) & per-sender throttle (target side) ────────
+
+local function nameKey(name)
+  local Shared = ns.Shared
+  if Shared and Shared.NormalizeNameKey then
+    return Shared.NormalizeNameKey(name)
+  end
+  return type(name) == "string" and name:lower() or nil
+end
+
+local pendingByTarget = {}   -- key → { amount, t }
+local lastRequestFrom = {}   -- key → time of last accepted incoming popup
+
+function Heal.MarkPending(target, amount, t)
+  local k = nameKey(target)
+  if not k then return end
+  pendingByTarget[k] = { amount = amount, t = t or now() }
+end
+
+function Heal.ClearPending(target)
+  local k = nameKey(target)
+  if k then pendingByTarget[k] = nil end
+end
+
+function Heal.HasPending(target)
+  local k = nameKey(target)
+  if not k then return false end
+  return pendingByTarget[k] ~= nil
+end
+
+-- Expire a pending request if its timeout elapsed; returns true when it did.
+-- Safe against early timers (the offline mock fires C_Timer synchronously):
+-- a callback arriving before the deadline is a no-op.
+function Heal.ExpirePending(target, t)
+  local k = nameKey(target)
+  local entry = k and pendingByTarget[k]
+  if not entry then return false end
+  if ((t or now()) - (entry.t or 0)) < Heal.RESPONSE_TIMEOUT then return false end
+  pendingByTarget[k] = nil
+  return true
+end
+
+-- Target side: accept at most one incoming heal popup per sender per
+-- REQUEST_MIN_INTERVAL. Records the accepted time.
+function Heal.ShouldAcceptRequest(sender, t)
+  local k = nameKey(sender)
+  if not k then return false end
+  t = t or now()
+  local last = lastRequestFrom[k]
+  if last and (t - last) < Heal.REQUEST_MIN_INTERVAL then return false end
+  lastRequestFrom[k] = t
+  return true
 end
 
 -- ── Small guarded utilities ───────────────────────────────────────────────────
@@ -56,11 +128,24 @@ end
 -- ── Healer side ───────────────────────────────────────────────────────────────
 
 -- Validate + send a heal request. Returns true if a request went out.
+-- Tracks the request so the healer is warned when no answer ever comes back
+-- (target offline, addon missing, popup ignored).
 function Heal.SendRequest(targetName, amount)
   local amt = Heal.SanitizeAmount(amount)
   if not targetName or targetName == "" or not amt then return false end
   if ns.Comm and ns.Comm.SendHealRequest then
     ns.Comm:SendHealRequest(targetName, amt)
+  end
+  Heal.MarkPending(targetName, amt)
+  local cTimer = rawget(_G, "C_Timer")
+  if cTimer and cTimer.After then
+    cTimer.After(Heal.RESPONSE_TIMEOUT + 0.5, function()
+      if Heal.ExpirePending(targetName) then
+        chat(string.format(
+          "Aucune réponse de %s — addon absent, joueur hors ligne ou demande ignorée.",
+          rpName(targetName)))
+      end
+    end)
   end
   return true
 end
@@ -73,20 +158,28 @@ function Heal.PromptAndSend(targetName)
   show("GROSORTEIL_HEAL_INPUT", rpName(targetName), nil, { name = targetName })
 end
 
--- A response came back from the target.
+-- A response came back from the target. On acceptance the response carries
+-- the amount actually applied (post wound-cap); credit it to our "Soins"
+-- group-meter counter — that counter only tracks heals given to others.
 function Heal:OnResponse(targetName, accepted, amount)
   local _ = self
+  Heal.ClearPending(targetName)
   local amt = Heal.SanitizeAmount(amount) or 0
+  if accepted and amt > 0 and ns.Core and ns.Core.CreditHealGiven then
+    ns.Core.CreditHealGiven(amt)
+  end
   chat(Heal.FormatResponseMessage(rpName(targetName), accepted, amt))
 end
 
 -- ── Target side ───────────────────────────────────────────────────────────────
 
 -- An incoming heal request. (UI; no-op without StaticPopup.)
+-- Per-sender throttled so a misbehaving peer can't spam popups.
 function Heal:OnRequest(healerName, amount)
   local _ = self
   local amt = Heal.SanitizeAmount(amount)
   if not healerName or healerName == "" or not amt then return end
+  if not Heal.ShouldAcceptRequest(healerName) then return end
   local show = rawget(_G, "StaticPopup_Show")
   if not show then return end
   show("GROSORTEIL_HEAL_REQUEST", rpName(healerName), amt,
@@ -94,14 +187,22 @@ function Heal:OnRequest(healerName, amount)
 end
 
 -- Accept: apply the heal locally (same path as a heal Action) + notify healer.
+-- The response reports the HP actually gained (the wound cap may shave the
+-- requested amount) so the healer's meter is credited with real healing.
 function Heal.Accept(healerName, amount)
   local amt = Heal.SanitizeAmount(amount)
   if not amt then return end
+  local applied = amt
   if ns.Core and ns.Core.HealFrom then
+    local s = ns.Core.state
+    local before = s and (s.hp or 0)
     ns.Core.HealFrom(amt, rpName(healerName))
+    if before and s then
+      applied = math.max(0, (s.hp or 0) - before)
+    end
   end
   if ns.Comm and ns.Comm.SendHealResponse then
-    ns.Comm:SendHealResponse(healerName, true, amt)
+    ns.Comm:SendHealResponse(healerName, true, applied)
   end
 end
 

@@ -4,7 +4,8 @@ local _, ns = ...
 local RaidPanel = {}
 ns.RaidPanel = RaidPanel
 
-local Shared = ns.Shared
+local Shared    = ns.Shared
+local RaidMeter = ns.RaidMeter  -- loaded just before this file (see .toc)
 
 local type   = type
 local math   = math
@@ -41,6 +42,14 @@ local CARD_TOP_PAD = 6
 local CARD_BOT_PAD = 7
 local MAX_RES_BARS = 5
 
+-- View switcher (Groupe / Compteur) and the meter view.
+local VIEWTAB_H   = 22
+local METERBAR_H  = 24
+local METER_ROW_H = 24
+local SCROLL_TOP_GROUP = EDGE + 6 + PLAQUE_H + 4 + VIEWTAB_H + PAD
+local SCROLL_TOP_METER = SCROLL_TOP_GROUP + METERBAR_H + 4
+local SCROLL_BOT       = EDGE + WOOD + 3 + FOOTER_H + 4
+
 local HP_COLOR        = { 0.85, 0.16, 0.18 }
 local HP_DEAD_COLOR   = { 0.45, 0.08, 0.09 }
 local PLACEHOLDER_COL = { 0.30, 0.30, 0.32 }
@@ -51,24 +60,9 @@ local CARD_BG         = { 0.085, 0.065, 0.045 }
 local BORDER_AGONIE   = { 0.78, 0.16, 0.13 }
 local BORDER_STAB     = { 0.28, 0.68, 0.30 }
 
--- TRP3 bulletin-board art, used when TRP3 is installed (this addon already
--- integrates with it); Blizzard's neutral parchment is the fallback.
-local TRP3_BG     = "Interface\\AddOns\\totalRP3\\Resources\\UI\\ui-frame-neutral-background"
-local TRP3_WOOD_V = "Interface\\AddOns\\totalRP3\\Resources\\UI\\!ui-frame-wooden-border"
-local TRP3_WOOD_H = "Interface\\AddOns\\totalRP3\\Resources\\UI\\_ui-frame-wooden-border"
-local BLIZZ_BG    = "Interface\\FrameGeneral\\UIFrameNeutralBackground"
+-- HP threshold markers (50% / 25% / 10%) — same definitions everywhere.
+local HP_MARKER_DEFS = Shared.HP_MARKER_DEFS
 
--- HP threshold markers (50% / 25% / 10%) — same definitions as the hover popup.
-local HP_MARKER_DEFS = {
-  { pct = 0.50, r = 1.0, g = 1.0,  b = 1.0,  a = 0.35, w = 2 },
-  { pct = 0.25, r = 1.0, g = 0.65, b = 0.10, a = 0.45, w = 2 },
-  { pct = 0.10, r = 1.0, g = 0.15, b = 0.15, a = 0.55, w = 2 },
-}
-
-local BACKDROP_PANEL = {
-  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-  edgeSize = 16,
-}
 -- Cards are styled as tooltip "notes" pinned on the parchment board.
 local BACKDROP_CARD = {
   bgFile   = "Interface\\Buttons\\WHITE8x8",
@@ -85,35 +79,10 @@ local BACKDROP_PLAQUE = {
 
 -- ── Pure data extraction (testable offline, no WoW frames) ─────────────────────
 
-local function normalizeKey(name)
-  if type(name) ~= "string" then return nil end
-  local base = name:match("^([^%-]+)") or name
-  return base:lower():gsub("%s+", "")
-end
+local normalizeKey = Shared.NormalizeNameKey
 
--- Resource threshold markers per class/idx — mirrors the hover popup exactly.
-local function resMarkerDefs(classKey, idx)
-  if classKey == "WARLOCK" and idx == 2 then        -- Corruption (cap 60)
-    return {
-      { pct = 10/60, r = 0.65, g = 0.95, b = 0.65, a = 0.55, w = 2 },
-      { pct = 25/60, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
-      { pct = 45/60, r = 1.00, g = 0.25, b = 0.25, a = 0.65, w = 3 },
-    }
-  elseif classKey == "SHADOWPRIEST" and idx == 2 then  -- Insanité (cap 25)
-    return {
-      { pct = 4/25,  r = 0.65, g = 0.95, b = 0.65, a = 0.45, w = 2 },
-      { pct = 12/25, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
-      { pct = 20/25, r = 1.00, g = 0.55, b = 0.10, a = 0.60, w = 2 },
-      { pct = 25/25, r = 1.00, g = 0.25, b = 0.25, a = 0.70, w = 3 },
-    }
-  elseif classKey == "MAGE" and idx == 2 then          -- Charge arcanique (cap 8)
-    return {
-      { pct = 4/8, r = 1.00, g = 0.82, b = 0.22, a = 0.65, w = 2 },
-      { pct = 8/8, r = 0.75, g = 0.30, b = 1.00, a = 0.80, w = 3 },
-    }
-  end
-  return {}
-end
+-- Resource threshold markers per class/idx — single source of truth in Shared.
+local resMarkerDefs = Shared.GetResMarkerDefs
 
 local function getDisplayData(name, state)
   if not state then return nil end
@@ -126,10 +95,7 @@ local function getDisplayData(name, state)
     local rk, mk  = Shared.GetKeysForIdx(p.idx)
     local cur     = tonumber(state[rk]) or 0
     local maxv    = tonumber(state[mk]) or 0
-    local dispMax = maxv
-    if     classKey == "WARLOCK"      and p.idx == 2 then dispMax = 60
-    elseif classKey == "SHADOWPRIEST" and p.idx == 2 then dispMax = 25
-    elseif classKey == "MAGE"         and p.idx == 2 then dispMax = 8 end
+    local dispMax = Shared.GetResDisplayMax(classKey, p.idx) or maxv
     if dispMax <= 0 then dispMax = 1 end
     resources[#resources + 1] = {
       label   = p.label or "Ressource",
@@ -217,12 +183,125 @@ local function collectData(members)
   return list
 end
 
+-- ── Pure ordering helpers (drag-to-reorder; testable offline) ──────────────────
+
+-- Move list[fromIdx] so it lands at insertion slot toIdx (slots are positions
+-- in the ORIGINAL list, 1..#list+1). Returns a new list; out-of-range moves
+-- return an unchanged copy.
+local function moveInList(list, fromIdx, toIdx)
+  local out = {}
+  for i, v in ipairs(list or {}) do out[i] = v end
+  local n = #out
+  if type(fromIdx) ~= "number" or fromIdx < 1 or fromIdx > n then return out end
+  if type(toIdx) ~= "number" then return out end
+  if toIdx < 1 then toIdx = 1 elseif toIdx > n + 1 then toIdx = n + 1 end
+  local v = table.remove(out, fromIdx)
+  local insertAt = (toIdx > fromIdx) and (toIdx - 1) or toIdx
+  table.insert(out, insertAt, v)
+  return out
+end
+
+-- Apply a saved order (array of normalized name keys): members whose key
+-- appears in `order` come first, in that sequence; everyone else follows in
+-- roster order. Unknown keys in `order` are ignored.
+local function applySavedOrder(members, order)
+  members = members or {}
+  if type(order) ~= "table" or #order == 0 then return members end
+  local byKey, used, out = {}, {}, {}
+  for _, m in ipairs(members) do
+    local k = normalizeKey(m.name)
+    if k and byKey[k] == nil then byKey[k] = m end
+  end
+  for _, k in ipairs(order) do
+    local m = byKey[k]
+    if m and not used[k] then
+      used[k] = true
+      out[#out + 1] = m
+    end
+  end
+  for _, m in ipairs(members) do
+    local k = normalizeKey(m.name)
+    if not (k and used[k]) then out[#out + 1] = m end
+  end
+  return out
+end
+
+-- Given the displayed card slots ({top=positive offset, h=height}, in order)
+-- and a cursor offset from the content top, return the insertion slot
+-- (1..#slots+1) using the midpoint rule.
+local function dropIndexFromOffset(slots, offsetY)
+  for i, s in ipairs(slots or {}) do
+    if offsetY < (s.top or 0) + (s.h or 0) / 2 then return i end
+  end
+  return #(slots or {}) + 1
+end
+
+-- Saved custom order lives in the per-character DB.
+local function getSavedOrder()
+  local db = ns.GetDB and ns.GetDB()
+  if type(db) == "table" and type(db.raidPanelOrder) == "table" then
+    return db.raidPanelOrder
+  end
+  return nil
+end
+
+local function saveOrder(names)
+  local db = ns.GetDB and ns.GetDB()
+  if type(db) ~= "table" then return end
+  local order = {}
+  for _, n in ipairs(names or {}) do
+    local k = normalizeKey(n)
+    if k then order[#order + 1] = k end
+  end
+  db.raidPanelOrder = order
+end
+
 -- ── Frame layer (WoW-only; lazily built, sections pooled to avoid leaks) ───────
 
-local frame, scrollFrame, content, headerFs, countFs, fadeIn, fadeOut
+local frame, scrollFrame, content, headerFs, countFs, fadeIn, fadeOut, hintFs
 local sectionPool    = {}
 local currentMembers = nil
 local pendingRelayout = false  -- a relayout was requested while in combat
+
+-- View switcher + meter state.
+local currentView    = "group"   -- "group" (cards) | "meter" (damage/heal)
+local meterMode      = "damage"  -- "damage" | "heal"
+local meterBaselines = {}        -- local-only zero points (RaidMeter.Reset)
+local meterContent, meterBar, meterTotalFs, meterEmptyFs
+local meterRowPool = {}
+local viewTabs     = {}
+local modeBtns     = {}
+
+-- Drag-to-reorder state.
+local cardSlots           = {}  -- displayed card geometry, set by layoutSections
+local currentDisplayNames = {}  -- names in displayed order
+local dragging, dropLine, dropSlot
+
+-- Forward declarations: assigned in the lifecycle section below, referenced
+-- from closures created in buildSection/ensureFrame (resolved at call time).
+local relayout, Refresh, applyView, layoutMeter
+local applyFooterHint, styleViewTabs, styleModeBtns
+local startCardDrag, stopCardDrag
+local setScrollGeometry
+
+-- The panel's cache lookup, shared with the meter.
+local function getStateFor(name)
+  local popup = ns.TargetPopup
+  return popup and popup.GetCachedState and popup.GetCachedState(name) or nil
+end
+
+-- The local player's card renders from the same comm cache as everyone else.
+-- Prime it with the live Core state so self-changes show instantly instead of
+-- waiting for the addon-message loopback.
+local function primeSelfCache()
+  local unitName = rawget(_G, "UnitName")
+  local pn = unitName and unitName("player")
+  local Core = ns.Core
+  local popup = ns.TargetPopup
+  if pn and Core and Core.state and popup and popup.InjectState then
+    popup.InjectState(pn, Core.state)
+  end
+end
 
 local InCombatLockdown = rawget(_G, "InCombatLockdown")
 local function inCombat()
@@ -342,6 +421,13 @@ local function buildSection()
   sec:SetScript("PostClick", function(self, button, down)
     if button == "RightButton" and not down then openMemberMenu(self) end
   end)
+  -- Drag-to-reorder: pick the card up and drop it at the gold insertion line.
+  -- A plain click (no movement) still fires the secure target action; the drag
+  -- only starts past the movement threshold. Disabled during combat — secure
+  -- frames can't be re-anchored under lockdown anyway.
+  sec:RegisterForDrag("LeftButton")
+  sec:SetScript("OnDragStart", function(self) if startCardDrag then startCardDrag(self) end end)
+  sec:SetScript("OnDragStop",  function(self) if stopCardDrag  then stopCardDrag(self)  end end)
   sec:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
   local hl = sec.GetHighlightTexture and sec:GetHighlightTexture()
   if hl then hl:SetVertexColor(1.0, 0.95, 0.6, 0.08) end
@@ -564,17 +650,23 @@ end
 local function layoutSections(dataList)
   if not content then return end
   local y = 0
+  local slots, names = {}, {}
   for i, data in ipairs(dataList) do
     local sec = getSection(i)
     local h   = updateSection(sec, data)
+    sec._displayIndex = i
     sec:ClearAllPoints()
     sec:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
     sec:Show()
+    slots[i] = { top = y, h = h }
+    names[i] = data.name
     y = y + h + SECTION_GAP
   end
   for i = #dataList + 1, #sectionPool do
     sectionPool[i]:Hide()
   end
+  cardSlots           = slots  -- drop-line geometry for drag-to-reorder
+  currentDisplayNames = names
   content:SetHeight(math.max(y, 1))
   if countFs then
     countFs:SetText(#dataList == 1 and "1 membre" or (#dataList .. " membres"))
@@ -583,10 +675,6 @@ end
 
 local function ensureFrame()
   if frame then return end
-
-  -- TRP3's bulletin-board art when TRP3 is around (this addon already
-  -- integrates with it); plain warm rails otherwise.
-  local hasTRP3 = rawget(_G, "TRP3_API") ~= nil
 
   frame = CreateFrame("Frame", "GrosOrteilRaidPanel", UIParent, "BackdropTemplate")
   frame:SetSize(PANEL_W, PANEL_H)
@@ -598,59 +686,11 @@ local function ensureFrame()
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", function(f) f:StartMoving() end)
   frame:SetScript("OnDragStop",  function(f) f:StopMovingOrSizing() end)
-  if frame.SetBackdrop then
-    frame:SetBackdrop(BACKDROP_PANEL)
-    frame:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 1)
-  end
 
-  -- Tiled parchment board behind everything (TRP3 tints it 0.6 grey).
-  local board = frame:CreateTexture(nil, "BACKGROUND")
-  board:SetTexture(hasTRP3 and TRP3_BG or BLIZZ_BG, "REPEAT", "REPEAT")
-  board:SetHorizTile(true)
-  board:SetVertTile(true)
-  board:SetPoint("TOPLEFT",     frame, "TOPLEFT",     EDGE, -EDGE)
-  board:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -EDGE, EDGE)
-  board:SetVertexColor(0.60, 0.60, 0.60)
-
-  -- Wooden rails around the board, like TRP3's main frame.
-  if hasTRP3 then
-    local function woodV(point, xOfs, flip)
-      local t = frame:CreateTexture(nil, "BORDER", nil, -3)
-      t:SetTexture(TRP3_WOOD_V, "REPEAT", "REPEAT")
-      t:SetVertTile(true)
-      t:SetWidth(WOOD)
-      t:SetPoint("TOP" .. point,    frame, "TOP" .. point,    xOfs, -EDGE)
-      t:SetPoint("BOTTOM" .. point, frame, "BOTTOM" .. point, xOfs, EDGE)
-      if flip then t:SetTexCoord(0.2265625, 0.0078125, 0, 1)
-      else         t:SetTexCoord(0.0078125, 0.2265625, 0, 1) end
-      t:SetVertexColor(1, 0.8, 0.8)
-    end
-    local function woodH(point, yOfs, top, bottom)
-      local t = frame:CreateTexture(nil, "BORDER", nil, -2)
-      t:SetTexture(TRP3_WOOD_H, "REPEAT", "REPEAT")
-      t:SetHorizTile(true)
-      t:SetHeight(WOOD)
-      t:SetPoint(point .. "LEFT",  frame, point .. "LEFT",  EDGE, yOfs)
-      t:SetPoint(point .. "RIGHT", frame, point .. "RIGHT", -EDGE, yOfs)
-      t:SetTexCoord(0, 1, top, bottom)
-      t:SetVertexColor(1, 0.8, 0.8)
-    end
-    woodV("LEFT",  EDGE, false)
-    woodV("RIGHT", -EDGE, true)
-    woodH("TOP",    -EDGE, 0.484375, 0.921875)
-    woodH("BOTTOM", EDGE,  0.015625, 0.453125)
-  else
-    local function plainRail()
-      local t = frame:CreateTexture(nil, "BORDER", nil, -2)
-      t:SetColorTexture(0.23, 0.16, 0.10, 1)
-      return t
-    end
-    local left, right, topT, botT = plainRail(), plainRail(), plainRail(), plainRail()
-    left:SetPoint("TOPLEFT", EDGE, -EDGE);  left:SetPoint("BOTTOMLEFT", EDGE, EDGE);   left:SetWidth(WOOD)
-    right:SetPoint("TOPRIGHT", -EDGE, -EDGE); right:SetPoint("BOTTOMRIGHT", -EDGE, EDGE); right:SetWidth(WOOD)
-    topT:SetPoint("TOPLEFT", EDGE, -EDGE);  topT:SetPoint("TOPRIGHT", -EDGE, -EDGE);   topT:SetHeight(WOOD)
-    botT:SetPoint("BOTTOMLEFT", EDGE, EDGE); botT:SetPoint("BOTTOMRIGHT", -EDGE, EDGE); botT:SetHeight(WOOD)
-  end
+  -- Bulletin-board skin shared with the main window and the radar:
+  -- parchment + creamy tooltip border + wooden rails + header plaque.
+  Shared.ApplyBoardSkin(frame)
+  Shared.ApplyBoardRails(frame)
 
   -- ESC closes it (standard pattern; taint-safe for a non-protected frame).
   local specials = rawget(_G, "UISpecialFrames")
@@ -658,16 +698,7 @@ local function ensureFrame()
     table.insert(specials, "GrosOrteilRaidPanel")
   end
 
-  -- Header plaque: a dark tooltip-style nameplate pinned over the top rail.
-  local plaque = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-  plaque:SetPoint("TOPLEFT",  frame, "TOPLEFT",  EDGE + 8, -(EDGE + 6))
-  plaque:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(EDGE + 8), -(EDGE + 6))
-  plaque:SetHeight(PLAQUE_H)
-  if plaque.SetBackdrop then
-    plaque:SetBackdrop(BACKDROP_PLAQUE)
-    plaque:SetBackdropColor(0.10, 0.075, 0.05, 0.97)
-    plaque:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 1)
-  end
+  local plaque = Shared.MakePlaque(frame, PLAQUE_H)
 
   headerFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   headerFs:SetPoint("LEFT",  plaque, "LEFT",  10, 0)
@@ -688,30 +719,156 @@ local function ensureFrame()
   countFs:SetTextColor(0.78, 0.66, 0.46, 1)
   countFs:SetText("")
 
-  -- Footer hint just above the bottom rail.
-  local hintFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  -- View switcher pinned under the plaque: Groupe (cards) / Compteur (meter).
+  local tabW = math.floor((SCROLL_W - 6) / 2)
+  local function makeViewTab(label, view, x)
+    local b = CreateFrame("Button", nil, frame, "BackdropTemplate")
+    b:SetSize(tabW, VIEWTAB_H)
+    b:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_X + x, -(EDGE + 6 + PLAQUE_H + 4))
+    if b.SetBackdrop then b:SetBackdrop(BACKDROP_PLAQUE) end
+    local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    fs:SetPoint("CENTER", b, "CENTER", 0, 0)
+    fs:SetShadowColor(0, 0, 0, 0.8)
+    fs:SetShadowOffset(1, -1)
+    fs:SetText(label)
+    b._text = fs
+    b._view = view
+    b:SetScript("OnClick", function()
+      if applyView and currentView ~= view then applyView(view) end
+    end)
+    b:SetScript("OnEnter", function(self)
+      if currentView ~= view then self._text:SetTextColor(1.0, 0.90, 0.50, 1) end
+    end)
+    b:SetScript("OnLeave", function()
+      if styleViewTabs then styleViewTabs() end
+    end)
+    viewTabs[#viewTabs + 1] = b
+  end
+  makeViewTab("Groupe",   "group", 0)
+  makeViewTab("Compteur", "meter", tabW + 6)
+
+  -- Meter controls (meter view only): [Dégâts | Soins] switch, group total,
+  -- and a local reset. Hidden in group view; applyView toggles it.
+  meterBar = CreateFrame("Frame", nil, frame)
+  meterBar:SetPoint("TOPLEFT",  frame, "TOPLEFT",  CONTENT_X, -(SCROLL_TOP_GROUP + 2))
+  meterBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -CONTENT_X, -(SCROLL_TOP_GROUP + 2))
+  meterBar:SetHeight(METERBAR_H - 2)
+  meterBar:Hide()
+
+  local function makeModeBtn(label, mode, x)
+    local b = CreateFrame("Button", nil, meterBar, "BackdropTemplate")
+    b:SetSize(70, METERBAR_H - 4)
+    b:SetPoint("LEFT", meterBar, "LEFT", x, 0)
+    if b.SetBackdrop then b:SetBackdrop(BACKDROP_PLAQUE) end
+    local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    fs:SetPoint("CENTER", b, "CENTER", 0, 0)
+    fs:SetShadowColor(0, 0, 0, 0.8)
+    fs:SetShadowOffset(1, -1)
+    fs:SetText(label)
+    b._text = fs
+    b._mode = mode
+    b:SetScript("OnClick", function()
+      if meterMode ~= mode then
+        meterMode = mode
+        if styleModeBtns then styleModeBtns() end
+        if applyFooterHint then applyFooterHint() end
+        if relayout then relayout() end
+      end
+    end)
+    b:SetScript("OnEnter", function(self)
+      local tip = rawget(_G, "GameTooltip")
+      if not tip then return end
+      tip:SetOwner(self, "ANCHOR_TOP")
+      tip:ClearLines()
+      tip:AddLine(mode == "heal" and "Soins prodigués" or "Dégâts subis",
+        GOLD[1], GOLD[2], GOLD[3])
+      tip:AddLine(mode == "heal"
+        and "Total des soins prodigués aux autres par chaque membre (via Soigner)."
+        or  "Total des dégâts subis par chaque membre (familier inclus).",
+        1, 1, 1, true)
+      tip:Show()
+    end)
+    b:SetScript("OnLeave", function()
+      local tip = rawget(_G, "GameTooltip")
+      if tip then tip:Hide() end
+    end)
+    modeBtns[#modeBtns + 1] = b
+  end
+  makeModeBtn("Dégâts", "damage", 0)
+  makeModeBtn("Soins",  "heal",   74)
+
+  local resetBtn = CreateFrame("Button", nil, meterBar)
+  resetBtn:SetSize(18, 18)
+  resetBtn:SetPoint("RIGHT", meterBar, "RIGHT", -1, 0)
+  resetBtn:SetNormalTexture("Interface\\Buttons\\UI-RefreshButton")
+  resetBtn:SetHighlightTexture("Interface\\Buttons\\UI-RefreshButton")
+  local resetHl = resetBtn.GetHighlightTexture and resetBtn:GetHighlightTexture()
+  if resetHl then resetHl:SetBlendMode("ADD"); resetHl:SetAlpha(0.4) end
+  resetBtn:SetScript("OnClick", function()
+    RaidMeter.Reset(currentMembers or {}, getStateFor, meterBaselines)
+    if relayout then relayout() end
+  end)
+  resetBtn:SetScript("OnEnter", function(self)
+    local tip = rawget(_G, "GameTooltip")
+    if not tip then return end
+    tip:SetOwner(self, "ANCHOR_TOP")
+    tip:ClearLines()
+    tip:AddLine("Remise à zéro", GOLD[1], GOLD[2], GOLD[3])
+    tip:AddLine("Repart de zéro pour vous uniquement — les fiches des autres joueurs ne sont pas modifiées.", 1, 1, 1, true)
+    tip:Show()
+  end)
+  resetBtn:SetScript("OnLeave", function()
+    local tip = rawget(_G, "GameTooltip")
+    if tip then tip:Hide() end
+  end)
+
+  meterTotalFs = meterBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  meterTotalFs:SetPoint("RIGHT", resetBtn, "LEFT", -8, 0)
+  meterTotalFs:SetJustifyH("RIGHT")
+  meterTotalFs:SetTextColor(1.00, 0.84, 0.30, 1)
+  meterTotalFs:SetShadowColor(0, 0, 0, 0.8)
+  meterTotalFs:SetShadowOffset(1, -1)
+  meterTotalFs:SetText("")
+
+  -- Footer hint just above the bottom rail (text set per view/drag state).
+  hintFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   hintFs:SetPoint("BOTTOM", frame, "BOTTOM", 0, EDGE + WOOD + 3)
   hintFs:SetHeight(FOOTER_H)
   hintFs:SetTextColor(0.42, 0.34, 0.25, 1)
-  hintFs:SetText("Clic gauche : cibler  —  Clic droit : actions")
+  hintFs:SetText("Clic g. : cibler  —  Clic d. : actions  —  Glisser : réordonner")
 
-  local scrollTop = EDGE + 6 + PLAQUE_H + PAD
-  local scrollBot = EDGE + WOOD + 3 + FOOTER_H + 4
-  local scrollH   = PANEL_H - scrollTop - scrollBot
   scrollFrame = CreateFrame("ScrollFrame", "GrosOrteilRaidPanelScroll", frame)
-  scrollFrame:SetSize(SCROLL_W, scrollH)
-  scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_X, -scrollTop)
+
+  -- The meter view needs extra headroom for its control bar, so the scroll
+  -- area's top edge moves per view; applyView calls this.
+  setScrollGeometry = function(top)
+    scrollFrame:ClearAllPoints()
+    scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_X, -top)
+    scrollFrame:SetSize(SCROLL_W, PANEL_H - top - SCROLL_BOT)
+  end
+  setScrollGeometry(SCROLL_TOP_GROUP)
 
   content = CreateFrame("Frame", nil, scrollFrame)
   content:SetSize(SCROLL_W, 1)
   scrollFrame:SetScrollChild(content)
 
+  -- Second scroll child for the meter view; applyView swaps them.
+  meterContent = CreateFrame("Frame", nil, scrollFrame)
+  meterContent:SetSize(SCROLL_W, 1)
+  meterContent:Hide()
+
+  meterEmptyFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  meterEmptyFs:SetPoint("CENTER", scrollFrame, "CENTER", 0, 20)
+  meterEmptyFs:SetTextColor(0.55, 0.46, 0.36, 1)
+  meterEmptyFs:Hide()
+
   -- Slim scroll indicator in the gap between the cards and the right rail.
+  -- Anchored to the scroll frame so it follows the per-view geometry.
   local rail = frame:CreateTexture(nil, "ARTWORK")
   rail:SetColorTexture(0, 0, 0, 0.20)
   rail:SetWidth(3)
-  rail:SetPoint("TOPRIGHT",    frame, "TOPRIGHT", -(EDGE + WOOD + 2), -scrollTop)
-  rail:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(EDGE + WOOD + 2), scrollBot)
+  rail:SetPoint("TOPRIGHT",    scrollFrame, "TOPRIGHT", PAD - 2, 0)
+  rail:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", PAD - 2, 0)
   rail:Hide()
   local thumb = frame:CreateTexture(nil, "ARTWORK", nil, 1)
   thumb:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.55)
@@ -743,36 +900,303 @@ local function ensureFrame()
   scrollFrame:SetScript("OnVerticalScroll", updateScrollThumb)
 
   -- Gentle fade-in when the panel opens, fade-out when it closes.
-  if frame.CreateAnimationGroup then
-    fadeIn = frame:CreateAnimationGroup()
-    local a = fadeIn:CreateAnimation("Alpha")
-    a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.18)
-  end
+  fadeIn  = Shared.MakeFadeIn(frame, 0.18)
   fadeOut = Shared.MakeFadeOut(frame, 0.15)
 
   -- Secure section buttons can't be moved/shown/re-attributed in combat, so a
-  -- relayout requested during combat is deferred until combat ends.
+  -- relayout requested during combat is deferred until combat ends. Roster
+  -- changes re-pull the member list so joins/leaves show without reopening.
   frame:RegisterEvent("PLAYER_REGEN_ENABLED")
-  frame:SetScript("OnEvent", function()
-    if pendingRelayout and frame:IsShown() then
+  frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+  frame:SetScript("OnEvent", function(_, event)
+    if not frame:IsShown() then return end
+    if event == "GROUP_ROSTER_UPDATE" then
+      if Refresh then Refresh() end
+      return
+    end
+    if pendingRelayout then
       pendingRelayout = false
       layoutSections(collectData(currentMembers))
     end
   end)
+
+  -- Live self-updates: peers learn about our changes via comm, but locally we
+  -- prime our own cache entry straight from Core so the panel and the meter
+  -- react instantly to every change of the local sheet.
+  if ns.Core and ns.Core.OnChange then
+    ns.Core.OnChange(function()
+      if frame:IsShown() then
+        primeSelfCache()
+        if relayout then relayout() end
+      end
+    end)
+  end
+
+  applyView(currentView)
+end
+
+-- ── Meter view (plain frames — no secure buttons, safe to relayout anywhere) ───
+
+-- "1234567" → "1 234 567" (French thousands separator).
+local function fmtInt(n)
+  n = math.floor((tonumber(n) or 0) + 0.5)
+  local s = tostring(n):reverse():gsub("(%d%d%d)", "%1 "):reverse()
+  return (s:gsub("^%s+", ""))
+end
+
+local function getMeterRow(i)
+  local row = meterRowPool[i]
+  if row then return row end
+  row = CreateFrame("Frame", nil, meterContent, "BackdropTemplate")
+  row:SetSize(SCROLL_W, METER_ROW_H)
+  if row.SetBackdrop then
+    row:SetBackdrop(BACKDROP_CARD)
+    row:SetBackdropColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 0.92)
+    row:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+  end
+  -- Class-colored fill, proportional to the top member's value.
+  local fill = row:CreateTexture(nil, "BORDER")
+  fill:SetTexture("Interface\\Buttons\\WHITE8x8")
+  fill:SetPoint("TOPLEFT",    row, "TOPLEFT",    3, -3)
+  fill:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 3, 3)
+  row.fill = fill
+  local icon = row:CreateTexture(nil, "ARTWORK")
+  icon:SetSize(16, 16)
+  icon:SetPoint("LEFT", row, "LEFT", 8, 0)
+  row.icon = icon
+  local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  value:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+  value:SetJustifyH("RIGHT")
+  value:SetShadowColor(0, 0, 0, 0.9)
+  value:SetShadowOffset(1, -1)
+  row.value = value
+  local name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  name:SetPoint("LEFT",  icon,  "RIGHT", 5, 0)
+  name:SetPoint("RIGHT", value, "LEFT", -6, 0)
+  name:SetJustifyH("LEFT")
+  name:SetShadowColor(0, 0, 0, 0.9)
+  name:SetShadowOffset(1, -1)
+  row.name = name
+  meterRowPool[i] = row
+  return row
+end
+
+layoutMeter = function()
+  if not meterContent then return end
+  local result = RaidMeter.BuildRows(currentMembers or {}, getStateFor, meterBaselines, meterMode)
+  local rows  = result.rows
+  local fullW = SCROLL_W - 6
+  local y = 0
+  for i, r in ipairs(rows) do
+    local row = getMeterRow(i)
+    local style = Shared.CLASS_STYLES and Shared.CLASS_STYLES[r.classKey]
+    local cr, cg, cb
+    if style then cr, cg, cb = style.r, style.g, style.b
+    else cr, cg, cb = NAME_DEFAULT[1], NAME_DEFAULT[2], NAME_DEFAULT[3] end
+    if r.classKey ~= "" then
+      Shared.SetClassEmblem(row.icon, r.classKey)
+      if row.icon.SetDesaturated then row.icon:SetDesaturated(false) end
+    else
+      row.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+      row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+      if row.icon.SetDesaturated then row.icon:SetDesaturated(true) end
+    end
+    row.name:SetText(string.format("%d.  %s", i, resolveDisplayName(r.name)))
+    row.name:SetTextColor(cr, cg, cb, 1)
+    row.value:SetText(string.format("%s — %d%%", fmtInt(r.value), math.floor(r.share * 100 + 0.5)))
+    row.value:SetTextColor(0.95, 0.90, 0.75, 1)
+    local w = (result.maxValue > 0) and math.floor(fullW * (r.value / result.maxValue)) or 0
+    if w < 1 then w = 1 end
+    row.fill:SetWidth(w)
+    row.fill:SetVertexColor(cr, cg, cb, 0.28)
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", meterContent, "TOPLEFT", 0, -y)
+    row:Show()
+    y = y + METER_ROW_H + 3
+  end
+  for i = #rows + 1, #meterRowPool do meterRowPool[i]:Hide() end
+  meterContent:SetHeight(math.max(y, 1))
+  if meterTotalFs then
+    meterTotalFs:SetText("Total : " .. fmtInt(result.total))
+  end
+  if meterEmptyFs then
+    if #rows == 0 then
+      meterEmptyFs:SetText(meterMode == "heal"
+        and "Aucun soin prodigué pour l'instant."
+        or  "Aucun dégât enregistré pour l'instant.")
+      meterEmptyFs:Show()
+    else
+      meterEmptyFs:Hide()
+    end
+  end
+  if countFs and currentMembers then
+    local n = #currentMembers
+    countFs:SetText(n == 1 and "1 membre" or (n .. " membres"))
+  end
+end
+
+-- ── View switching ─────────────────────────────────────────────────────────────
+
+styleViewTabs = function()
+  for _, b in ipairs(viewTabs) do
+    local active = (b._view == currentView)
+    if b.SetBackdropColor then
+      b:SetBackdropColor(0.10, 0.075, 0.05, active and 0.97 or 0.55)
+      if active then
+        b:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
+      else
+        b:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+      end
+    end
+    if active then b._text:SetTextColor(1.00, 0.84, 0.30, 1)
+    else           b._text:SetTextColor(0.62, 0.53, 0.42, 1) end
+  end
+end
+
+styleModeBtns = function()
+  for _, b in ipairs(modeBtns) do
+    local active = (b._mode == meterMode)
+    if b.SetBackdropColor then
+      b:SetBackdropColor(0.10, 0.075, 0.05, active and 0.97 or 0.45)
+      if active then
+        b:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
+      else
+        b:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+      end
+    end
+    if active then b._text:SetTextColor(1.00, 0.84, 0.30, 1)
+    else           b._text:SetTextColor(0.62, 0.53, 0.42, 1) end
+  end
+end
+
+applyFooterHint = function()
+  if not hintFs then return end
+  if dragging then
+    hintFs:SetText("Relâchez pour déposer la fiche")
+  elseif currentView == "meter" then
+    hintFs:SetText(meterMode == "heal"
+      and "Soins prodigués aux autres, par membre"
+      or  "Dégâts subis par membre, familier inclus")
+  else
+    hintFs:SetText("Clic g. : cibler  —  Clic d. : actions  —  Glisser : réordonner")
+  end
+end
+
+applyView = function(view)
+  currentView = (view == "meter") and "meter" or "group"
+  local isMeter = (currentView == "meter")
+  if setScrollGeometry then
+    setScrollGeometry(isMeter and SCROLL_TOP_METER or SCROLL_TOP_GROUP)
+  end
+  if meterBar then meterBar:SetShown(isMeter) end
+  if scrollFrame and content and meterContent then
+    scrollFrame:SetScrollChild(isMeter and meterContent or content)
+    content:SetShown(not isMeter)
+    meterContent:SetShown(isMeter)
+    scrollFrame:SetVerticalScroll(0)
+  end
+  if meterEmptyFs and not isMeter then meterEmptyFs:Hide() end
+  if headerFs then
+    headerFs:SetText(isMeter and "Compteur du Groupe" or "Ressources du Groupe")
+  end
+  styleViewTabs()
+  styleModeBtns()
+  applyFooterHint()
+  relayout()
+end
+
+-- ── Drag-to-reorder (group view) ───────────────────────────────────────────────
+
+local function cursorOffsetInContent()
+  local getCursor = rawget(_G, "GetCursorPosition")
+  if not (getCursor and content) then return 0 end
+  local _, cy = getCursor()
+  local scale = (content.GetEffectiveScale and content:GetEffectiveScale()) or 1
+  if not scale or scale == 0 then scale = 1 end
+  local top = (content.GetTop and content:GetTop()) or 0
+  return top - cy / scale
+end
+
+local function updateDropLine()
+  if not (dragging and dropLine) then return end
+  dropSlot = dropIndexFromOffset(cardSlots, cursorOffsetInContent())
+  local y
+  if dropSlot <= #cardSlots then
+    y = cardSlots[dropSlot].top - math.floor(SECTION_GAP / 2) - 1
+  elseif #cardSlots > 0 then
+    local last = cardSlots[#cardSlots]
+    y = last.top + last.h + math.floor(SECTION_GAP / 2)
+  else
+    y = 0
+  end
+  if y < 0 then y = 0 end
+  dropLine:ClearAllPoints()
+  dropLine:SetPoint("TOPLEFT",  content, "TOPLEFT",  1, -y)
+  dropLine:SetPoint("TOPRIGHT", content, "TOPRIGHT", -1, -y)
+end
+
+startCardDrag = function(sec)
+  if dragging or inCombat() or currentView ~= "group" then return end
+  if not (sec and sec._displayIndex) then return end
+  dragging = sec
+  dropSlot = sec._displayIndex
+  sec:SetAlpha(0.45)
+  if not dropLine then
+    -- Hosted on a raised frame so the line draws above the cards (a parent's
+    -- own textures always render below its child frames).
+    local host = CreateFrame("Frame", nil, content)
+    host:SetAllPoints(content)
+    host:SetFrameLevel((content:GetFrameLevel() or 0) + 30)
+    dropLine = host:CreateTexture(nil, "OVERLAY")
+    dropLine:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.90)
+    dropLine:SetHeight(2)
+  end
+  dropLine:Show()
+  frame:SetScript("OnUpdate", updateDropLine)
+  updateDropLine()
+  applyFooterHint()
+end
+
+stopCardDrag = function(sec)
+  if dragging ~= sec then return end
+  dragging = nil
+  frame:SetScript("OnUpdate", nil)
+  if dropLine then dropLine:Hide() end
+  local fromIdx = sec._displayIndex
+  if fromIdx and dropSlot and not inCombat() then
+    saveOrder(moveInList(currentDisplayNames, fromIdx, dropSlot))
+    currentMembers = applySavedOrder(currentMembers or {}, getSavedOrder())
+  end
+  applyFooterHint()
+  relayout()  -- restores the dragged card's alpha via updateSection
 end
 
 -- ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-local function relayout()
+relayout = function()
   if not frame then return end
+  if currentView == "meter" then
+    layoutMeter()
+    return
+  end
   if inCombat() then pendingRelayout = true; return end
   layoutSections(collectData(currentMembers))
 end
 
-local function Refresh()
-  currentMembers = getRaidMembers()
+-- GROUP_ROSTER_UPDATE fires in bursts while a raid forms; one state request
+-- per member every few seconds is plenty (peers throttle responses anyway).
+local REQUEST_BURST_COOLDOWN = 3
+local lastRequestBurst = 0
+
+Refresh = function()
+  currentMembers = applySavedOrder(getRaidMembers(), getSavedOrder())
+  primeSelfCache()
   -- Fire-and-forget fresh requests; replies refresh rows via OnStateArrived.
-  if ns.Comm and ns.Comm.RequestState then
+  local GetTime = rawget(_G, "GetTime")
+  local now = (GetTime and GetTime()) or 0
+  if ns.Comm and ns.Comm.RequestState
+      and (now - lastRequestBurst) >= REQUEST_BURST_COOLDOWN then
+    lastRequestBurst = now
     for _, m in ipairs(currentMembers) do
       ns.Comm:RequestState(m.name)
     end
@@ -824,11 +1248,16 @@ function RaidPanel.Init()
 end
 
 -- Test handles (pure functions, no WoW frames required)
-RaidPanel._getDisplayData = getDisplayData
-RaidPanel._getRaidMembers = getRaidMembers
-RaidPanel._collectData    = collectData
-RaidPanel._resMarkerDefs  = resMarkerDefs
-RaidPanel._normalizeKey   = normalizeKey
+RaidPanel._getDisplayData      = getDisplayData
+RaidPanel._getRaidMembers      = getRaidMembers
+RaidPanel._collectData         = collectData
+RaidPanel._resMarkerDefs       = resMarkerDefs
+RaidPanel._normalizeKey        = normalizeKey
+RaidPanel._moveInList          = moveInList
+RaidPanel._applySavedOrder     = applySavedOrder
+RaidPanel._dropIndexFromOffset = dropIndexFromOffset
+RaidPanel._saveOrder           = saveOrder
+RaidPanel._getSavedOrder       = getSavedOrder
 
 function ns.RaidPanel_Init()
   RaidPanel.Init()

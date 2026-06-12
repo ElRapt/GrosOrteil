@@ -250,6 +250,41 @@ function History.FormatEntry(e)
 				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
 			})
 		)
+	elseif e.kind == "RESTORE_HP" then
+		return table.concat({
+			prefix("PV restaurés", COLORS.HEAL),
+			sep({
+				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+			}),
+		}, "\n")
+	elseif e.kind == "DAILY_REGEN_HP" then
+		return table.concat({
+			sep({
+				prefix("Régén. quotidienne PV", COLORS.HEAL),
+				"Valeur " .. fmtInt(e.gain),
+			}),
+			sep({
+				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+			}),
+		}, "\n")
+	elseif e.kind == "DAILY_REGEN_RES" then
+		return table.concat({
+			sep({
+				prefix("Régén. quotidienne mystique", COLORS.DIVINE),
+				"Valeur " .. fmtInt(e.gain),
+			}),
+			sep({
+				"Avant " .. colorize(fmtInt(e.resBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.resAfter), COLORS.RESULT),
+			}),
+		}, "\n")
+	elseif e.kind == "STABILISE" then
+		if e.on then
+			return prefix("État : STABILISÉ", COLORS.HEAL)
+		end
+		return prefix("État : EN AGONIE", COLORS.DAMAGE)
 	end
 
 	return nil

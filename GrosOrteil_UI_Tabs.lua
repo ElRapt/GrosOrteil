@@ -85,6 +85,20 @@ function ns.UI_BuildFicheTab(ctx)
   local function doDmgTrue()  Core.DamageTrue(ctx.getNumber(actValEB) or 0) end
   local function doHeal()     Core.Heal(ctx.getNumber(actValEB) or 0) end
 
+  -- Hover help on a styled button (title + wrapped description).
+  local function addTip(btn, title, desc)
+    btn:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_TOP")
+      GameTooltip:ClearLines()
+      GameTooltip:AddLine(title, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+      GameTooltip:AddLine(desc, 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    return btn
+  end
+  ctx.addTip = addTip
+
   -- Scroll frame
   local paramSF = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
   paramSF:SetPoint("TOPLEFT",     page, "TOPLEFT",     0,   0)
@@ -291,18 +305,33 @@ function ns.UI_BuildFicheTab(ctx)
     mkSectionHeader("Actions", -402)
     lbl("Valeur", 0, -430)
     actValEB = edt(120, 60, -428, nil)
-    btn("Dégâts (armure)", 210, 0,   -462, doDmgArmor)
-    btn("Dégâts (bruts)",  210, 230, -462, doDmgTrue)
-    btn("Soins",              210, 0,   -500, doHeal)
-    btn("Soins divins (75%)", 210, 230, -500, function() Core.DivineHeal() end)
-    btn("Chirurgie (50%)",    210, 0,   -538, function() Core.Surgery() end)
+    addTip(btn("Dégâts (armure)", 210, 0,   -462, doDmgArmor),
+      "Dégâts (armure)",
+      "Subit la valeur en dégâts : esquive, blocage et bouclier magique d'abord, "
+        .. "puis réduction par l'armure totale (armure + invul. + tempo.).")
+    addTip(btn("Dégâts (bruts)",  210, 230, -462, doDmgTrue),
+      "Dégâts (bruts)",
+      "Dégâts ignorant l'armure normale — seuls l'esquive, le bouclier magique, "
+        .. "l'armure invulnérable et temporaire s'appliquent.")
+    addTip(btn("Soins",              210, 0,   -500, doHeal),
+      "Soins",
+      "Rend la valeur en PV, dans la limite du plafond de blessure "
+        .. "(50 % après une blessure grave, 25 % après une blessure critique).")
+    addTip(btn("Soins divins (75%)", 210, 230, -500, function() Core.DivineHeal() end),
+      "Soins divins",
+      "Rend 75 % du max de PV, en ignorant les plafonds de blessure.")
+    addTip(btn("Chirurgie (50%)",    210, 0,   -538, function() Core.Surgery() end),
+      "Chirurgie",
+      "Rend 50 % du max de PV, en ignorant les plafonds de blessure.")
     mkSep(-580)
 
     -- Blocage
     mkSectionHeader("Blocage", -592)
     lbl("Blocage", 0, -618)
     blockEB = edt(110, 162, -616, applyAllArmor)
-    btn("Réinit.", 100, 284, -616, function() Core.ResetTempBlock() end)
+    addTip(btn("Réinit.", 100, 284, -616, function() Core.ResetTempBlock() end),
+      "Réinitialiser le blocage",
+      "Remet le blocage temporaire à zéro.")
     mkSep(-652)
 
     -- Boucliers magiques: 1x3 grid on PV row (cur | max | Réinit); col1 alignment elsewhere.
@@ -844,23 +873,32 @@ function ns.UI_BuildPetFicheTab(ctx)
   mkLabel(aPetVal, "Valeur", 0, -2)
   petActionValEB = mkEdit(aPetVal, 80, 20, 60, 0)
   local aPetBtns1 = mkRowAnchor(petPane, PET_ROW_W, -378)
-  petDmgArmorBtn = mkButton(aPetBtns1, "Dégâts (armure)", 180, 22, 0,   0, function()
+  ---@diagnostic disable-next-line: unused-vararg
+  local addTip = ctx.addTip or function(b, ...) return b end
+  petDmgArmorBtn = addTip(mkButton(aPetBtns1, "Dégâts (armure)", 180, 22, 0,   0, function()
     if Core and Core.PetDamageWithArmor then Core.PetDamageWithArmor(ctx.getNumber(petActionValEB) or 0) end
-  end)
-  petDmgTrueBtn = mkButton(aPetBtns1, "Dégâts (bruts)", 180, 22, 200, 0, function()
+  end), "Dégâts (armure)",
+    "Le familier subit la valeur en dégâts : esquive et bouclier magique d'abord, "
+      .. "puis réduction par l'armure totale.")
+  petDmgTrueBtn = addTip(mkButton(aPetBtns1, "Dégâts (bruts)", 180, 22, 200, 0, function()
     if Core and Core.PetDamageTrue then Core.PetDamageTrue(ctx.getNumber(petActionValEB) or 0) end
-  end)
+  end), "Dégâts (bruts)",
+    "Dégâts ignorant l'armure normale du familier — seuls l'esquive, le bouclier "
+      .. "magique, l'armure invulnérable et temporaire s'appliquent.")
   local aPetBtns2 = mkRowAnchor(petPane, PET_ROW_W, -406)
-  petHealBtn = mkButton(aPetBtns2, "Soins", 180, 22, 0, 0, function()
+  petHealBtn = addTip(mkButton(aPetBtns2, "Soins", 180, 22, 0, 0, function()
     if Core and Core.PetHeal then Core.PetHeal(ctx.getNumber(petActionValEB) or 0) end
-  end)
-  petDivineBtn = mkButton(aPetBtns2, "Soins divins (75%)", 180, 22, 200, 0, function()
+  end), "Soins",
+    "Rend la valeur en PV au familier, dans la limite du plafond de blessure.")
+  petDivineBtn = addTip(mkButton(aPetBtns2, "Soins divins (75%)", 180, 22, 200, 0, function()
     if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
-  end)
+  end), "Soins divins",
+    "Rend 75 % du max de PV du familier, en ignorant les plafonds de blessure.")
   local aPetBtns3 = mkRowAnchor(petPane, PET_ROW_W, -434)
-  petSurgeryBtn = mkButton(aPetBtns3, "Chirurgie (50%)", 180, 22, 0, 0, function()
+  petSurgeryBtn = addTip(mkButton(aPetBtns3, "Chirurgie (50%)", 180, 22, 0, 0, function()
     if Core and Core.PetSurgery then Core.PetSurgery() end
-  end)
+  end), "Chirurgie",
+    "Rend 50 % du max de PV du familier, en ignorant les plafonds de blessure.")
 
   petPane:SetHeight(480)
 
@@ -1125,6 +1163,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
       end
       hideMarkers(UI.corruptionMarkers)
       hideMarkers(UI.insanityMarkers)
+      hideMarkers(UI.arcaneChargeMarkers)
       UI.resAnchor = hpBar
       applyContentHostLayout(hpBar, 0)
       if UI.syncHistoryWidth then UI.syncHistoryWidth() end
