@@ -1956,10 +1956,10 @@ T.describe("Heal entry recorded fields", function()
 end)
 
 -- ────────────────────────────────────────────────────────────────────
--- Pet PetRestoreHP / PetDailyRegenHP push entries (latent format gap)
+-- Pet PetRestoreHP / PetDailyRegenHP push entries
 -- ────────────────────────────────────────────────────────────────────
 
-T.describe("Pet restore actions push entries (kind not formatted by History)", function()
+T.describe("Pet restore actions push entries", function()
   T.it("PetRestoreHP appends an entry with kind=RESTORE_HP and subject=PET", function()
     reset()
     Core.SetPetEnabled(true); Core.SetPetHP(5, 20)
@@ -1976,35 +1976,88 @@ T.describe("Pet restore actions push entries (kind not formatted by History)", f
     T.assertEq(last.kind, "DAILY_REGEN_HP")
     T.assertEq(last.subject, "PET")
   end)
-  T.it("History.FormatEntry returns nil for these kinds (formatter gap)", function()
-    -- This locks in the current behavior so we notice if the formatter is later extended.
-    T.assertNil(ns.History.FormatEntry({ kind = "RESTORE_HP", subject = "PET" }))
-    T.assertNil(ns.History.FormatEntry({ kind = "DAILY_REGEN_HP", subject = "PET" }))
+  T.it("History.FormatEntry renders these kinds (journal shows pet restores)", function()
+    local r = ns.History.FormatEntry({ kind = "RESTORE_HP", subject = "PET",
+                                       hpBefore = 5, hpAfter = 20, maxHp = 20 })
+    T.assertNotNil(r)
+    T.assertTrue(r:find("%[Familier%]") ~= nil)
+    local d = ns.History.FormatEntry({ kind = "DAILY_REGEN_HP", subject = "PET",
+                                       gain = 2, hpBefore = 5, hpAfter = 7, maxHp = 20 })
+    T.assertNotNil(d)
   end)
 end)
 
 -- ────────────────────────────────────────────────────────────────────
--- Player RestoreHP / DailyRegen* do NOT push history (different behavior)
+-- Player RestoreHP / DailyRegen* log to history (same as the pet variants)
 -- ────────────────────────────────────────────────────────────────────
 
-T.describe("Player regen does not log to history (intentional)", function()
-  T.it("RestoreHP does not push", function()
+T.describe("Player regen/restore logs to history", function()
+  T.it("RestoreHP pushes RESTORE_HP with before/after HP", function()
     reset()
+    Core.SetHP(10, 100)
     local n = #Core.state.history
     Core.RestoreHP()
-    T.assertEq(#Core.state.history, n)
+    T.assertEq(#Core.state.history, n + 1)
+    local h = Core.state.history[1]
+    T.assertEq(h.kind, "RESTORE_HP")
+    T.assertEq(h.hpBefore, 10)
+    T.assertEq(h.hpAfter, 100)
+    T.assertNil(h.subject)  -- character entry, not PET
   end)
-  T.it("DailyRegenHP does not push", function()
+  T.it("DailyRegenHP pushes DAILY_REGEN_HP with the gain", function()
     reset()
+    Core.SetHP(10, 100)
     local n = #Core.state.history
     Core.DailyRegenHP()
-    T.assertEq(#Core.state.history, n)
+    T.assertEq(#Core.state.history, n + 1)
+    local h = Core.state.history[1]
+    T.assertEq(h.kind, "DAILY_REGEN_HP")
+    T.assertEq(h.gain, 10)
+    T.assertEq(h.hpAfter, 20)
   end)
-  T.it("DailyRegenRes does not push", function()
+  T.it("DailyRegenRes pushes DAILY_REGEN_RES with before/after resource", function()
     reset()
+    Core.SetRes(5, 50)
     local n = #Core.state.history
     Core.DailyRegenRes()
+    T.assertEq(#Core.state.history, n + 1)
+    local h = Core.state.history[1]
+    T.assertEq(h.kind, "DAILY_REGEN_RES")
+    T.assertEq(h.gain, 10)
+    T.assertEq(h.resBefore, 5)
+    T.assertEq(h.resAfter, 15)
+  end)
+end)
+
+-- ────────────────────────────────────────────────────────────────────
+-- SetStabilise logs state changes (and only changes)
+-- ────────────────────────────────────────────────────────────────────
+
+T.describe("Core.SetStabilise history entries", function()
+  T.it("pushes STABILISE on=true when stabilising", function()
+    reset()
+    Core.SetHP(0, 100)
+    local n = #Core.state.history
+    Core.SetStabilise(true)
+    T.assertEq(#Core.state.history, n + 1)
+    T.assertEq(Core.state.history[1].kind, "STABILISE")
+    T.assertEq(Core.state.history[1].on, true)
+  end)
+  T.it("repeating the same value pushes nothing", function()
+    reset()
+    Core.SetHP(0, 100)
+    Core.SetStabilise(true)
+    local n = #Core.state.history
+    Core.SetStabilise(true)
     T.assertEq(#Core.state.history, n)
+  end)
+  T.it("toggling back pushes on=false", function()
+    reset()
+    Core.SetHP(0, 100)
+    Core.SetStabilise(true)
+    Core.SetStabilise(false)
+    T.assertEq(Core.state.history[1].kind, "STABILISE")
+    T.assertEq(Core.state.history[1].on, false)
   end)
 end)
 
@@ -2175,7 +2228,7 @@ T.describe("Core.RegenParTour", function()
     Core.RegenParTour()
     T.assertEq(Core.state.hp, 10)
   end)
-  T.it("logs a HEAL history entry (unlike DailyRegenHP)", function()
+  T.it("logs a HEAL history entry", function()
     reset()
     Core.SetHP(10, 100)
     Core.SetRegenParTour(5)

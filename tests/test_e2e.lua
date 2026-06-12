@@ -180,8 +180,9 @@ T.describe("E2E play session", function()
     Core.SetHP(0, Core.state.maxHp)
     Core.DailyRegenHP(); Core.DailyRegenHP(); Core.DailyRegenHP()
     T.assertTrue(Core.state.hp > 0)
-    -- Player regen does not log to history.
-    T.assertEq(#Core.state.history, 0, "DailyRegenHP does not log history")
+    -- Each daily regen is journaled.
+    T.assertEq(#Core.state.history, 3, "DailyRegenHP logs one entry per use")
+    T.assertEq(Core.state.history[1].kind, "DAILY_REGEN_HP")
     roundtripCheck("step10-regen")
 
     -- ─── Step 11: full-frame popup echo across the wire ──────────

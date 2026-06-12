@@ -146,6 +146,48 @@ T.describe("History.FormatEntry extra kinds", function()
   end)
 end)
 
+T.describe("History.FormatEntry restore/regen/stabilise kinds", function()
+  T.it("formats RESTORE_HP with before/after", function()
+    local line = History.FormatEntry({
+      kind = "RESTORE_HP", hpBefore = 10, hpAfter = 100, maxHp = 100,
+    })
+    T.assertNotNil(line)
+    T.assertTrue(line:find("PV restaurés") ~= nil)
+    T.assertTrue(line:find("Avant") ~= nil)
+    T.assertTrue(line:find("Après") ~= nil)
+  end)
+  T.it("formats DAILY_REGEN_HP with the gain", function()
+    local line = History.FormatEntry({
+      kind = "DAILY_REGEN_HP", gain = 10, hpBefore = 10, hpAfter = 20, maxHp = 100,
+    })
+    T.assertNotNil(line)
+    T.assertTrue(line:find("Régén. quotidienne PV") ~= nil)
+    T.assertTrue(line:find("10") ~= nil)
+  end)
+  T.it("formats DAILY_REGEN_RES with resource before/after", function()
+    local line = History.FormatEntry({
+      kind = "DAILY_REGEN_RES", gain = 4, resBefore = 5, resAfter = 9, maxRes = 20,
+    })
+    T.assertNotNil(line)
+    T.assertTrue(line:find("mystique") ~= nil)
+  end)
+  T.it("formats STABILISE on and off", function()
+    local onLine = History.FormatEntry({ kind = "STABILISE", on = true })
+    T.assertNotNil(onLine)
+    T.assertTrue(onLine:find("STABILISÉ") ~= nil)
+    local offLine = History.FormatEntry({ kind = "STABILISE", on = false })
+    T.assertNotNil(offLine)
+    T.assertTrue(offLine:find("AGONIE") ~= nil)
+  end)
+  T.it("prefixes [Familier] on pet RESTORE_HP entries", function()
+    local line = History.FormatEntry({
+      kind = "RESTORE_HP", subject = "PET", hpBefore = 1, hpAfter = 20, maxHp = 20,
+    })
+    T.assertNotNil(line)
+    T.assertTrue(line:find("%[Familier%]") ~= nil)
+  end)
+end)
+
 -- ────────────────────────────────────────────────────────────────────
 -- Defensive
 -- ────────────────────────────────────────────────────────────────────
