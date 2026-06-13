@@ -51,7 +51,6 @@ local SOURCES = {
   "GrosOrteil_Heal.lua",
   "GrosOrteil_RaidMeter.lua",
   "GrosOrteil_RaidPanel.lua",
-  "GrosOrteil_Distance.lua",
 }
 
 function M.load()

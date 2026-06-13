@@ -1573,66 +1573,12 @@ function ns.UI_Init()
 
   refreshPopupToggleBtn()
 
-  -- Aura de distance toggle: spyglass icon just above the popup eye.
-  local auraToggleBtn = CreateFrame("Button", nil, sidebar)
-  auraToggleBtn:SetSize(26, 26)
-  auraToggleBtn:SetPoint("BOTTOM", popupToggleBtn, "TOP", 0, 6)
-  auraToggleBtn:SetFrameLevel(sidebar:GetFrameLevel() + 5)
-  auraToggleBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Spyglass_03")
-  auraToggleBtn:SetHighlightTexture("Interface\\Icons\\INV_Misc_Spyglass_03")
-
-  local function refreshAuraToggleBtn()
-    local D = ns.Distance
-    local lit = D and D.IsOverlayShown and D.IsOverlayShown()
-    local tex = auraToggleBtn:GetNormalTexture()
-    if tex then
-      if lit then
-        tex:SetVertexColor(1.00, 0.82, 0.22, 1)
-        tex:SetDesaturated(false)
-      else
-        tex:SetVertexColor(0.45, 0.40, 0.35, 1)
-        tex:SetDesaturated(true)
-      end
-    end
-  end
-  UI.refreshAuraToggleBtn = refreshAuraToggleBtn
-
-  auraToggleBtn:SetScript("OnClick", function()
-    local D = ns.Distance
-    if D and D.ToggleOverlay then D.ToggleOverlay() end  -- ground aura
-    refreshAuraToggleBtn()
-  end)
-  auraToggleBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-    GameTooltip:ClearLines()
-    GameTooltip:AddLine("Aura de distance", 1, 0.82, 0.22)
-    GameTooltip:AddLine("Clic : aura au sol autour de votre personnage.", 1, 1, 1, true)
-    local D = ns.Distance
-    if D and D.CATEGORIES and D.RangeLabel then
-      GameTooltip:AddLine(" ")
-      for _, cat in ipairs(D.CATEGORIES) do
-        GameTooltip:AddDoubleLine(cat.label, D.RangeLabel(cat),
-          cat.r, cat.g, cat.b, 0.72, 0.62, 0.50)
-      end
-    end
-    GameTooltip:AddLine(" ")
-    if D and D.IsOverlayAuto and D.IsOverlayAuto() then
-      GameTooltip:AddLine("L'aura suit le zoom et l'inclinaison de la caméra.", 0.60, 0.52, 0.36, true)
-    else
-      GameTooltip:AddLine("Inclinaison manuelle (/go aura auto pour la suivre).", 0.60, 0.52, 0.36, true)
-    end
-    GameTooltip:AddLine("Ajustez avec /go aura taille|aplat|hauteur.", 0.60, 0.52, 0.36)
-    GameTooltip:Show()
-  end)
-  auraToggleBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  refreshAuraToggleBtn()
-
   -- Reset-to-defaults button: text button centred in the sidebar.
   local resetBtn = mkButton(sidebar, "Réinitialiser", SIDEBAR_W - (NAV_PAD * 2), 24, 0, 0, function()
     if StaticPopup_Show then StaticPopup_Show("GROSORTEIL_RESET_DEFAULTS") end
   end)
   resetBtn:ClearAllPoints()
-  resetBtn:SetPoint("BOTTOM", auraToggleBtn, "TOP", 0, 8)
+  resetBtn:SetPoint("BOTTOM", popupToggleBtn, "TOP", 0, 10)
   resetBtn:SetBackdropBorderColor(0.85, 0.30, 0.20, 0.80)
   if resetBtn._fs then
     resetBtn._fs:SetTextColor(1.00, 0.55, 0.40, 1)
