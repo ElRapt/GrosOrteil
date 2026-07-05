@@ -157,6 +157,77 @@ T.describe("Heal.Accept", function()
   end)
 end)
 
+-- ── Pet heal path (raid-panel pet cards) ──────────────────────────────────────
+
+T.describe("Heal pet path", function()
+  T.it("SendRequest with toPet sends HEAL_REQ:<amount>:PET", function()
+    _G.MOCKS.sentMessages = {}
+    Heal.ClearPending("Bob")
+    T.assertTrue(Heal.SendRequest("Bob", 12, true))
+    local m = lastSent()
+    T.assertEq(m.msg, "HEAL_REQ:12:PET")
+    T.assertEq(m.channel, "WHISPER")
+    T.assertEq(m.target, "Bob")
+    T.assertTrue(Heal.PendingIsPet("Bob"))
+    Heal.ClearPending("Bob")
+  end)
+
+  T.it("a plain request is not marked as pet-pending", function()
+    _G.MOCKS.sentMessages = {}
+    Heal.ClearPending("Bob")
+    Heal.SendRequest("Bob", 12)
+    T.assertEq(lastSent().msg, "HEAL_REQ:12")
+    T.assertFalse(Heal.PendingIsPet("Bob"))
+    Heal.ClearPending("Bob")
+  end)
+
+  T.it("Comm routes the PET flag to Heal:OnRequest", function()
+    local gotAmount, gotPet
+    local saved = Heal.OnRequest
+    Heal.OnRequest = function(_, _, amount, toPet) gotAmount, gotPet = amount, toPet end
+    Comm:OnChatMsgAddon(Comm.PREFIX, "HEAL_REQ:40:PET", "WHISPER", "Bob")
+    T.assertEq(gotAmount, 40)
+    T.assertTrue(gotPet)
+    Comm:OnChatMsgAddon(Comm.PREFIX, "HEAL_REQ:40", "WHISPER", "Bob")
+    T.assertFalse(gotPet)
+    Heal.OnRequest = saved
+  end)
+
+  T.it("Accept with toPet heals the pet, not the owner", function()
+    Core.SetPetEnabled(true)
+    Core.SetPetHP(10, 30)
+    Core.SetHP(50, 100)
+    _G.MOCKS.sentMessages = {}
+    Heal.Accept("Healer", 8, true)
+    T.assertEq(Core.state.hp, 50, "owner HP untouched")
+    T.assertEq(Core.state.pet.hp, 18)
+    local m = lastSent()
+    T.assertEq(m.msg, "HEAL_RESP:1:8")
+    Core.SetPetEnabled(false)
+  end)
+
+  T.it("pet accept journals the healer on the PET subject", function()
+    Core.SetPetEnabled(true)
+    Core.SetPetHP(10, 30)
+    _G.MOCKS.sentMessages = {}
+    Heal.Accept("Healer", 5, true)
+    local hist = Core.GetHistory()
+    T.assertEq(hist[1].kind, "HEAL")
+    T.assertEq(hist[1].subject, "PET")
+    T.assertEq(hist[1].healer, "Healer")
+    Core.SetPetEnabled(false)
+  end)
+
+  T.it("OnRequest auto-refuses a pet heal when no pet is enabled", function()
+    Core.SetPetEnabled(false)
+    _G.MOCKS.sentMessages = {}
+    Heal:OnRequest("Healer", 7, true)
+    local m = lastSent()
+    T.assertEq(m.msg, "HEAL_RESP:0:7")
+    T.assertEq(m.target, "Healer")
+  end)
+end)
+
 -- ── Heal.Refuse (target side) ─────────────────────────────────────────────────
 
 T.describe("Heal.Refuse", function()

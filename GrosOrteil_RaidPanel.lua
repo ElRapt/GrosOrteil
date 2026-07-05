@@ -42,6 +42,16 @@ local CARD_TOP_PAD = 6
 local CARD_BOT_PAD = 7
 local MAX_RES_BARS = 5
 
+-- Pet sub-cards: smaller, indented under the owner card, and never draggable
+-- on their own — they follow the owner card wherever it is dropped.
+local PET_INDENT = 16
+local PET_W      = SCROLL_W - PET_INDENT
+local PET_BAR_W  = PET_W - CARD_PAD * 2
+local PET_GAP    = 2
+local PET_NAME_H = 14
+local PET_COLOR      = { 0.95, 0.62, 0.18 }   -- warm orange, same as the popup pet accent
+local PET_DEAD_COLOR = { 0.50, 0.32, 0.10 }
+
 -- View switcher (Groupe / Compteur) and the meter view.
 local VIEWTAB_H   = 22
 local METERBAR_H  = 24
@@ -122,7 +132,22 @@ local function getDisplayData(name, state)
     status = state.stabilise and "stabilise" or "agonie"
   end
 
+  -- Pet sub-card data (only when the member has an enabled pet).
+  local petData = nil
+  local pet = type(state.pet) == "table" and state.pet or nil
+  if pet and pet.enabled then
+    local petMaxHp = math.max(1, tonumber(pet.maxHp) or 0)
+    local petHp    = math.max(0, math.min(tonumber(pet.hp) or 0, petMaxHp))
+    petData = {
+      name     = (type(pet.name) == "string" and pet.name ~= "") and pet.name or "Familier",
+      hp       = petHp,
+      maxHp    = petMaxHp,
+      woundCap = Shared.WoundCap(pet.wounds),
+    }
+  end
+
   return {
+    pet        = petData,
     name       = name,
     classKey   = classKey,
     classLabel = Shared.GetClassNameFr(classKey),
@@ -142,6 +167,13 @@ local function getRaidMembers()
   local unitExists_ = rawget(_G, "UnitExists")
   local unitName_   = rawget(_G, "UnitName")
 
+  -- A secret name (WoW hands them back under addon taint) would raise later
+  -- in normalizeKey/SetText/comm sends; a nameless row is useless anyway.
+  local function usableName(n)
+    if n and not Shared.IsSecret(n) then return n end
+    return nil
+  end
+
   local out       = {}
   local isInRaid  = isInRaid_  and isInRaid_()
   local isInGroup = isInGroup_ and isInGroup_()
@@ -149,22 +181,22 @@ local function getRaidMembers()
     for i = 1, 40 do
       local u = "raid" .. i
       if unitExists_ and unitExists_(u) then
-        local n = unitName_ and unitName_(u)
+        local n = usableName(unitName_ and unitName_(u))
         if n then out[#out + 1] = { name = n, unit = u } end
       end
     end
   elseif isInGroup then
-    local pn = unitName_ and unitName_("player")
+    local pn = usableName(unitName_ and unitName_("player"))
     if pn then out[1] = { name = pn, unit = "player" } end
     for i = 1, 40 do
       local u = "party" .. i
       if unitExists_ and unitExists_(u) then
-        local n = unitName_ and unitName_(u)
+        local n = usableName(unitName_ and unitName_(u))
         if n then out[#out + 1] = { name = n, unit = u } end
       end
     end
   else
-    local pn = unitName_ and unitName_("player")
+    local pn = usableName(unitName_ and unitName_("player"))
     if pn then out[1] = { name = pn, unit = "player" } end
   end
   return out
@@ -260,6 +292,7 @@ end
 
 local frame, scrollFrame, content, headerFs, countFs, fadeIn, fadeOut, hintFs
 local sectionPool    = {}
+local petPool        = {}
 local currentMembers = nil
 local pendingRelayout = false  -- a relayout was requested while in combat
 
@@ -318,6 +351,7 @@ end
 local function applyMarkers(barObj, defs)
   barObj.markers = barObj.markers or {}
   local m = barObj.markers
+  local bw = barObj.barW or BAR_W
   local h = barObj.bar:GetHeight()
   if not h or h <= 0 then h = ROW_H end
   for i, d in ipairs(defs) do
@@ -330,8 +364,8 @@ local function applyMarkers(barObj, defs)
       t:SetWidth(d.w or 2)
       t.pct = d.pct
     end
-    local x = BAR_W * (d.pct or 0)
-    if x < 0 then x = 0 elseif x > BAR_W then x = BAR_W end
+    local x = bw * (d.pct or 0)
+    if x < 0 then x = 0 elseif x > bw then x = bw end
     t:SetHeight(h)
     t:ClearAllPoints()
     t:SetPoint("LEFT", barObj.bar, "LEFT", x, 0)
@@ -375,8 +409,27 @@ local function openMemberMenu(sec)
   end
 end
 
-local function makeBar(parent)
-  local bf = Shared.MakeBarFrame(parent, BAR_W, ROW_H)
+-- Pet-card variant: "Soigner" prompts for a heal aimed at the member's PET
+-- (the owner still gets the accept/refuse popup on their side).
+local function openPetMenu(sec)
+  local name = sec._name
+  if not name or name == "" then return end
+  local petName = sec._displayName or "Familier"
+  local menuUtil = rawget(_G, "MenuUtil")
+  if menuUtil and menuUtil.CreateContextMenu then
+    menuUtil.CreateContextMenu(sec, function(_, root)
+      root:CreateTitle(petName)
+      root:CreateButton("Soigner", function()
+        if ns.Heal and ns.Heal.PromptAndSend then ns.Heal.PromptAndSend(name, true, petName) end
+      end)
+    end)
+  elseif ns.Heal and ns.Heal.PromptAndSend then
+    ns.Heal.PromptAndSend(name, true, petName)
+  end
+end
+
+local function makeBar(parent, w)
+  local bf = Shared.MakeBarFrame(parent, w or BAR_W, ROW_H)
   -- Top-half sheen for the glass effect used by the main window's bars.
   local sheen = bf.bar:CreateTexture(nil, "OVERLAY", nil, -1)
   sheen:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -647,10 +700,124 @@ local function updateSection(sec, data)
   return totalH
 end
 
+-- Pet sub-card: a smaller secure button glued under its owner's card. Same
+-- click behavior (left-click targets the pet, right-click opens the pet's
+-- heal menu) but no drag registration — it can only move with its owner.
+local function buildPetSection()
+  local sec = CreateFrame("Button", nil, content, "SecureActionButtonTemplate, BackdropTemplate")
+  sec:SetWidth(PET_W)
+  if sec.SetBackdrop then
+    sec:SetBackdrop(BACKDROP_CARD)
+    sec:SetBackdropColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 0.85)
+    sec:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+  end
+  sec:RegisterForClicks("AnyDown", "AnyUp")
+  if sec.SetAttribute then
+    sec:SetAttribute("type1", "target")
+    sec:SetAttribute("*type1", "target")
+  end
+  sec:SetScript("PostClick", function(self, button, down)
+    if button == "RightButton" and not down then openPetMenu(self) end
+  end)
+  sec:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
+  local hl = sec.GetHighlightTexture and sec:GetHighlightTexture()
+  if hl then hl:SetVertexColor(1.0, 0.95, 0.6, 0.08) end
+
+  -- Warm-orange accent stripe (pets have no class color).
+  local accent = sec:CreateTexture(nil, "BORDER")
+  accent:SetTexture("Interface\\Buttons\\WHITE8x8")
+  accent:SetPoint("TOPLEFT",    sec, "TOPLEFT",    3, -3)
+  accent:SetPoint("BOTTOMLEFT", sec, "BOTTOMLEFT", 3, 3)
+  accent:SetWidth(ACCENT_W)
+  accent:SetVertexColor(PET_COLOR[1], PET_COLOR[2], PET_COLOR[3], 0.90)
+  sec.accent = accent
+
+  local nameFs = sec:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  nameFs:SetPoint("TOPLEFT",  sec, "TOPLEFT",  CARD_PAD, -CARD_TOP_PAD)
+  nameFs:SetPoint("TOPRIGHT", sec, "TOPRIGHT", -CARD_PAD, -CARD_TOP_PAD)
+  nameFs:SetHeight(PET_NAME_H)
+  nameFs:SetJustifyH("LEFT")
+  nameFs:SetShadowColor(0, 0, 0, 0.9)
+  nameFs:SetShadowOffset(1, -1)
+  sec.nameFs = nameFs
+
+  sec:SetScript("OnEnter", function(self)
+    if self.SetBackdropBorderColor then
+      self:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
+    end
+  end)
+  sec:SetScript("OnLeave", function(self)
+    if self.SetBackdropBorderColor then
+      self:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+    end
+  end)
+
+  sec.hp = makeBar(sec, PET_BAR_W)
+  sec.hp.barW = PET_BAR_W
+  return sec
+end
+
+local function getPetSection(i)
+  local sec = petPool[i]
+  if sec then return sec end
+  sec = buildPetSection()
+  petPool[i] = sec
+  return sec
+end
+
+-- Fill a pooled pet sub-card from data.pet; returns its height. Like
+-- updateSection, only ever called out of combat.
+local function updatePetSection(sec, data)
+  local pet = data.pet
+  sec._name = data.name  -- owner name: right-click menu acts on the owner
+  sec._displayName = pet.name
+
+  if not inCombat() and sec.SetAttribute then
+    local ownerUnit = data.unit
+    local petUnit
+    if ownerUnit == "player" then
+      petUnit = "pet"
+    elseif type(ownerUnit) == "string" then
+      petUnit = ownerUnit .. "pet"
+    end
+    sec:SetAttribute("unit", petUnit)  -- left-click targets the pet
+  end
+
+  sec.nameFs:SetTextColor(PET_COLOR[1], PET_COLOR[2], PET_COLOR[3], 1)
+  sec.nameFs:SetText(string.format("%s  |cffb0a08c— Familier|r", pet.name or "Familier"))
+
+  local top = CARD_TOP_PAD + PET_NAME_H + 3
+  sec.hp.frame:ClearAllPoints()
+  sec.hp.frame:SetPoint("TOPLEFT", sec, "TOPLEFT", CARD_PAD, -top)
+  local maxHp = math.max(1, pet.maxHp or 1)
+  local hp    = math.max(0, math.min(pet.hp or 0, maxHp))
+  sec.hp.bar:SetMinMaxValues(0, maxHp)
+  sec.hp.bar:SetValue(hp)
+  local c = (hp == 0) and PET_DEAD_COLOR or PET_COLOR
+  sec.hp.bar:SetStatusBarColor(c[1], c[2], c[3], 1)
+  sec.hp.label:SetText(string.format("PV : %d / %d  (%d%%)",
+    math.floor(hp + 0.5), math.floor(maxHp + 0.5), Shared.RoundPct(hp / maxHp)))
+
+  -- Same 50/25/10 thresholds as everyone, plus the wound-cap notch (gold,
+  -- matching Shared.MakeHpThresholdMarkers' cap marker).
+  local defs = HP_MARKER_DEFS
+  if pet.woundCap and pet.woundCap < 1.0 then
+    defs = {}
+    for i, d in ipairs(HP_MARKER_DEFS) do defs[i] = d end
+    defs[#defs + 1] = { pct = pet.woundCap, r = 1.0, g = 0.9, b = 0.2, a = 0.7, w = 3 }
+  end
+  applyMarkers(sec.hp, defs)
+
+  local totalH = top + ROW_H + CARD_BOT_PAD
+  sec:SetHeight(totalH)
+  return totalH
+end
+
 local function layoutSections(dataList)
   if not content then return end
   local y = 0
   local slots, names = {}, {}
+  local petCount = 0
   for i, data in ipairs(dataList) do
     local sec = getSection(i)
     local h   = updateSection(sec, data)
@@ -658,12 +825,27 @@ local function layoutSections(dataList)
     sec:ClearAllPoints()
     sec:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
     sec:Show()
-    slots[i] = { top = y, h = h }
+    local slotH = h
+    -- Pet sub-card hangs right under its owner; it counts into the owner's
+    -- drag slot so drops always land around the owner+pet pair.
+    if data.pet then
+      petCount = petCount + 1
+      local psec = getPetSection(petCount)
+      local ph   = updatePetSection(psec, data)
+      psec:ClearAllPoints()
+      psec:SetPoint("TOPLEFT", content, "TOPLEFT", PET_INDENT, -(y + h + PET_GAP))
+      psec:Show()
+      slotH = h + PET_GAP + ph
+    end
+    slots[i] = { top = y, h = slotH }
     names[i] = data.name
-    y = y + h + SECTION_GAP
+    y = y + slotH + SECTION_GAP
   end
   for i = #dataList + 1, #sectionPool do
     sectionPool[i]:Hide()
+  end
+  for i = petCount + 1, #petPool do
+    petPool[i]:Hide()
   end
   cardSlots           = slots  -- drop-line geometry for drag-to-reorder
   currentDisplayNames = names
@@ -902,6 +1084,26 @@ local function ensureFrame()
   -- Gentle fade-in when the panel opens, fade-out when it closes.
   fadeIn  = Shared.MakeFadeIn(frame, 0.18)
   fadeOut = Shared.MakeFadeOut(frame, 0.15)
+
+  -- Resize grip (drag = rescale, right-click = default), persisted per
+  -- character. Vetoed in combat: rescaling would move the secure card
+  -- buttons, which is blocked under lockdown.
+  if Shared.AttachScaleGrip then
+    Shared.AttachScaleGrip(frame, {
+      load = function()
+        local db = ns.GetDB and ns.GetDB()
+        return type(db) == "table" and type(db.settings) == "table"
+          and db.settings.raidPanelScale or nil
+      end,
+      save = function(s)
+        local db = ns.GetDB and ns.GetDB()
+        if type(db) ~= "table" then return end
+        db.settings = db.settings or {}
+        db.settings.raidPanelScale = s
+      end,
+      canResize = function() return not inCombat() end,
+    })
+  end
 
   -- Secure section buttons can't be moved/shown/re-attributed in combat, so a
   -- relayout requested during combat is deferred until combat ends. Roster

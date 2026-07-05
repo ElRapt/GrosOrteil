@@ -1490,6 +1490,16 @@ function Core.PetHeal(amount)
   applyHeal(s, p, amount, { kind = "HEAL",        isPet = true, subject = "PET" })
 end
 
+-- Pet counterpart of Core.HealFrom: a heal offered by another player and
+-- accepted for the pet (raid-panel pet card handshake).
+function Core.PetHealFrom(amount, healerName)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+  applyHeal(s, p, amount, { kind = "HEAL", isPet = true, subject = "PET", healer = healerName })
+end
+
 function Core.PetDivineHeal()
   local s = Core.state
   if not s then return end

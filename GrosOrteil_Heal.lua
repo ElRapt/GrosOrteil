@@ -69,10 +69,18 @@ end
 local pendingByTarget = {}   -- key → { amount, t }
 local lastRequestFrom = {}   -- key → time of last accepted incoming popup
 
-function Heal.MarkPending(target, amount, t)
+function Heal.MarkPending(target, amount, t, toPet)
   local k = nameKey(target)
   if not k then return end
-  pendingByTarget[k] = { amount = amount, t = t or now() }
+  pendingByTarget[k] = { amount = amount, t = t or now(), pet = toPet and true or nil }
+end
+
+-- Was the pending request for this target aimed at their pet? (Read before
+-- ClearPending — used by OnResponse for the chat wording.)
+function Heal.PendingIsPet(target)
+  local k = nameKey(target)
+  local entry = k and pendingByTarget[k]
+  return (entry and entry.pet) and true or false
 end
 
 function Heal.ClearPending(target)
@@ -130,13 +138,13 @@ end
 -- Validate + send a heal request. Returns true if a request went out.
 -- Tracks the request so the healer is warned when no answer ever comes back
 -- (target offline, addon missing, popup ignored).
-function Heal.SendRequest(targetName, amount)
+function Heal.SendRequest(targetName, amount, toPet)
   local amt = Heal.SanitizeAmount(amount)
   if not targetName or targetName == "" or not amt then return false end
   if ns.Comm and ns.Comm.SendHealRequest then
-    ns.Comm:SendHealRequest(targetName, amt)
+    ns.Comm:SendHealRequest(targetName, amt, toPet)
   end
-  Heal.MarkPending(targetName, amt)
+  Heal.MarkPending(targetName, amt, nil, toPet)
   local cTimer = rawget(_G, "C_Timer")
   if cTimer and cTimer.After then
     cTimer.After(Heal.RESPONSE_TIMEOUT + 0.5, function()
@@ -151,11 +159,18 @@ function Heal.SendRequest(targetName, amount)
 end
 
 -- Prompt the healer for an amount, then send. (UI; no-op without StaticPopup.)
-function Heal.PromptAndSend(targetName)
+-- With toPet, the request targets the member's pet: the prompt shows the pet
+-- name and the heal is applied to the pet on acceptance.
+function Heal.PromptAndSend(targetName, toPet, petName)
   if not targetName or targetName == "" then return end
   local show = rawget(_G, "StaticPopup_Show")
   if not show then return end
-  show("GROSORTEIL_HEAL_INPUT", rpName(targetName), nil, { name = targetName })
+  local display = rpName(targetName)
+  if toPet then
+    display = string.format("%s (familier de %s)", petName or "Familier", display)
+  end
+  show("GROSORTEIL_HEAL_INPUT", display, nil,
+    { name = targetName, pet = toPet and true or nil })
 end
 
 -- A response came back from the target. On acceptance the response carries
@@ -163,37 +178,59 @@ end
 -- group-meter counter — that counter only tracks heals given to others.
 function Heal:OnResponse(targetName, accepted, amount)
   local _ = self
+  local wasPet = Heal.PendingIsPet(targetName)
   Heal.ClearPending(targetName)
   local amt = Heal.SanitizeAmount(amount) or 0
   if accepted and amt > 0 and ns.Core and ns.Core.CreditHealGiven then
     ns.Core.CreditHealGiven(amt)
   end
-  chat(Heal.FormatResponseMessage(rpName(targetName), accepted, amt))
+  local who = rpName(targetName)
+  if wasPet then
+    who = string.format("Le familier de %s", who)
+  end
+  chat(Heal.FormatResponseMessage(who, accepted, amt))
 end
 
 -- ── Target side ───────────────────────────────────────────────────────────────
 
 -- An incoming heal request. (UI; no-op without StaticPopup.)
 -- Per-sender throttled so a misbehaving peer can't spam popups.
-function Heal:OnRequest(healerName, amount)
+-- A pet-targeted request with no enabled pet is auto-refused: there is
+-- nothing to heal and the healer deserves an answer instead of a timeout.
+function Heal:OnRequest(healerName, amount, toPet)
   local _ = self
   local amt = Heal.SanitizeAmount(amount)
   if not healerName or healerName == "" or not amt then return end
   if not Heal.ShouldAcceptRequest(healerName) then return end
+  if toPet then
+    local pet = ns.Core and ns.Core.state and ns.Core.state.pet
+    if type(pet) ~= "table" or not pet.enabled then
+      Heal.Refuse(healerName, amt)
+      return
+    end
+  end
   local show = rawget(_G, "StaticPopup_Show")
   if not show then return end
-  show("GROSORTEIL_HEAL_REQUEST", rpName(healerName), amt,
-    { healer = healerName, amount = amt })
+  show(toPet and "GROSORTEIL_HEAL_REQUEST_PET" or "GROSORTEIL_HEAL_REQUEST",
+    rpName(healerName), amt,
+    { healer = healerName, amount = amt, pet = toPet and true or nil })
 end
 
 -- Accept: apply the heal locally (same path as a heal Action) + notify healer.
 -- The response reports the HP actually gained (the wound cap may shave the
 -- requested amount) so the healer's meter is credited with real healing.
-function Heal.Accept(healerName, amount)
+function Heal.Accept(healerName, amount, toPet)
   local amt = Heal.SanitizeAmount(amount)
   if not amt then return end
   local applied = amt
-  if ns.Core and ns.Core.HealFrom then
+  if toPet and ns.Core and ns.Core.PetHealFrom then
+    local pet = ns.Core.state and ns.Core.state.pet
+    local before = type(pet) == "table" and (pet.hp or 0) or nil
+    ns.Core.PetHealFrom(amt, rpName(healerName))
+    if before and type(pet) == "table" then
+      applied = math.max(0, (pet.hp or 0) - before)
+    end
+  elseif ns.Core and ns.Core.HealFrom then
     local s = ns.Core.state
     local before = s and (s.hp or 0)
     ns.Core.HealFrom(amt, rpName(healerName))
@@ -238,11 +275,13 @@ function ns.Heal_Init()
     end,
     OnAccept = function(self)
       local eb = editBoxOf(self)
-      Heal.SendRequest(self.data and self.data.name, eb and eb:GetText())
+      Heal.SendRequest(self.data and self.data.name, eb and eb:GetText(),
+        self.data and self.data.pet)
     end,
     EditBoxOnEnterPressed = function(self)
       local parent = self:GetParent()
-      Heal.SendRequest(parent.data and parent.data.name, self:GetText())
+      Heal.SendRequest(parent.data and parent.data.name, self:GetText(),
+        parent.data and parent.data.pet)
       parent:Hide()
     end,
     EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
@@ -254,6 +293,15 @@ function ns.Heal_Init()
     button1  = "Accepter",
     button2  = "Refuser",
     OnAccept = function(self) Heal.Accept(self.data.healer, self.data.amount) end,
+    OnCancel = function(self) Heal.Refuse(self.data.healer, self.data.amount) end,
+    timeout = 0, whileDead = true, hideOnEscape = true,
+  }
+
+  dialogs["GROSORTEIL_HEAL_REQUEST_PET"] = {
+    text     = "%s souhaite soigner votre familier de %d PV.",
+    button1  = "Accepter",
+    button2  = "Refuser",
+    OnAccept = function(self) Heal.Accept(self.data.healer, self.data.amount, true) end,
     OnCancel = function(self) Heal.Refuse(self.data.healer, self.data.amount) end,
     timeout = 0, whileDead = true, hideOnEscape = true,
   }

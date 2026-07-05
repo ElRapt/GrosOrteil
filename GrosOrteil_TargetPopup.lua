@@ -15,6 +15,8 @@ local UnitIsPlayer = rawget(_G, "UnitIsPlayer")
 local UnitName = rawget(_G, "UnitName")
 local UnitFullName = rawget(_G, "UnitFullName")
 local UnitGUID = rawget(_G, "UnitGUID")
+local UnitIsUnit = rawget(_G, "UnitIsUnit")
+local issecretvalue = rawget(_G, "issecretvalue")
 local IsInRaid = rawget(_G, "IsInRaid")
 local IsInGroup = rawget(_G, "IsInGroup")
 local CreateFrame = rawget(_G, "CreateFrame")
@@ -94,9 +96,23 @@ local function setCached(key, state)
   if oldestKey then stateCache[oldestKey] = nil end
 end
 
+-- WoW can hand back "secret" values (unit names, GUIDs, tooltip text) when the
+-- execution path is tainted by an addon; any compare/concat/string-op on one
+-- raises "attempt to compare a secret string value". Treat secrets as absent.
+local function isSecret(v)
+  return issecretvalue ~= nil and issecretvalue(v) or false
+end
+
+-- nil unless v is a plain, non-empty, non-secret string.
+local function usableString(v)
+  if isSecret(v) then return nil end
+  if type(v) ~= "string" or v == "" then return nil end
+  return v
+end
+
 local function normalizeName(name)
-  if type(name) ~= "string" then return nil end
-  if name == "" then return nil end
+  name = usableString(name)
+  if not name then return nil end
   local out = name:gsub("%s+", ""):lower()
   if out == "" then return nil end
   return out
@@ -130,8 +146,9 @@ end
 local function unitTargetName(unit)
   if UnitFullName then
     local name, realm = UnitFullName(unit)
-    if name and name ~= "" then
-      if realm and realm ~= "" then
+    name, realm = usableString(name), usableString(realm)
+    if name then
+      if realm then
         return name .. "-" .. realm
       end
       return name
@@ -139,8 +156,9 @@ local function unitTargetName(unit)
   end
 
   local name, realm = UnitName(unit)
-  if name and name ~= "" then
-    if realm and realm ~= "" then
+  name, realm = usableString(name), usableString(realm)
+  if name then
+    if realm then
       return name .. "-" .. realm
     end
     return name
@@ -152,6 +170,8 @@ end
 local ownerScanTooltip
 
 local function stripColorCodes(text)
+  -- GetText() can return a secret string under taint; string ops on it raise.
+  if isSecret(text) then return nil end
   if type(text) ~= "string" then return nil end
   -- Use string.gsub (global) instead of text:gsub (metatable) because WoW
   -- GetText() can return a 'secret string' that blocks metatable indexing under taint.
@@ -199,15 +219,25 @@ local function resolveOwnerNameFromTooltip(unit)
 end
 
 local function resolveOwnerNameFromPetUnit(unit)
-  if not unit or not UnitExists or not UnitGUID then return nil end
+  if not unit or not UnitExists then return nil end
   if not UnitExists(unit) then return nil end
-  local petGuid = UnitGUID(unit)
-  if not petGuid then return nil end
 
+  -- Identity check via UnitIsUnit: pet GUIDs can be secret values under taint
+  -- and comparing them with == raises. GUID equality is only the offline-test
+  -- fallback (the harness has no UnitIsUnit), and skips secret GUIDs.
   local function ownerByUnit(ownerUnit)
     if not ownerUnit then return nil end
     local petUnit = ownerUnit .. "pet"
-    if UnitExists(petUnit) and UnitGUID(petUnit) == petGuid then
+    if not UnitExists(petUnit) then return nil end
+    if UnitIsUnit then
+      if UnitIsUnit(petUnit, unit) then
+        return unitTargetName(ownerUnit)
+      end
+      return nil
+    end
+    local a = UnitGUID and UnitGUID(petUnit)
+    local b = UnitGUID and UnitGUID(unit)
+    if a and b and not isSecret(a) and not isSecret(b) and a == b then
       return unitTargetName(ownerUnit)
     end
     return nil
@@ -267,6 +297,8 @@ local function getRPDisplayName(playerName)
   local targetName = unitTargetName("target")
   if targetName and namesMatch(targetName, playerName) and UnitGUID then
     guid = UnitGUID("target")
+    -- A secret GUID would blow up inside LibRPNames; better to look up by name only.
+    if isSecret(guid) then guid = nil end
   end
 
   -- Lazy lookup: LibRPNames may not be in _G at addon load time.
@@ -698,6 +730,14 @@ local function createPopup()
   -- and fade-out when it closes.
   popupFrame.fadeIn  = Shared.MakeFadeIn(popupFrame, 0.15)
   popupFrame.fadeOut = Shared.MakeFadeOut(popupFrame, 0.15)
+
+  -- Resize grip (drag = rescale, right-click = default), persisted in settings.
+  if Shared.AttachScaleGrip then
+    Shared.AttachScaleGrip(popupFrame, {
+      load = function() return getSettings().popupScale end,
+      save = function(s) getSettings().popupScale = s end,
+    })
+  end
 end
 
 local function applyPopupTitle(rpName, rpColor)
@@ -1581,8 +1621,11 @@ tryShowHover = function()
   end
   if not unitName then
     local gt = rawget(_G, "GameTooltip")
-    if gt then
-      local unit = gt.GetUnit and gt:GetUnit()
+    if gt and gt.GetUnit then
+      -- GetUnit returns (name, unitToken); either can be a secret value under
+      -- taint. Prefer the token, fall back to the name, drop secrets.
+      local tipName, tipUnit = gt:GetUnit()
+      local unit = usableString(tipUnit) or usableString(tipName)
       if unit and UnitExists(unit) then
         unitName = resolveStateNameForUnit(unit)
         if unitName then

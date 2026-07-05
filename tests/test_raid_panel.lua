@@ -509,6 +509,64 @@ T.describe("RaidPanel.getDisplayData — chance pool", function()
   end)
 end)
 
+-- ── RaidPanel.getDisplayData — pet sub-card ───────────────────────────────────
+
+T.describe("RaidPanel.getDisplayData — pet extraction", function()
+  T.it("pet is nil when the state has no pet table", function()
+    local d = RaidPanel._getDisplayData("X", makeState())
+    T.assertNil(d.pet)
+  end)
+
+  T.it("pet is nil when the pet is disabled", function()
+    local d = RaidPanel._getDisplayData("X", makeState({
+      pet = { enabled = false, name = "Rex", hp = 10, maxHp = 20 },
+    }))
+    T.assertNil(d.pet)
+  end)
+
+  T.it("carries name/hp/maxHp when the pet is enabled", function()
+    local d = RaidPanel._getDisplayData("X", makeState({
+      pet = { enabled = true, name = "Rex", hp = 12, maxHp = 20 },
+    }))
+    T.assertNotNil(d.pet)
+    T.assertEq(d.pet.name,  "Rex")
+    T.assertEq(d.pet.hp,    12)
+    T.assertEq(d.pet.maxHp, 20)
+  end)
+
+  T.it("falls back to 'Familier' for a missing/empty pet name", function()
+    local d = RaidPanel._getDisplayData("X", makeState({
+      pet = { enabled = true, name = "", hp = 5, maxHp = 20 },
+    }))
+    T.assertEq(d.pet.name, "Familier")
+  end)
+
+  T.it("clamps pet hp into [0, maxHp] and maxHp to at least 1", function()
+    local d = RaidPanel._getDisplayData("X", makeState({
+      pet = { enabled = true, name = "Rex", hp = 99, maxHp = 0 },
+    }))
+    T.assertTrue(d.pet.maxHp >= 1)
+    T.assertTrue(d.pet.hp <= d.pet.maxHp)
+  end)
+
+  T.it("woundCap follows the pet's own wounds", function()
+    local d = RaidPanel._getDisplayData("X", makeState({
+      pet = { enabled = true, name = "Rex", hp = 5, maxHp = 20,
+              wounds = { hit25 = true, hit10 = false } },
+    }))
+    T.assertNear(d.pet.woundCap, 0.50, 1e-9)
+  end)
+
+  T.it("collectData threads pet data through", function()
+    Popup.InjectState("PetOwnerCached", makeState({
+      pet = { enabled = true, name = "Rex", hp = 12, maxHp = 20 },
+    }))
+    local list = RaidPanel._collectData({ { name = "PetOwnerCached", unit = "raid3" } })
+    T.assertNotNil(list[1].pet)
+    T.assertEq(list[1].pet.name, "Rex")
+  end)
+end)
+
 -- ── French class name rename (Voleur -> Furtif) ───────────────────────────────
 
 T.describe("Rogue French label is 'Furtif'", function()

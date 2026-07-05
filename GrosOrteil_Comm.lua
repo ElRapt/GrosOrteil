@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-global, unused-local
-local _, ns = ...
+local ADDON, ns = ...
 
 local Comm = {}
 ns.Comm = Comm
@@ -9,6 +9,12 @@ Comm.REQUEST_TIMEOUT = 5
 -- Per-sender minimum interval between REQUEST_STATE responses. The popup side
 -- self-throttles at 5s, so anything below that is a misbehaving/abusive peer.
 Comm.RESPONSE_COOLDOWN = 3
+
+-- Version exchange (TRP3-style update notice). WoW Lua has no network access,
+-- so peers ARE the update feed: everyone announces their .toc version and the
+-- main window shows a reminder when someone runs a newer build.
+Comm.VERSION_BROADCAST_COOLDOWN = 30   -- between group broadcasts
+Comm.VERSION_WHISPER_COOLDOWN   = 300  -- per peer, for targeted sends
 
 local _G = _G
 local type = type
@@ -26,6 +32,14 @@ local math = math
 
 local AceSerializer = LibStub and LibStub("AceSerializer-3.0", true)
 local LibDeflate = LibStub and LibStub("LibDeflate", true)
+
+-- Own version from the .toc (## Version:). Absent in the offline test harness;
+-- the exchange is inert without it (tests set Comm.VERSION explicitly).
+do
+  local cAddOns = rawget(_G, "C_AddOns")
+  local getMeta = (cAddOns and cAddOns.GetAddOnMetadata) or rawget(_G, "GetAddOnMetadata")
+  Comm.VERSION = getMeta and getMeta(ADDON, "Version") or nil
+end
 
 -- Debug logging (no-op in release; replace body with print() for development)
 ---@diagnostic disable-next-line: unused-vararg
@@ -332,12 +346,16 @@ function Comm:RequestState(targetPlayer)
   sendAddonMessage(self.PREFIX, "REQUEST_STATE", "WHISPER", targetPlayer)
 end
 
--- Heal handshake (raid panel). Healer -> target: "HEAL_REQ:<amount>".
-function Comm:SendHealRequest(targetPlayer, amount)
+-- Heal handshake (raid panel). Healer -> target: "HEAL_REQ:<amount>[:PET]".
+-- The PET suffix asks the target to apply the heal to their pet. Clients
+-- predating the flag fail tonumber("<amt>:PET") and simply ignore the request.
+function Comm:SendHealRequest(targetPlayer, amount, toPet)
   if not targetPlayer or targetPlayer == "" then return end
   local amt = math.floor(tonumber(amount) or 0)
   if amt <= 0 then return end
-  sendAddonMessage(self.PREFIX, "HEAL_REQ:" .. amt, "WHISPER", targetPlayer)
+  local msg = "HEAL_REQ:" .. amt
+  if toPet then msg = msg .. ":PET" end
+  sendAddonMessage(self.PREFIX, msg, "WHISPER", targetPlayer)
 end
 
 -- Target -> healer: "HEAL_RESP:<1|0>:<amount>" (1 = accepted, 0 = refused).
@@ -346,6 +364,56 @@ function Comm:SendHealResponse(healerPlayer, accepted, amount)
   local amt = math.floor(tonumber(amount) or 0)
   local flag = accepted and "1" or "0"
   sendAddonMessage(self.PREFIX, "HEAL_RESP:" .. flag .. ":" .. amt, "WHISPER", healerPlayer)
+end
+
+-- ── Version exchange ("VER:<version>") ────────────────────────────────────────
+-- Clients predating this message ignore the unknown VER command silently.
+
+-- nil = never sent: the first send must always pass the cooldown check.
+local lastVersionBroadcast = nil
+local lastVersionWhisperTo = {}
+
+-- Broadcast our version to the group (rate-limited); no-op when solo.
+function Comm:BroadcastVersion()
+  if not self.VERSION then return end
+  local isInRaid  = rawget(_G, "IsInRaid")
+  local isInGroup = rawget(_G, "IsInGroup")
+  local channel
+  if isInRaid and isInRaid() then channel = "RAID"
+  elseif isInGroup and isInGroup() then channel = "PARTY" end
+  if not channel then return end
+  local now = (GetTime and GetTime()) or 0
+  if lastVersionBroadcast and (now - lastVersionBroadcast) < self.VERSION_BROADCAST_COOLDOWN then
+    return
+  end
+  lastVersionBroadcast = now
+  sendAddonMessage(self.PREFIX, "VER:" .. self.VERSION, channel)
+end
+
+-- Whisper our version to one peer (rate-limited per peer). Piggybacked on
+-- served state requests so ungrouped peers learn about updates too.
+function Comm:SendVersionTo(target)
+  if not self.VERSION or not target or target == "" then return end
+  local now = (GetTime and GetTime()) or 0
+  local last = lastVersionWhisperTo[target]
+  if last and (now - last) < self.VERSION_WHISPER_COOLDOWN then return end
+  lastVersionWhisperTo[target] = now
+  sendAddonMessage(self.PREFIX, "VER:" .. self.VERSION, "WHISPER", target)
+end
+
+function Comm:OnVersionReceived(sender, remoteVersion)
+  if not self.VERSION then return end
+  local cmp = ns.Shared and ns.Shared.CompareVersions
+  local order = cmp and cmp(remoteVersion, self.VERSION)
+  if order == 1 then
+    -- Peer runs a newer build: surface the reminder in the main window.
+    if ns.UI and ns.UI.NotifyUpdateAvailable then
+      ns.UI.NotifyUpdateAvailable(remoteVersion, self.VERSION)
+    end
+  elseif order == -1 then
+    -- We are the newer one: answer with ours so their reminder fires too.
+    self:SendVersionTo(sender)
+  end
 end
 
 function Comm:HandleStateData(sender, cmd, rest)
@@ -402,6 +470,7 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
     self.lastRequestServed[sender or ""] = now
     dbg("Received REQUEST_STATE from %s", tostring(sender))
     self:SendStateData(sender)
+    self:SendVersionTo(sender)
     return
   end
 
@@ -411,10 +480,17 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
     return
   end
 
+  -- Version exchange (update reminder).
+  if cmd == "VER" then
+    self:OnVersionReceived(sender, rest)
+    return
+  end
+
   -- Heal handshake routes to the Heal module (raid panel feature).
   if cmd == "HEAL_REQ" then
     if ns.Heal and ns.Heal.OnRequest then
-      ns.Heal:OnRequest(sender, tonumber(rest))
+      local amt, flag = strsplit(":", rest or "", 2)
+      ns.Heal:OnRequest(sender, tonumber(amt), flag == "PET")
     end
     return
   elseif cmd == "HEAL_RESP" then
@@ -443,9 +519,15 @@ function Comm:Initialize()
 
   self.eventFrame = CreateFrame("Frame")
   self.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+  -- Version announcements: on login/reload and whenever the group changes
+  -- (both rate-limited inside BroadcastVersion).
+  self.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  self.eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
   self.eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "CHAT_MSG_ADDON" then
       self:OnChatMsgAddon(...)
+    elseif event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" then
+      self:BroadcastVersion()
     end
   end)
   dbg("Initialize complete: CHAT_MSG_ADDON listener active")

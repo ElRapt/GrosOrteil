@@ -202,13 +202,47 @@ function Shared.GetResMarkerDefs(classKey, idx)
 end
 
 ---------------------------------------------------------------------------
+-- WoW "secret" values (unit names/GUIDs handed back under addon taint):
+-- any compare/concat/string-op on one raises. Treat them as absent data.
+---------------------------------------------------------------------------
+local issecretvalue = rawget(_G, "issecretvalue")
+function Shared.IsSecret(v)
+  return issecretvalue ~= nil and issecretvalue(v) or false
+end
+
+---------------------------------------------------------------------------
 -- Normalized roster key: short character name (realm stripped), lowercase,
 -- spaces removed. Used wherever member lists are matched by name.
 ---------------------------------------------------------------------------
 function Shared.NormalizeNameKey(name)
+  if Shared.IsSecret(name) then return nil end
   if type(name) ~= "string" then return nil end
   local base = name:match("^([^%-]+)") or name
   return base:lower():gsub("%s+", "")
+end
+
+---------------------------------------------------------------------------
+-- Compare two addon versions ("120001", "1.4.10", 120001...): digit groups
+-- are compared numerically left to right, missing groups count as 0.
+-- Returns -1/0/1, or nil when either side is unusable (no digits / secret).
+---------------------------------------------------------------------------
+function Shared.CompareVersions(a, b)
+  local function parts(v)
+    if Shared.IsSecret(v) then return nil end
+    if type(v) == "number" then v = tostring(v) end
+    if type(v) ~= "string" then return nil end
+    local out = {}
+    for d in v:gmatch("%d+") do out[#out + 1] = tonumber(d) end
+    if #out == 0 then return nil end
+    return out
+  end
+  local pa, pb = parts(a), parts(b)
+  if not pa or not pb then return nil end
+  for i = 1, math.max(#pa, #pb) do
+    local x, y = pa[i] or 0, pb[i] or 0
+    if x ~= y then return (x > y) and 1 or -1 end
+  end
+  return 0
 end
 
 ---------------------------------------------------------------------------
@@ -579,4 +613,131 @@ function Shared.SetClassEmblem(tex, classKey)
   end
   Shared.SetClassIconTexCoords(tex, classKey)
   return false
+end
+
+---------------------------------------------------------------------------
+-- Corner size-grip, same UX as the main window's: drag the bottom-right
+-- grabber to resize, right-click it to restore the default size, current
+-- size shown in the centre while dragging, persisted via opts.save(scale).
+-- These fixed-layout windows rescale their content instead of reflowing it,
+-- so the "size" is a scale factor (saved value 1 = default).
+-- opts.canResize can veto a resize (e.g. secure children under combat lockdown).
+---------------------------------------------------------------------------
+local SCALE_MIN, SCALE_MAX = 0.6, 1.8
+
+-- Change a frame's scale while keeping its top-left corner visually fixed
+-- (GetLeft/GetTop and SetPoint offsets are both in frame-local scale units).
+local function setScaleKeepTopLeft(frame, newScale)
+  local old = frame:GetScale() or 1
+  if newScale == old then return end
+  local left, top = frame:GetLeft(), frame:GetTop()
+  frame:SetScale(newScale)
+  if left and top then
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", frame:GetParent() or UIParent, "BOTTOMLEFT",
+      left * old / newScale, top * old / newScale)
+  end
+end
+
+function Shared.AttachScaleGrip(frame, opts)
+  opts = opts or {}
+
+  local grip = CreateFrame("Button", nil, frame)
+  grip:SetSize(16, 16)
+  grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+  grip:SetNormalTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Up")
+  grip:SetHighlightTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Highlight")
+  grip:SetPushedTexture("Interface/ChatFrame/UI-ChatIM-SizeGrabber-Down")
+  grip:SetFrameLevel((frame:GetFrameLevel() or 0) + 10)
+
+  grip:SetScript("OnEnter", function(self)
+    local tip = rawget(_G, "GameTooltip")
+    if not tip then return end
+    tip:SetOwner(self, "ANCHOR_TOPLEFT")
+    tip:ClearLines()
+    tip:AddLine("Redimensionner", 1.00, 0.84, 0.30)
+    tip:AddLine("Glisser : ajuster la taille de la fenêtre", 1, 1, 1, true)
+    tip:AddLine("Clic droit : taille par défaut", 0.72, 0.62, 0.50, true)
+    tip:Show()
+  end)
+  grip:SetScript("OnLeave", function()
+    local tip = rawget(_G, "GameTooltip")
+    if tip then tip:Hide() end
+  end)
+
+  local sizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  sizeLabel:SetPoint("CENTER", frame, "CENTER")
+  sizeLabel:SetTextColor(1.00, 0.84, 0.30, 1)
+  sizeLabel:SetShadowOffset(1, -1)
+  sizeLabel:SetShadowColor(0, 0, 0, 0.80)
+  sizeLabel:Hide()
+
+  local resizing = false
+  local originX, originY = 0, 0
+  local baseScale, baseW, baseH = 1, 1, 1
+
+  local function save(s)
+    if opts.save then opts.save(s) end
+  end
+
+  local function stopResize()
+    grip:SetScript("OnUpdate", nil)
+    resizing = false
+    sizeLabel:Hide()
+    save(frame:GetScale() or 1)
+  end
+
+  local function onResizeUpdate()
+    local cx, cy = GetCursorPosition()
+    local eff = UIParent:GetEffectiveScale()
+    local dx = (cx - originX) / eff
+    local dy = (cy - originY) / eff
+    -- The bottom-right corner follows the cursor on both axes; averaging the
+    -- two implied scales makes a diagonal drag feel natural.
+    local sX = baseScale + dx / baseW
+    local sY = baseScale - dy / baseH
+    local s = (sX + sY) / 2
+    if s < SCALE_MIN then s = SCALE_MIN elseif s > SCALE_MAX then s = SCALE_MAX end
+    setScaleKeepTopLeft(frame, s)
+    sizeLabel:SetText(math.floor(s * 100 + 0.5) .. " %")
+  end
+
+  grip:SetScript("OnMouseDown", function(_, button)
+    if button ~= "LeftButton" then return end
+    if opts.canResize and not opts.canResize() then return end
+    resizing = true
+    originX, originY = GetCursorPosition()
+    baseScale = frame:GetScale() or 1
+    baseW = frame:GetWidth() or 1
+    baseH = frame:GetHeight() or 1
+    sizeLabel:Show()
+    grip:SetScript("OnUpdate", onResizeUpdate)
+  end)
+
+  grip:SetScript("OnMouseUp", function(_, button)
+    if button == "LeftButton" and resizing then
+      stopResize()
+    elseif button == "RightButton" then
+      if opts.canResize and not opts.canResize() then return end
+      setScaleKeepTopLeft(frame, 1)
+      save(1)
+    end
+  end)
+
+  -- The window can vanish mid-drag (target change hides the popup); a hidden
+  -- grip stops receiving OnUpdate/OnMouseUp, so settle the resize here.
+  grip:SetScript("OnHide", function()
+    if resizing then stopResize() end
+  end)
+
+  -- Restore the persisted scale (opts.load returns it, or nil for default).
+  if opts.load then
+    local s = tonumber(opts.load())
+    if s and s > 0 then
+      if s < SCALE_MIN then s = SCALE_MIN elseif s > SCALE_MAX then s = SCALE_MAX end
+      frame:SetScale(s)
+    end
+  end
+
+  return grip
 end

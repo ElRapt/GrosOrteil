@@ -1781,3 +1781,73 @@ function ns.UI_ResetPosition()
   UI.frame:ClearAllPoints()
   UI.frame:SetPoint("CENTER")
 end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- "Mise à jour disponible" reminder
+-- WoW Lua cannot reach Curse/GitHub, so peers are the update feed: Comm
+-- exchanges .toc versions (TRP3-style) and calls in here when someone runs
+-- a newer build. The note hangs under the main window and is closable;
+-- closing remembers the version so it only returns for an even newer one.
+-- ═══════════════════════════════════════════════════════════════════════════
+local updateBanner
+
+function UI.NotifyUpdateAvailable(remoteVersion, localVersion)
+  if not UI.frame then return end
+  local cmp = Shared.CompareVersions
+  if not cmp then return end
+
+  local db = (ns.GetDB and ns.GetDB()) or {}
+  db.settings = db.settings or {}
+  local dismissed = db.settings.dismissedUpdateVersion
+  if dismissed and cmp(remoteVersion, dismissed) ~= 1 then return end
+
+  -- Already showing this (or a higher) version: nothing to update.
+  if updateBanner and updateBanner._version
+      and cmp(remoteVersion, updateBanner._version) ~= 1 then
+    updateBanner:Show()
+    return
+  end
+
+  if not updateBanner then
+    local b = CreateFrame("Frame", nil, UI.frame, "BackdropTemplate")
+    b:SetPoint("TOPLEFT",  UI.frame, "BOTTOMLEFT",  8, -4)
+    b:SetPoint("TOPRIGHT", UI.frame, "BOTTOMRIGHT", -8, -4)
+    b:SetHeight(30)
+    Shared.ApplyNoteSkin(b, 0.96)
+
+    local icon = b:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(16, 16)
+    icon:SetPoint("LEFT", b, "LEFT", 10, 0)
+    icon:SetTexture("Interface\\GossipFrame\\AvailableQuestIcon")
+
+    local text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    text:SetPoint("LEFT",  icon, "RIGHT", 6, 0)
+    text:SetPoint("RIGHT", b,    "RIGHT", -26, 0)
+    text:SetJustifyH("LEFT")
+    text:SetTextColor(1.00, 0.84, 0.30, 1)
+    b.text = text
+
+    local close = CreateFrame("Button", nil, b, "UIPanelCloseButton")
+    close:SetSize(20, 20)
+    close:SetPoint("RIGHT", b, "RIGHT", -3, 0)
+    close:SetScript("OnClick", function()
+      b:Hide()
+      local d = (ns.GetDB and ns.GetDB()) or {}
+      d.settings = d.settings or {}
+      d.settings.dismissedUpdateVersion = b._version
+    end)
+    updateBanner = b
+  end
+
+  updateBanner._version = remoteVersion
+  -- The version comes off the network: cap the displayed length.
+  local remoteShown = tostring(remoteVersion):sub(1, 24)
+  if localVersion and localVersion ~= "" then
+    updateBanner.text:SetText(string.format(
+      "Mise à jour disponible : version %s (la vôtre : %s)",
+      remoteShown, tostring(localVersion):sub(1, 24)))
+  else
+    updateBanner.text:SetText("Mise à jour disponible : version " .. remoteShown)
+  end
+  updateBanner:Show()
+end

@@ -470,3 +470,86 @@ T.describe("Comm multipart per-sender isolation", function()
     T.assertEq(r2.hp, 60)
   end)
 end)
+
+T.describe("Comm version exchange (update reminder)", function()
+  T.it("a newer peer version triggers ns.UI.NotifyUpdateAvailable", function()
+    local got
+    local savedUI = ns.UI
+    ns.UI = { NotifyUpdateAvailable = function(remote, mine) got = { remote, mine } end }
+    Comm.VERSION = "120001"
+    Comm:OnChatMsgAddon(Comm.PREFIX, "VER:120002", "PARTY", "Bob")
+    Comm.VERSION = nil
+    ns.UI = savedUI
+    T.assertNotNil(got)
+    T.assertEq(got[1], "120002")
+    T.assertEq(got[2], "120001")
+  end)
+
+  T.it("an older peer version is answered with ours (whispered once)", function()
+    _G.MOCKS.sentMessages = {}
+    Comm.VERSION = "120003"
+    Comm:OnChatMsgAddon(Comm.PREFIX, "VER:120001", "PARTY", "OldGuy")
+    local m = _G.MOCKS.sentMessages[#_G.MOCKS.sentMessages]
+    T.assertNotNil(m)
+    T.assertEq(m.msg, "VER:120003")
+    T.assertEq(m.channel, "WHISPER")
+    T.assertEq(m.target, "OldGuy")
+    -- Second announce from the same peer inside the cooldown: no reply.
+    Comm:OnChatMsgAddon(Comm.PREFIX, "VER:120001", "PARTY", "OldGuy")
+    T.assertEq(#_G.MOCKS.sentMessages, 1)
+    Comm.VERSION = nil
+  end)
+
+  T.it("an equal peer version causes no reminder and no traffic", function()
+    local called = false
+    local savedUI = ns.UI
+    ns.UI = { NotifyUpdateAvailable = function() called = true end }
+    _G.MOCKS.sentMessages = {}
+    Comm.VERSION = "120002"
+    Comm:OnChatMsgAddon(Comm.PREFIX, "VER:120002", "PARTY", "Bob")
+    Comm.VERSION = nil
+    ns.UI = savedUI
+    T.assertFalse(called)
+    T.assertEq(#_G.MOCKS.sentMessages, 0)
+  end)
+
+  T.it("without a local version the exchange is inert", function()
+    local called = false
+    local savedUI = ns.UI
+    ns.UI = { NotifyUpdateAvailable = function() called = true end }
+    _G.MOCKS.sentMessages = {}
+    Comm.VERSION = nil
+    Comm:OnChatMsgAddon(Comm.PREFIX, "VER:999999", "PARTY", "Bob")
+    ns.UI = savedUI
+    T.assertFalse(called)
+    T.assertEq(#_G.MOCKS.sentMessages, 0)
+  end)
+
+  T.it("BroadcastVersion targets the raid channel and rate-limits", function()
+    local savedRaid, savedGroup = _G.IsInRaid, _G.IsInGroup
+    _G.IsInRaid = function() return true end
+    _G.MOCKS.sentMessages = {}
+    _G.MOCKS.fakeNow = 1000
+    Comm.VERSION = "120005"
+    Comm:BroadcastVersion()
+    T.assertEq(#_G.MOCKS.sentMessages, 1)
+    T.assertEq(_G.MOCKS.sentMessages[1].msg, "VER:120005")
+    T.assertEq(_G.MOCKS.sentMessages[1].channel, "RAID")
+    Comm:BroadcastVersion()  -- inside the cooldown
+    T.assertEq(#_G.MOCKS.sentMessages, 1)
+    _G.MOCKS.fakeNow = 1000 + Comm.VERSION_BROADCAST_COOLDOWN
+    Comm:BroadcastVersion()
+    T.assertEq(#_G.MOCKS.sentMessages, 2)
+    Comm.VERSION = nil
+    _G.MOCKS.fakeNow = nil
+    _G.IsInRaid, _G.IsInGroup = savedRaid, savedGroup
+  end)
+
+  T.it("solo BroadcastVersion is a no-op", function()
+    _G.MOCKS.sentMessages = {}
+    Comm.VERSION = "120005"
+    Comm:BroadcastVersion()  -- mocks report neither raid nor group
+    Comm.VERSION = nil
+    T.assertEq(#_G.MOCKS.sentMessages, 0)
+  end)
+end)

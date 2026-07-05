@@ -6,7 +6,7 @@
 ## X-Category: Jeu de rôle
 ## X-Tags: Jeu de rôle, RPG, UI, Tracker, Jeu de rôle
 ## Author: Zinnieth
-## Version: 120001
+## Version: 2.0.1
 ## SavedVariables: GrosOrteilDB
 ## SavedVariablesPerCharacter: GrosOrteilDBPC
 
