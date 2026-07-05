@@ -121,11 +121,13 @@ function History.FormatEntry(e)
 		return nil
 	end
 
-	if e.kind == "DAMAGE_ARMOR" then
+	if e.kind == "DAMAGE_ARMOR" or e.kind == "DAMAGE_NODODGE" then
+		local dmgLabel = (e.kind == "DAMAGE_NODODGE")
+			and "Dégâts subis (inesquivable)" or "Dégâts subis (armure)"
 		if e.dodged then
 			return block(
 				sep({
-					prefix("Dégâts subis (armure)", COLORS.DAMAGE),
+					prefix(dmgLabel, COLORS.DAMAGE),
 					"Valeur " .. fmtInt(e.input),
 					"Résultat " .. colorize("ESQUIVÉ", COLORS.RESULT),
 				}),
@@ -142,12 +144,13 @@ function History.FormatEntry(e)
 		end
 		local lines = {
 			sep({
-				prefix("Dégâts subis (armure)", COLORS.DAMAGE),
+				prefix(dmgLabel, COLORS.DAMAGE),
 				"Valeur " .. fmtInt(e.input),
 				"Résultat " .. colorize(fmtInt(e.damage), COLORS.RESULT),
 			}),
 			sep({
-				"Esquive " .. fmtInt(e.dodge or 0),
+				(e.kind == "DAMAGE_NODODGE") and "Esquive ignorée"
+					or ("Esquive " .. fmtInt(e.dodge or 0)),
 				"Blocage " .. fmtInt(e.absorbedBlock),
 				"Bouclier magique " .. fmtInt(e.absorbedMagic),
 				"Réduction " .. fmtInt(e.mitigation),
@@ -160,11 +163,13 @@ function History.FormatEntry(e)
 			"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
 		})
 		return table.concat(lines, "\n")
-	elseif e.kind == "DAMAGE_TRUE" then
+	elseif e.kind == "DAMAGE_TRUE" or e.kind == "DAMAGE_NODODGE_TRUE" then
+		local dmgLabel = (e.kind == "DAMAGE_NODODGE_TRUE")
+			and "Dégâts subis (inesquivable bruts)" or "Dégâts subis (bruts)"
 		if e.dodged then
 			return block(
 				sep({
-					prefix("Dégâts subis (bruts)", COLORS.DAMAGE),
+					prefix(dmgLabel, COLORS.DAMAGE),
 					"Valeur " .. fmtInt(e.input),
 					"Résultat " .. colorize("ESQUIVÉ", COLORS.RESULT),
 				}),
@@ -181,12 +186,13 @@ function History.FormatEntry(e)
 		end
 		local lines = {
 			sep({
-				prefix("Dégâts subis (bruts)", COLORS.DAMAGE),
+				prefix(dmgLabel, COLORS.DAMAGE),
 				"Valeur " .. fmtInt(e.input),
 				"Résultat " .. colorize(fmtInt(e.damage), COLORS.RESULT),
 			}),
 			sep({
-				"Esquive " .. fmtInt(e.dodge or 0),
+				(e.kind == "DAMAGE_NODODGE_TRUE") and "Esquive ignorée"
+					or ("Esquive " .. fmtInt(e.dodge or 0)),
 				"Bouclier magique " .. fmtInt(e.absorbedMagic),
 				"Réduction " .. fmtInt(e.mitigation),
 			}),
@@ -198,6 +204,19 @@ function History.FormatEntry(e)
 			"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
 		})
 		return table.concat(lines, "\n")
+	elseif e.kind == "DAMAGE_MENTAL" then
+		return block(
+			sep({
+				prefix("Dégâts subis (mentaux)", COLORS.DAMAGE),
+				"Valeur " .. fmtInt(e.input),
+				"Résultat " .. colorize(fmtInt(e.damage), COLORS.RESULT),
+			}),
+			"Ignore toutes les résistances (esquive, blocage, boucliers, armures)",
+			sep({
+				"Avant " .. colorize(fmtInt(e.hpBefore), COLORS.BEFORE),
+				"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
+			})
+		)
 	elseif e.kind == "HEAL" then
 		local healLabel = "Soins reçus"
 		if type(e.healer) == "string" and e.healer ~= "" then

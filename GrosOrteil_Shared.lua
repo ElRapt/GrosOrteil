@@ -417,6 +417,57 @@ function Shared.MakeHpThresholdMarkers(bar)
 end
 
 ---------------------------------------------------------------------------
+-- Floating combat text: short-lived text rising and fading above a frame,
+-- like the game's floating combat text ("-35", "+35", "Esquivé", "Blocage
+-- total"). Returns show(text, r, g, b); fontstrings are pooled and reused.
+---------------------------------------------------------------------------
+function Shared.AttachFloatingText(anchor)
+  local host = CreateFrame("Frame", nil, anchor)
+  host:SetAllPoints(anchor)
+  host:SetFrameLevel((anchor:GetFrameLevel() or 0) + 10)
+
+  local pool = {}
+
+  local function acquire()
+    for i = 1, #pool do
+      if not pool[i].anim:IsPlaying() then return pool[i] end
+    end
+    local fs = host:CreateFontString(nil, "OVERLAY")
+    fs:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    fs:SetShadowOffset(1, -1)
+    fs:SetShadowColor(0, 0, 0, 0.9)
+    fs:SetPoint("BOTTOM", host, "TOP", 0, 2)
+    fs:Hide()
+
+    local anim = fs:CreateAnimationGroup()
+    local move = anim:CreateAnimation("Translation")
+    move:SetOffset(0, 30)
+    move:SetDuration(1.2)
+    move:SetSmoothing("OUT")
+    local fade = anim:CreateAnimation("Alpha")
+    fade:SetFromAlpha(1)
+    fade:SetToAlpha(0)
+    fade:SetStartDelay(0.5)
+    fade:SetDuration(0.7)
+    anim:SetScript("OnFinished", function() fs:Hide() end)
+
+    local entry = { fs = fs, anim = anim }
+    pool[#pool + 1] = entry
+    return entry
+  end
+
+  return function(text, r, g, b)
+    local e = acquire()
+    e.anim:Stop()
+    e.fs:SetText(text)
+    e.fs:SetTextColor(r or 1, g or 1, b or 1, 1)
+    e.fs:SetAlpha(1)
+    e.fs:Show()
+    e.anim:Play()
+  end
+end
+
+---------------------------------------------------------------------------
 -- French class name lookup
 ---------------------------------------------------------------------------
 function Shared.GetClassNameFr(classKey)

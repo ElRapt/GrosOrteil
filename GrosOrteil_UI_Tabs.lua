@@ -81,9 +81,12 @@ function ns.UI_BuildFicheTab(ctx)
   local function applyAllManaShield()
     Core.SetManaShieldArmor(ctx.getNumber(mnsArmorEB))
   end
-  local function doDmgArmor() Core.DamageWithArmor(ctx.getNumber(actValEB) or 0) end
-  local function doDmgTrue()  Core.DamageTrue(ctx.getNumber(actValEB) or 0) end
-  local function doHeal()     Core.Heal(ctx.getNumber(actValEB) or 0) end
+  local function doDmgArmor()       Core.DamageWithArmor(ctx.getNumber(actValEB) or 0) end
+  local function doDmgTrue()        Core.DamageTrue(ctx.getNumber(actValEB) or 0) end
+  local function doDmgNoDodge()     Core.DamageNoDodge(ctx.getNumber(actValEB) or 0) end
+  local function doDmgNoDodgeTrue() Core.DamageNoDodgeTrue(ctx.getNumber(actValEB) or 0) end
+  local function doDmgMental()      Core.DamageMental(ctx.getNumber(actValEB) or 0) end
+  local function doHeal()           Core.Heal(ctx.getNumber(actValEB) or 0) end
 
   -- Hover help on a styled button (title + wrapped description).
   local function addTip(btn, title, desc)
@@ -162,8 +165,8 @@ function ns.UI_BuildFicheTab(ctx)
     return row
   end
 
-  mkResRow(1, -836); mkResRow(2, -864); mkResRow(3, -892); mkResRow(4, -920); mkResRow(5, -948)
-  UI.noResHint = mkLabelCenter(UI.lowerBlock, "Aucune ressource pour cette classe.", 0, -684)
+  mkResRow(1, -874); mkResRow(2, -902); mkResRow(3, -930); mkResRow(4, -958); mkResRow(5, -986)
+  UI.noResHint = mkLabelCenter(UI.lowerBlock, "Aucune ressource pour cette classe.", 0, -722)
   UI.noResHint:Hide()
 
   -- Main Fiche content
@@ -313,51 +316,63 @@ function ns.UI_BuildFicheTab(ctx)
       "Dégâts (bruts)",
       "Dégâts ignorant l'armure normale — seuls l'esquive, le bouclier magique, "
         .. "l'armure invulnérable et temporaire s'appliquent.")
-    addTip(btn("Soins",              210, 0,   -500, doHeal),
+    addTip(btn("Dégâts (inesquivable)", 210, 0, -500, doDmgNoDodge),
+      "Dégâts (inesquivable)",
+      "Dégâts impossibles à esquiver — blocage, bouclier magique et armure "
+        .. "totale (armure + invul. + tempo.) s'appliquent normalement.")
+    addTip(btn("Dégâts (inesquivable bruts)", 210, 230, -500, doDmgNoDodgeTrue),
+      "Dégâts (inesquivable bruts)",
+      "Dégâts impossibles à esquiver et ignorant l'armure normale — seuls le "
+        .. "bouclier magique, l'armure invulnérable et temporaire s'appliquent.")
+    addTip(btn("Dégâts (mentaux)", 210, 0, -538, doDmgMental),
+      "Dégâts (mentaux)",
+      "Dégâts mentaux ignorant TOUTES les résistances : esquive, blocage, "
+        .. "boucliers et armures (y compris l'armure invulnérable).")
+    addTip(btn("Soins",              210, 230, -538, doHeal),
       "Soins",
       "Rend la valeur en PV, dans la limite du plafond de blessure "
         .. "(50 % après une blessure grave, 25 % après une blessure critique).")
-    addTip(btn("Soins divins (75%)", 210, 230, -500, function() Core.DivineHeal() end),
+    addTip(btn("Soins divins (75%)", 210, 0, -576, function() Core.DivineHeal() end),
       "Soins divins",
       "Rend 75 % du max de PV, en ignorant les plafonds de blessure.")
-    addTip(btn("Chirurgie (50%)",    210, 0,   -538, function() Core.Surgery() end),
+    addTip(btn("Chirurgie (50%)",    210, 230, -576, function() Core.Surgery() end),
       "Chirurgie",
       "Rend 50 % du max de PV, en ignorant les plafonds de blessure.")
-    mkSep(-580)
+    mkSep(-618)
 
     -- Blocage
-    mkSectionHeader("Blocage", -592)
-    lbl("Blocage", 0, -618)
-    blockEB = edt(110, 162, -616, applyAllArmor)
-    addTip(btn("Réinit.", 100, 284, -616, function() Core.ResetTempBlock() end),
+    mkSectionHeader("Blocage", -630)
+    lbl("Blocage", 0, -656)
+    blockEB = edt(110, 162, -654, applyAllArmor)
+    addTip(btn("Réinit.", 100, 284, -654, function() Core.ResetTempBlock() end),
       "Réinitialiser le blocage",
       "Remet le blocage temporaire à zéro.")
-    mkSep(-652)
+    mkSep(-690)
 
     -- Boucliers magiques: 1x3 grid on PV row (cur | max | Réinit); col1 alignment elsewhere.
-    mkSectionHeader("Boucliers magiques", -664)
-    lbl("PV", 0, -690); lbl("/", 148, -690)
-    msHpEB    = edt(110, 26,  -688, applyAllMagicShield)
-    msMaxHpEB = edt(110, 166, -688, applyAllMagicShield)
-    btn("Réinit.", 100, 284, -688, function()
+    mkSectionHeader("Boucliers magiques", -702)
+    lbl("PV", 0, -728); lbl("/", 148, -728)
+    msHpEB    = edt(110, 26,  -726, applyAllMagicShield)
+    msMaxHpEB = edt(110, 166, -726, applyAllMagicShield)
+    btn("Réinit.", 100, 284, -726, function()
       if Core and Core.ResetMagicShield then Core.ResetMagicShield() end
     end)
-    lbl("Armure", 0, -722)
-    msArmorEB = edt(110, 166, -720, applyAllMagicShield)
-    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -756, function()
+    lbl("Armure", 0, -760)
+    msArmorEB = edt(110, 166, -758, applyAllMagicShield)
+    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -794, function()
       if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
     end)
     UI.manaShieldToggleBtn = mnsToggleBtn
-    mnsArmorLabel = mkLabel(UI.lowerBlock, "Armure", 246, -756 + LBL_Y + _LO)
+    mnsArmorLabel = mkLabel(UI.lowerBlock, "Armure", 246, -794 + LBL_Y + _LO)
     UI.manaShieldArmorLabel = mnsArmorLabel
-    mnsArmorEB = edt(100, 284, -756, applyAllManaShield)
+    mnsArmorEB = edt(100, 284, -794, applyAllManaShield)
     UI.manaShieldArmorEB = mnsArmorEB
     mnsToggleBtn:Hide(); mnsArmorLabel:Hide()
     if mnsArmorEB._wrap then mnsArmorEB._wrap:Hide() else mnsArmorEB:Hide() end
-    mkSep(-792)
+    mkSep(-830)
 
     -- Ressources header (rows pre-built above)
-    mkSectionHeader("Ressources", -804)
+    mkSectionHeader("Ressources", -842)
 
     -- Postures Élémentaires (Shaman uniquement)
     do
@@ -377,7 +392,7 @@ function ns.UI_BuildFicheTab(ctx)
       }
       local postureSection = UI.lowerBlock:CreateFontString(nil, "OVERLAY")
       postureSection:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-      postureSection:SetPoint("TOP", UI.lowerBlock, "TOP", 0, -986 + _LO)
+      postureSection:SetPoint("TOP", UI.lowerBlock, "TOP", 0, -1024 + _LO)
       postureSection:SetWidth(BLOCK_W)
       postureSection:SetJustifyH("CENTER")
       postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
@@ -387,8 +402,8 @@ function ns.UI_BuildFicheTab(ctx)
 
       local postureSepLine = UI.lowerBlock:CreateTexture(nil, "ARTWORK")
       postureSepLine:SetTexture(TEX.FLAT)
-      postureSepLine:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  0, -1004 + _LO)
-      postureSepLine:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", 0, -1004 + _LO)
+      postureSepLine:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  0, -1042 + _LO)
+      postureSepLine:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", 0, -1042 + _LO)
       postureSepLine:SetHeight(1)
       postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
       UI.postureSepLine = postureSepLine
@@ -399,7 +414,7 @@ function ns.UI_BuildFicheTab(ctx)
       local startX = math.floor((BLOCK_W - totalW) / 2)
       for i, def in ipairs(POSTURE_DEFS) do
         local bx = startX + (i - 1) * (BTN_W + GAP)
-        local b = mkButton(UI.lowerBlock, def.label, BTN_W, BTN_H2, bx, -1014 + _LO)
+        local b = mkButton(UI.lowerBlock, def.label, BTN_W, BTN_H2, bx, -1052 + _LO)
         b._postureKey = def.key
         b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
         local tipTitle, tipDesc = def.tip, def.desc
@@ -416,7 +431,7 @@ function ns.UI_BuildFicheTab(ctx)
       end
     end
 
-    paramChild:SetHeight(1078)
+    paramChild:SetHeight(1116)
   end
 
   -- Write widget refs into ctx.inputs
@@ -1240,11 +1255,11 @@ function ns.UI_BuildOnChangeCallback(ctx)
         local lbYAbs = isDead and 178 or 138
         local depth
         if ficheVisibleRows == 0 then
-          depth = 702   -- noResHint bottom
+          depth = 740   -- noResHint bottom
         elseif s.classKey == "SHAMAN" and ficheVisibleRows >= 4 then
-          depth = 862   -- posture buttons bottom
+          depth = 900   -- posture buttons bottom
         else
-          depth = 682 + (ficheVisibleRows - 1) * 28  -- row-n bottom
+          depth = 720 + (ficheVisibleRows - 1) * 28  -- row-n bottom
         end
         UI.ficheParamChild:SetHeight(lbYAbs + depth + 38)
       end

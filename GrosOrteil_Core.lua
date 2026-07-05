@@ -64,6 +64,19 @@ local function sfxLayOnHands()
   playFirstSoundKit({ "SPELL_HOLY_LAY_ON_HANDS", "SPELL_HOLY_REDEMPTION", "RAID_WARNING" })
 end
 
+-- Floating combat text: the UI registers a handler that shows rising/fading
+-- feedback above the HP bar. Kinds: "DAMAGE" (amount), "HEAL" (amount),
+-- "BLOCK" (hit fully absorbed/mitigated), "DODGE". No-op until registered.
+local combatTextHandler = nil
+
+function Core.SetCombatTextHandler(fn)
+  combatTextHandler = (type(fn) == "function") and fn or nil
+end
+
+local function emitCombatText(kind, amount)
+  if combatTextHandler then pcall(combatTextHandler, kind, amount) end
+end
+
 -- Listener errors are non-fatal: notify() pcalls each callback so a single
 -- bad listener can't break the chain. Errors flow through geterrorhandler
 -- (Blizzard's default error display in WoW; mocked for offline tests),
@@ -1096,9 +1109,12 @@ local function applyManaShield(s, dmg)
   return remaining, drained, broke
 end
 
--- opts: { armor=bool, isPet=bool, historyKind=str, subject=str|nil }
+-- opts: { armor=bool, isPet=bool, historyKind=str, subject=str|nil,
+--         ignoreDodge=bool, mental=bool }
 -- For player targets `t` is Core.state; for pet targets `t` is Core.state.pet.
 -- Player-only features (Shaman posture, mana shield) are skipped when isPet=true.
+-- ignoreDodge skips the dodge check; mental additionally bypasses block, magic
+-- shield, mana shield and ALL armor (normal + invulnerable + temp) — straight to HP.
 local function applyHit(s, t, rawAmount, opts)
   rawAmount = clampNumber(rawAmount, 0, 1e9) or 0
 
@@ -1112,7 +1128,7 @@ local function applyHit(s, t, rawAmount, opts)
   local manaBefore  = (not opts.isPet) and (s.res or 0) or nil
 
   -- Dodge
-  if rawAmount > 0 and dodgeBefore > 0 and rawAmount <= dodgeBefore then
+  if not opts.ignoreDodge and rawAmount > 0 and dodgeBefore > 0 and rawAmount <= dodgeBefore then
     sfxDodge()
     pushHistory({
       kind      = opts.historyKind,
@@ -1127,6 +1143,7 @@ local function applyHit(s, t, rawAmount, opts)
       hpAfter   = hpBefore,
       maxHp     = maxBefore,
     })
+    emitCombatText("DODGE")
     bump(); notify()
     return
   end
@@ -1146,7 +1163,9 @@ local function applyHit(s, t, rawAmount, opts)
   end
 
   -- Magic absorption
-  if opts.isPet then
+  if opts.mental then
+    absorbedMagic = 0
+  elseif opts.isPet then
     amount, absorbedMagic = consumeMagicShield(t, amount)
   else
     amount, absorbedMagic = consumeMagicShield(s, amount)
@@ -1159,7 +1178,9 @@ local function applyHit(s, t, rawAmount, opts)
 
   -- Mitigation
   local mit
-  if opts.isPet then
+  if opts.mental then
+    mit = 0
+  elseif opts.isPet then
     if opts.armor then
       mit = math.max(0, (t.armor or 0) + (t.trueArmor or 0) + math.max(0, t.tempArmor or 0))
     else
@@ -1182,7 +1203,7 @@ local function applyHit(s, t, rawAmount, opts)
   local dmg = effDmg(amount, mit)
 
   local manaAbsorbed, manaBroke = 0, false
-  if not opts.isPet and dmg > 0 then
+  if not opts.isPet and not opts.mental and dmg > 0 then
     dmg, manaAbsorbed, manaBroke = applyManaShield(s, dmg)
   end
 
@@ -1197,6 +1218,12 @@ local function applyHit(s, t, rawAmount, opts)
     -- entry reports as "Résultat"). Pet hits count toward the owner.
     if type(s.meter) ~= "table" then s.meter = {} end
     s.meter.dmg = (s.meter.dmg or 0) + dmg
+  end
+
+  if dmg > 0 then
+    emitCombatText("DAMAGE", dmg)
+  elseif rawAmount > 0 then
+    emitCombatText("BLOCK")
   end
 
   local entry = {
@@ -1248,6 +1275,29 @@ function Core.DamageTrue(amount)
   applyHit(s, s, amount, { armor = false, historyKind = "DAMAGE_TRUE" })
 end
 
+-- Like DamageWithArmor but the hit cannot be dodged.
+function Core.DamageNoDodge(amount)
+  local s = Core.state
+  if not s then return end
+  applyHit(s, s, amount, { armor = true, ignoreDodge = true, historyKind = "DAMAGE_NODODGE" })
+end
+
+-- Like DamageTrue (normal armor ignored, invulnerable/temp armor and shields
+-- still apply) but the hit cannot be dodged.
+function Core.DamageNoDodgeTrue(amount)
+  local s = Core.state
+  if not s then return end
+  applyHit(s, s, amount, { armor = false, ignoreDodge = true, historyKind = "DAMAGE_NODODGE_TRUE" })
+end
+
+-- Mental damage: bypasses every defense (dodge, block, magic shield, mana
+-- shield, and all armor including invulnerable) — applied straight to HP.
+function Core.DamageMental(amount)
+  local s = Core.state
+  if not s then return end
+  applyHit(s, s, amount, { armor = false, ignoreDodge = true, mental = true, historyKind = "DAMAGE_MENTAL" })
+end
+
 -- opts: { kind=str, isPet=bool, gainRatio=number|nil, woundCapFn=fn|nil, subject=str|nil }
 -- gainRatio: fixed fraction of maxHp (DivineHeal=0.75, Surgery=0.50); nil = normal heal with cap
 local function applyHeal(s, t, amount, opts)
@@ -1268,6 +1318,8 @@ local function applyHeal(s, t, amount, opts)
     pushHistory({ kind = opts.kind, subject = opts.subject, gain = gain,
                   hpBefore = hpBefore, hpAfter = t.hp or 0, maxHp = maxBefore })
     recomputeWounds(t)
+    local applied = (t.hp or 0) - hpBefore
+    if applied > 0 then emitCombatText("HEAL", applied) end
   else
     -- Normal heal: capped by wound threshold
     if amount > 0 then sfxHealLight() end
@@ -1284,6 +1336,8 @@ local function applyHeal(s, t, amount, opts)
                   hpBefore = hpBefore, hpAfter = t.hp or 0, maxHp = maxBefore,
                   woundCap = woundCapFn(target), healer = opts.healer })
     updateWoundsSticky(t)
+    local appliedHeal = (t.hp or 0) - hpBefore
+    if appliedHeal > 0 then emitCombatText("HEAL", appliedHeal) end
   end
 
   if (t.hp or 0) > 0 and not opts.isPet then s.stabilise = nil end

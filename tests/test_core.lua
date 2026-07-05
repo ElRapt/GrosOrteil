@@ -2248,3 +2248,132 @@ T.describe("Core.RegenParTour", function()
     T.assertNil(Core.state.stabilise)
   end)
 end)
+
+T.describe("Core combat text hook", function()
+  local events
+  local function capture()
+    reset()
+    events = {}
+    Core.SetCombatTextHandler(function(kind, amount)
+      events[#events + 1] = { kind = kind, amount = amount }
+    end)
+  end
+  local function teardown()
+    Core.SetCombatTextHandler(nil)
+  end
+
+  T.it("emits DAMAGE with the effective amount", function()
+    capture()
+    Core.SetHP(50, 50)
+    Core.DamageTrue(12)
+    T.assertEq(#events, 1)
+    T.assertEq(events[1].kind, "DAMAGE")
+    T.assertEq(events[1].amount, 12)
+    teardown()
+  end)
+
+  T.it("emits DODGE when the hit is dodged", function()
+    capture()
+    Core.SetDodge(20)
+    Core.DamageTrue(15)
+    T.assertEq(#events, 1)
+    T.assertEq(events[1].kind, "DODGE")
+    teardown()
+  end)
+
+  T.it("emits BLOCK when the hit is fully absorbed", function()
+    capture()
+    Core.SetTempBlock(30)
+    Core.DamageWithArmor(10)
+    T.assertEq(#events, 1)
+    T.assertEq(events[1].kind, "BLOCK")
+    teardown()
+  end)
+
+  T.it("emits HEAL with the actually-applied amount", function()
+    capture()
+    Core.SetHP(40, 50)
+    Core.Heal(25)
+    T.assertEq(#events, 1)
+    T.assertEq(events[1].kind, "HEAL")
+    T.assertEq(events[1].amount, 10)
+    teardown()
+  end)
+
+  T.it("emits nothing for a heal capped to zero", function()
+    capture()
+    Core.SetHP(50, 50)
+    Core.Heal(10)
+    T.assertEq(#events, 0)
+    teardown()
+  end)
+
+  T.it("is a safe no-op when no handler is registered", function()
+    reset()
+    Core.SetCombatTextHandler(nil)
+    Core.DamageTrue(5)  -- must not error
+    T.assertTrue(true)
+  end)
+end)
+
+T.describe("Core special damage kinds", function()
+  T.it("DamageNoDodge ignores dodge but keeps block and armor", function()
+    reset()
+    Core.SetHP(50, 50)
+    Core.SetDodge(100)          -- would dodge any normal hit
+    Core.SetTempBlock(3)
+    Core.SetArmor(2, 0)
+    Core.DamageNoDodge(10)
+    -- 10 - 3 block = 7, - 2 armor = 5
+    T.assertEq(Core.state.hp, 45)
+    T.assertEq(Core.state.history[1].kind, "DAMAGE_NODODGE")
+    T.assertEq(Core.state.history[1].dodged, false)
+  end)
+
+  T.it("DamageNoDodgeTrue ignores dodge and normal armor, keeps invulnerable armor", function()
+    reset()
+    Core.SetHP(50, 50)
+    Core.SetDodge(100)
+    Core.SetArmor(5, 2)      -- armor=5 ignored, trueArmor=2 applies
+    Core.DamageNoDodgeTrue(10)
+    T.assertEq(Core.state.hp, 42)
+    T.assertEq(Core.state.history[1].kind, "DAMAGE_NODODGE_TRUE")
+  end)
+
+  T.it("DamageMental bypasses dodge, block, shields and all armor", function()
+    reset()
+    Core.SetHP(50, 50)
+    Core.SetDodge(100)
+    Core.SetTempBlock(10)
+    Core.SetArmor(5, 5); Core.SetTempArmor(5)
+    Core.SetMagicShield(10, 10, 0)
+    Core.DamageMental(12)
+    T.assertEq(Core.state.hp, 38)                       -- full 12 to HP
+    T.assertEq(Core.state.tempBlock, 10)                -- untouched
+    T.assertEq(Core.state.magicShield.hp, 10)           -- untouched
+    T.assertEq(Core.state.history[1].kind, "DAMAGE_MENTAL")
+  end)
+
+  T.it("DamageMental bypasses an active Mage mana shield", function()
+    reset()
+    Core.SetClassKey("MAGE")
+    Core.SetHP(50, 50)
+    Core.SetResIndex(1, 20, 20)
+    Core.ToggleManaShield()
+    T.assertTrue(Core.state.manaShield.active)
+    Core.DamageMental(8)
+    T.assertEq(Core.state.hp, 42)
+    T.assertEq(Core.state.res, 20)                      -- mana untouched
+  end)
+
+  T.it("new damage kinds render in history", function()
+    reset()
+    Core.DamageNoDodge(5)
+    Core.DamageNoDodgeTrue(5)
+    Core.DamageMental(5)
+    local History = ns.History
+    for i = 1, 3 do
+      T.assertNotNil(History.FormatEntry(Core.state.history[i]))
+    end
+  end)
+end)
