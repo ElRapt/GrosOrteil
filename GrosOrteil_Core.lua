@@ -1602,3 +1602,66 @@ end
 function Core.PetDailyRegenRes()
   -- Pets have no primary resource; no-op kept for button symmetry.
 end
+
+-- ── Public API for companion addons ─────────────────────────────────────
+-- The addon namespace (`ns`) is private to GrosOrteil, so sister addons
+-- get this intentionally tiny global surface instead of a copy of
+-- the resource system. Resources are identified by profile index (see
+-- Shared.RES_PROFILES_BY_CLASS; SHAMAN: 1=Terre, 2=Air, 3=Eau, 4=Feu).
+-- Note: AddResIndex does not floor at zero — callers must validate before
+-- spending (Edith does).
+local API = rawget(_G, "GrosOrteilAPI") or {}
+_G.GrosOrteilAPI = API
+
+API.version = 1
+
+-- Returns current, max for resource index i, or nil before Core_Init.
+function API.GetResIndex(i)
+  local s = Core.state
+  if not s then return nil end
+  local resKey, maxKey = ns.Shared.GetKeysForIdx(i)
+  if not resKey then return nil end
+  return tonumber(s[resKey]) or 0, tonumber(s[maxKey]) or 0
+end
+
+function API.AddResIndex(i, amount)
+  Core.AddResIndex(i, amount)
+end
+
+function API.GetClassKey()
+  local s = Core.state
+  return s and s.classKey or nil
+end
+
+-- Melee / ranged attack stats already live on the GrosOrteil sheet;
+-- exposed so Edith edits the same values instead of duplicating them.
+function API.GetAttaque()
+  local s = Core.state
+  if not s then return nil end
+  return tonumber(s.attaqueMelee) or 0, tonumber(s.attaqueDistance) or 0
+end
+
+function API.SetAttaque(melee, dist)
+  Core.SetAttaque(melee, dist)
+end
+
+function API.GetDodge()
+  local s = Core.state
+  if not s then return nil end
+  return tonumber(s.dodge) or 0
+end
+
+function API.IsPetEnabled()
+  local s = Core.state
+  local p = s and s.pet
+  return (p and p.enabled) and true or false
+end
+
+-- Subscribe to state changes. The callback receives no arguments (the
+-- private state table is deliberately not handed out); it fires once
+-- immediately when state is already initialized. Returns an unsubscribe
+-- function.
+function API.OnChange(fn)
+  if type(fn) ~= "function" then return end
+  return Core.OnChange(function() fn() end)
+end
