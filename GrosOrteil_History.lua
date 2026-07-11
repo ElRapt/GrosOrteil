@@ -204,10 +204,14 @@ function History.FormatEntry(e)
 			"Après " .. colorize(fmtInt(e.hpAfter), COLORS.RESULT),
 		})
 		return table.concat(lines, "\n")
-	elseif e.kind == "DAMAGE_MENTAL" then
+	elseif e.kind == "DAMAGE_DIRECT" or e.kind == "DAMAGE_MENTAL" then
+		-- DAMAGE_MENTAL is the legacy name of DAMAGE_DIRECT; old saved journals
+		-- still carry it, so both render here.
+		local dmgLabel = (e.kind == "DAMAGE_MENTAL")
+			and "Dégâts subis (mentaux)" or "Dégâts subis (directs)"
 		return block(
 			sep({
-				prefix("Dégâts subis (mentaux)", COLORS.DAMAGE),
+				prefix(dmgLabel, COLORS.DAMAGE),
 				"Valeur " .. fmtInt(e.input),
 				"Résultat " .. colorize(fmtInt(e.damage), COLORS.RESULT),
 			}),

@@ -1285,7 +1285,7 @@ function ns.UI_Init()
     "Ressources",       -- 2
     "Armure & blocage", -- 3 (was 4)
     "Actions",          -- 4 (was 5)
-    "",                 -- 5  reserved slot (always hidden)
+    "Affixes",          -- 5
     "Classes",          -- 6 (was 3)
     "Historique",       -- 7
     "Familier",         -- 8  familiar section (merged)
@@ -1300,6 +1300,7 @@ function ns.UI_Init()
   -- Short descriptions shown when hovering the sidebar tabs.
   local TAB_TIPS = {
     [1] = "Points de vie, armure, attaque, actions et ressources du personnage.",
+    [5] = "Affixes de zone : bonus et malus temporaires appliqués à la fiche.",
     [6] = "Choix de la classe : couleurs, ressources et seuils associés.",
     [7] = "Journal des évènements du personnage.",
     [8] = "Fiche du familier : PV, armure, attaque et actions.",
@@ -1428,7 +1429,7 @@ function ns.UI_Init()
   local pageRes     = mkPage()   -- 2
   mkPage()                       -- 3  (hidden — merged into Paramètres)
   mkPage()                       -- 4  (hidden — merged into Paramètres)
-  mkPage()                       -- 5 (reserved slot, always hidden)
+  local pageAffixes = mkPage()   -- 5
   local pageClasses = mkPage()   -- 6 (was 3)
   local pageHistory = mkPage()   -- 7
   local pagePetHP     = mkPage() -- 8: familiar – Fiche (merged)
@@ -1436,12 +1437,11 @@ function ns.UI_Init()
   local pagePetCombat = mkPage() -- 10: hidden slot
   UI.pageHistory = pageHistory
 
-  -- Tabs 2-5 are merged into tab 1 (Fiche). Tab 5 is a reserved slot.
+  -- Tabs 2-4 are merged into tab 1 (Fiche). Tab 5 hosts the Affixes page.
   -- Tab 10 is a hidden slot (familiar has only Fiche + Historique).
   UI.tabHidden[2] = true
   UI.tabHidden[3] = true
   UI.tabHidden[4] = true
-  UI.tabHidden[5] = true
   UI.tabHidden[10] = true
 
   -- ── Section switcher buttons (bottom of sidebar) ────────────────────
@@ -1679,6 +1679,10 @@ function ns.UI_Init()
   ns.UI_BuildPetHistoryTab(tabCtx)
 
   setSidebarSection(1)
+
+  -- Onglet 5 : Affixes
+  tabCtx.page = pageAffixes
+  ns.UI_BuildAffixesTab(tabCtx)
 
   -- Onglet 6 : Classes
   tabCtx.page = pageClasses

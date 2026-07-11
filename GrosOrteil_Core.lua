@@ -149,6 +149,10 @@ local SNAPSHOT_SCALARS = {
   "armor", "trueArmor", "tempArmor",
   "dodge", "tempBlock", "rev",
   "shamanPosture", "shamanPostureDmgBonus",
+  -- Attack stats are mutated by the zone affixes and the insanity tier bonus;
+  -- snapshotting them keeps an undone toggle consistent with its recorded
+  -- applied deltas.
+  "attaqueMelee", "attaqueDistance", "insanityAtkApplied",
 }
 local SNAPSHOT_PET_FIELDS = {
   "enabled", "name", "hp", "maxHp",
@@ -167,8 +171,26 @@ local function copyKeys(src, keys)
   return out
 end
 
+local function copyAffixTables(src)
+  local affixes, applied = nil, nil
+  if type(src.affixes) == "table" then
+    affixes = {}
+    for k, v in pairs(src.affixes) do affixes[k] = v end
+  end
+  if type(src.affixApplied) == "table" then
+    applied = {}
+    for k, deltas in pairs(src.affixApplied) do
+      local d = {}
+      for f, v in pairs(deltas) do d[f] = v end
+      applied[k] = d
+    end
+  end
+  return affixes, applied
+end
+
 local function deepCopyState(s)
   local c = copyKeys(s, SNAPSHOT_SCALARS)
+  c.affixes, c.affixApplied = copyAffixTables(s)
   local ms = s.magicShield
   c.magicShield = ms and { hp = ms.hp, maxHp = ms.maxHp, armor = ms.armor } or nil
   local mns = s.manaShield
@@ -211,6 +233,9 @@ local function restoreSnapshot(snap)
   end
   local spb = snap.shamanPostureBase
   s.shamanPostureBase = spb and copyKeys(spb, SNAPSHOT_POSTURE_BASE) or nil
+  local affixes, affixApplied = copyAffixTables(snap)
+  s.affixes      = affixes      or {}
+  s.affixApplied = affixApplied or {}
   s.wounds.hit25 = snap.wounds.hit25
   s.wounds.hit10 = snap.wounds.hit10
   if snap.meter then
@@ -283,6 +308,7 @@ end
 -- Forward declarations: defined later but referenced by setters.
 local applyManaShieldActive
 local deactivateShamanPosture
+local reapplyClassAffixes
 
 local function clampNumber(x, minv, maxv)
   if type(x) ~= "number" then return nil end
@@ -439,6 +465,32 @@ local function clampMageArcaneCharge(s)
   if s.res2 < 0 then s.res2 = 0 elseif s.res2 > MAGE_ARCANE_CHARGE_MAX then s.res2 = MAGE_ARCANE_CHARGE_MAX end
 end
 
+-- Prêtre ombre : les paliers d'Insanité augmentent le jet d'attaque de base
+-- (palier 2 : +10, palier 3 : +15). Le bonus est réellement appliqué aux deux
+-- stats d'attaque ; s.insanityAtkApplied garde la part actuellement appliquée
+-- pour n'ajuster que la différence quand l'Insanité ou la classe change.
+local function insanityTierAtkBonus(s)
+  if s.classKey ~= "SHADOWPRIEST" then return 0 end
+  local ins = tonumber(s.res2) or 0
+  if ins >= 18 then return 15 end
+  if ins >= 11 then return 10 end
+  return 0
+end
+
+local function updateInsanityAtkBonus(s)
+  if not s then return end
+  local target  = insanityTierAtkBonus(s)
+  local applied = tonumber(s.insanityAtkApplied) or 0
+  if target == applied then
+    s.insanityAtkApplied = applied
+    return
+  end
+  local delta = target - applied
+  s.attaqueMelee    = math.max(0, (s.attaqueMelee or 0) + delta)
+  s.attaqueDistance = math.max(0, (s.attaqueDistance or 0) + delta)
+  s.insanityAtkApplied = target
+end
+
 local function effDmg(dmg, mitigation)
   dmg = math.max(0, dmg or 0)
   mitigation = math.max(0, mitigation or 0)
@@ -491,6 +543,8 @@ function ns.Core_Init()
     attaqueMelee = 0, attaqueDistance = 0,
     chance = 1, maxChance = 1,
     perception = 0,
+
+    affixes = {}, affixApplied = {},
 
     history = {},
 
@@ -586,6 +640,13 @@ function ns.Core_Init()
   if db.state.maxChance       == nil then db.state.maxChance       = 1 end
   if db.state.perception      == nil then db.state.perception      = 0 end
   if db.state.regenParTour    == nil then db.state.regenParTour    = 1 end
+  -- Affixes de zone (added later): ensure the maps exist on old saves.
+  if type(db.state.affixes)      ~= "table" then db.state.affixes      = {} end
+  if type(db.state.affixApplied) ~= "table" then db.state.affixApplied = {} end
+  -- Bonus d'attaque des paliers d'Insanité : applique la part manquante sur
+  -- les vieilles sauvegardes (insanityAtkApplied absent = rien d'appliqué).
+  if type(db.state.insanityAtkApplied) ~= "number" then db.state.insanityAtkApplied = 0 end
+  updateInsanityAtkBonus(db.state)
   -- stabilise is only valid when hp == 0; clear it on load if hp > 0.
   if (db.state.hp or 0) > 0 then db.state.stabilise = nil end
   clampHpToEffectiveMax(db.state)
@@ -649,6 +710,11 @@ function Core.SetClassKey(classKey)
   elseif classKey ~= "SHADOWPRIEST" then
     clampToMax(s, "res2", "maxRes2")
   end
+
+  -- Beledar Jour flips bonus/malus depending on class: recompute it in place.
+  reapplyClassAffixes(s)
+  -- Entering/leaving SHADOWPRIEST applies/removes the insanity attack bonus.
+  updateInsanityAtkBonus(s)
   bump(); notify()
 end
 
@@ -852,6 +918,7 @@ function Core.SetResIndex(i, res, maxRes)
   elseif isMageArcaneCharge then
     clampMageArcaneCharge(s)
   end
+  if isShadowInsanity then updateInsanityAtkBonus(s) end
   bump(); notify()
 end
 
@@ -874,6 +941,7 @@ function Core.AddResIndex(i, amount)
   elseif not isShadowInsanity then
     clampToMax(s, resKey, maxKey)
   end
+  if isShadowInsanity then updateInsanityAtkBonus(s) end
   bump(); notify()
 end
 
@@ -1110,10 +1178,10 @@ local function applyManaShield(s, dmg)
 end
 
 -- opts: { armor=bool, isPet=bool, historyKind=str, subject=str|nil,
---         ignoreDodge=bool, mental=bool }
+--         ignoreDodge=bool, direct=bool }
 -- For player targets `t` is Core.state; for pet targets `t` is Core.state.pet.
 -- Player-only features (Shaman posture, mana shield) are skipped when isPet=true.
--- ignoreDodge skips the dodge check; mental additionally bypasses block, magic
+-- ignoreDodge skips the dodge check; direct additionally bypasses block, magic
 -- shield, mana shield and ALL armor (normal + invulnerable + temp) — straight to HP.
 local function applyHit(s, t, rawAmount, opts)
   rawAmount = clampNumber(rawAmount, 0, 1e9) or 0
@@ -1163,7 +1231,7 @@ local function applyHit(s, t, rawAmount, opts)
   end
 
   -- Magic absorption
-  if opts.mental then
+  if opts.direct then
     absorbedMagic = 0
   elseif opts.isPet then
     amount, absorbedMagic = consumeMagicShield(t, amount)
@@ -1178,7 +1246,7 @@ local function applyHit(s, t, rawAmount, opts)
 
   -- Mitigation
   local mit
-  if opts.mental then
+  if opts.direct then
     mit = 0
   elseif opts.isPet then
     if opts.armor then
@@ -1203,7 +1271,7 @@ local function applyHit(s, t, rawAmount, opts)
   local dmg = effDmg(amount, mit)
 
   local manaAbsorbed, manaBroke = 0, false
-  if not opts.isPet and not opts.mental and dmg > 0 then
+  if not opts.isPet and not opts.direct and dmg > 0 then
     dmg, manaAbsorbed, manaBroke = applyManaShield(s, dmg)
   end
 
@@ -1275,27 +1343,12 @@ function Core.DamageTrue(amount)
   applyHit(s, s, amount, { armor = false, historyKind = "DAMAGE_TRUE" })
 end
 
--- Like DamageWithArmor but the hit cannot be dodged.
-function Core.DamageNoDodge(amount)
-  local s = Core.state
-  if not s then return end
-  applyHit(s, s, amount, { armor = true, ignoreDodge = true, historyKind = "DAMAGE_NODODGE" })
-end
-
--- Like DamageTrue (normal armor ignored, invulnerable/temp armor and shields
--- still apply) but the hit cannot be dodged.
-function Core.DamageNoDodgeTrue(amount)
-  local s = Core.state
-  if not s then return end
-  applyHit(s, s, amount, { armor = false, ignoreDodge = true, historyKind = "DAMAGE_NODODGE_TRUE" })
-end
-
--- Mental damage: bypasses every defense (dodge, block, magic shield, mana
+-- Direct damage: bypasses every defense (dodge, block, magic shield, mana
 -- shield, and all armor including invulnerable) — applied straight to HP.
-function Core.DamageMental(amount)
+function Core.DamageDirect(amount)
   local s = Core.state
   if not s then return end
-  applyHit(s, s, amount, { armor = false, ignoreDodge = true, mental = true, historyKind = "DAMAGE_MENTAL" })
+  applyHit(s, s, amount, { armor = false, ignoreDodge = true, direct = true, historyKind = "DAMAGE_DIRECT" })
 end
 
 -- opts: { kind=str, isPet=bool, gainRatio=number|nil, woundCapFn=fn|nil, subject=str|nil }
@@ -1463,6 +1516,124 @@ function Core.SetShamanPosture(posture)
   bump(); notify()
 end
 
+-- ── Affixes de zone ──────────────────────────────────────────────────────
+-- Toggles (Beledar Jour/Nuit, Cambuse) qui modifient la fiche tant qu'ils
+-- sont actifs. Chaque activation enregistre dans s.affixApplied les deltas
+-- réellement appliqués (après clamp à 0), pour que la désactivation restaure
+-- exactement les valeurs d'origine même si un clamp a tronqué le malus.
+local AFFIX_EXCLUSIVE = {
+  BELEDAR_JOUR = "BELEDAR_NUIT",
+  BELEDAR_NUIT = "BELEDAR_JOUR",
+}
+
+-- Deltas par champ pour un affixe, selon la classe courante. L'attaque couvre
+-- CaC et distance. Beledar Jour devient un malus pour démoniste/prêtre ombre.
+local function affixDeltas(s, key)
+  if key == "BELEDAR_JOUR" then
+    local sign = (s.classKey == "WARLOCK" or s.classKey == "SHADOWPRIEST") and -1 or 1
+    return { attaqueMelee = 5 * sign, attaqueDistance = 5 * sign, dodge = 5 * sign, armor = 1 * sign }
+  elseif key == "BELEDAR_NUIT" then
+    return { attaqueMelee = -10, attaqueDistance = -10, dodge = -10, armor = -2 }
+  elseif key == "CAMBUSE_ATTAQUE" then
+    return { attaqueMelee = 10, attaqueDistance = 10, dodge = 5 }
+  elseif key == "CAMBUSE_PV" then
+    return { maxHp = 20, hp = 20 }
+  end
+  return nil
+end
+
+local function ensureAffixTables(s)
+  if type(s.affixes)      ~= "table" then s.affixes      = {} end
+  if type(s.affixApplied) ~= "table" then s.affixApplied = {} end
+end
+
+local function affixFieldMin(field)
+  return (field == "maxHp") and 1 or 0
+end
+
+local function applyAffixField(s, applied, field, delta)
+  local old = s[field] or 0
+  local new = old + delta
+  local minv = affixFieldMin(field)
+  if new < minv then new = minv end
+  s[field] = new
+  applied[field] = new - old
+end
+
+local function applyAffix(s, key)
+  local deltas = affixDeltas(s, key)
+  if not deltas then return end
+  local applied = {}
+  -- maxHp d'abord, pour que le clamp des PV voie le nouveau plafond.
+  if deltas.maxHp then applyAffixField(s, applied, "maxHp", deltas.maxHp) end
+  for field, delta in pairs(deltas) do
+    if field ~= "maxHp" then applyAffixField(s, applied, field, delta) end
+  end
+  if deltas.maxHp or deltas.hp then
+    clampHpToEffectiveMax(s)
+    recomputeWounds(s)
+  end
+  s.affixApplied[key] = applied
+end
+
+local function removeAffix(s, key)
+  local applied = s.affixApplied[key]
+  s.affixApplied[key] = nil
+  if not applied then return end
+  local touchedHp = false
+  for field, delta in pairs(applied) do
+    local new = (s[field] or 0) - delta
+    local minv = affixFieldMin(field)
+    if new < minv then new = minv end
+    s[field] = new
+    if field == "maxHp" or field == "hp" then touchedHp = true end
+  end
+  if touchedHp then
+    clampHpToEffectiveMax(s)
+    recomputeWounds(s)
+  end
+end
+
+reapplyClassAffixes = function(s)
+  if type(s.affixes) ~= "table" then return end
+  if s.affixes.BELEDAR_JOUR then
+    ensureAffixTables(s)
+    removeAffix(s, "BELEDAR_JOUR")
+    applyAffix(s, "BELEDAR_JOUR")
+  end
+end
+
+function Core.IsAffixActive(key)
+  local s = Core.state
+  return (s and type(s.affixes) == "table" and s.affixes[key]) and true or false
+end
+
+function Core.ToggleAffix(key)
+  local s = Core.state
+  if not s then return end
+  if type(key) ~= "string" or not affixDeltas(s, key) then return end
+  ensureAffixTables(s)
+
+  if s.affixes[key] then
+    removeAffix(s, key)
+    s.affixes[key] = nil
+  else
+    local other = AFFIX_EXCLUSIVE[key]
+    if other and s.affixes[other] then
+      removeAffix(s, other)
+      s.affixes[other] = nil
+    end
+    applyAffix(s, key)
+    s.affixes[key] = true
+    -- Prêtre ombre : la nuit de Beledar nourrit l'Insanité, une fois par toggle.
+    if key == "BELEDAR_NUIT" and s.classKey == "SHADOWPRIEST" then
+      s.res2 = (s.res2 or 0) + 2
+      updateInsanityAtkBonus(s)
+    end
+  end
+  bump(); notify()
+end
+
 -- Restaure les PV au maximum.
 function Core.RestoreHP()
   local s = Core.state
@@ -1534,6 +1705,16 @@ function Core.PetDamageTrue(amount)
   local p = ensurePet(s)
   if not p.enabled then return end
   applyHit(s, p, amount, { armor = false, isPet = true, historyKind = "DAMAGE_TRUE",  subject = "PET" })
+end
+
+-- Direct damage on the pet: bypasses dodge, magic shield and all armor.
+function Core.PetDamageDirect(amount)
+  local s = Core.state
+  if not s then return end
+  local p = ensurePet(s)
+  if not p.enabled then return end
+  applyHit(s, p, amount, { armor = false, ignoreDodge = true, direct = true, isPet = true,
+                           historyKind = "DAMAGE_DIRECT", subject = "PET" })
 end
 
 function Core.PetHeal(amount)

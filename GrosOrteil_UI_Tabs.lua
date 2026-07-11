@@ -81,12 +81,10 @@ function ns.UI_BuildFicheTab(ctx)
   local function applyAllManaShield()
     Core.SetManaShieldArmor(ctx.getNumber(mnsArmorEB))
   end
-  local function doDmgArmor()       Core.DamageWithArmor(ctx.getNumber(actValEB) or 0) end
-  local function doDmgTrue()        Core.DamageTrue(ctx.getNumber(actValEB) or 0) end
-  local function doDmgNoDodge()     Core.DamageNoDodge(ctx.getNumber(actValEB) or 0) end
-  local function doDmgNoDodgeTrue() Core.DamageNoDodgeTrue(ctx.getNumber(actValEB) or 0) end
-  local function doDmgMental()      Core.DamageMental(ctx.getNumber(actValEB) or 0) end
-  local function doHeal()           Core.Heal(ctx.getNumber(actValEB) or 0) end
+  local function doDmgArmor()  Core.DamageWithArmor(ctx.getNumber(actValEB) or 0) end
+  local function doDmgTrue()   Core.DamageTrue(ctx.getNumber(actValEB) or 0) end
+  local function doDmgDirect() Core.DamageDirect(ctx.getNumber(actValEB) or 0) end
+  local function doHeal()      Core.Heal(ctx.getNumber(actValEB) or 0) end
 
   -- Hover help on a styled button (title + wrapped description).
   local function addTip(btn, title, desc)
@@ -165,8 +163,8 @@ function ns.UI_BuildFicheTab(ctx)
     return row
   end
 
-  mkResRow(1, -874); mkResRow(2, -902); mkResRow(3, -930); mkResRow(4, -958); mkResRow(5, -986)
-  UI.noResHint = mkLabelCenter(UI.lowerBlock, "Aucune ressource pour cette classe.", 0, -722)
+  mkResRow(1, -836); mkResRow(2, -864); mkResRow(3, -892); mkResRow(4, -920); mkResRow(5, -948)
+  UI.noResHint = mkLabelCenter(UI.lowerBlock, "Aucune ressource pour cette classe.", 0, -684)
   UI.noResHint:Hide()
 
   -- Main Fiche content
@@ -316,63 +314,55 @@ function ns.UI_BuildFicheTab(ctx)
       "Dégâts (bruts)",
       "Dégâts ignorant l'armure normale — seuls l'esquive, le bouclier magique, "
         .. "l'armure invulnérable et temporaire s'appliquent.")
-    addTip(btn("Dégâts (inesquivable)", 210, 0, -500, doDmgNoDodge),
-      "Dégâts (inesquivable)",
-      "Dégâts impossibles à esquiver — blocage, bouclier magique et armure "
-        .. "totale (armure + invul. + tempo.) s'appliquent normalement.")
-    addTip(btn("Dégâts (inesquivable bruts)", 210, 230, -500, doDmgNoDodgeTrue),
-      "Dégâts (inesquivable bruts)",
-      "Dégâts impossibles à esquiver et ignorant l'armure normale — seuls le "
-        .. "bouclier magique, l'armure invulnérable et temporaire s'appliquent.")
-    addTip(btn("Dégâts (mentaux)", 210, 0, -538, doDmgMental),
-      "Dégâts (mentaux)",
-      "Dégâts mentaux ignorant TOUTES les résistances : esquive, blocage, "
-        .. "boucliers et armures (y compris l'armure invulnérable).")
-    addTip(btn("Soins",              210, 230, -538, doHeal),
+    addTip(btn("Dégâts directs", 210, 0, -500, doDmgDirect),
+      "Dégâts directs",
+      "Dégâts sans aucune réduction : esquive, blocage, boucliers et armures "
+        .. "(y compris l'armure invulnérable) sont ignorés.")
+    addTip(btn("Soins",              210, 230, -500, doHeal),
       "Soins",
       "Rend la valeur en PV, dans la limite du plafond de blessure "
         .. "(50 % après une blessure grave, 25 % après une blessure critique).")
-    addTip(btn("Soins divins (75%)", 210, 0, -576, function() Core.DivineHeal() end),
+    addTip(btn("Soins divins (75%)", 210, 0, -538, function() Core.DivineHeal() end),
       "Soins divins",
       "Rend 75 % du max de PV, en ignorant les plafonds de blessure.")
-    addTip(btn("Chirurgie (50%)",    210, 230, -576, function() Core.Surgery() end),
+    addTip(btn("Chirurgie (50%)",    210, 230, -538, function() Core.Surgery() end),
       "Chirurgie",
       "Rend 50 % du max de PV, en ignorant les plafonds de blessure.")
-    mkSep(-618)
+    mkSep(-580)
 
     -- Blocage
-    mkSectionHeader("Blocage", -630)
-    lbl("Blocage", 0, -656)
-    blockEB = edt(110, 162, -654, applyAllArmor)
-    addTip(btn("Réinit.", 100, 284, -654, function() Core.ResetTempBlock() end),
+    mkSectionHeader("Blocage", -592)
+    lbl("Blocage", 0, -618)
+    blockEB = edt(110, 162, -616, applyAllArmor)
+    addTip(btn("Réinit.", 100, 284, -616, function() Core.ResetTempBlock() end),
       "Réinitialiser le blocage",
       "Remet le blocage temporaire à zéro.")
-    mkSep(-690)
+    mkSep(-652)
 
     -- Boucliers magiques: 1x3 grid on PV row (cur | max | Réinit); col1 alignment elsewhere.
-    mkSectionHeader("Boucliers magiques", -702)
-    lbl("PV", 0, -728); lbl("/", 148, -728)
-    msHpEB    = edt(110, 26,  -726, applyAllMagicShield)
-    msMaxHpEB = edt(110, 166, -726, applyAllMagicShield)
-    btn("Réinit.", 100, 284, -726, function()
+    mkSectionHeader("Boucliers magiques", -664)
+    lbl("PV", 0, -690); lbl("/", 148, -690)
+    msHpEB    = edt(110, 26,  -688, applyAllMagicShield)
+    msMaxHpEB = edt(110, 166, -688, applyAllMagicShield)
+    btn("Réinit.", 100, 284, -688, function()
       if Core and Core.ResetMagicShield then Core.ResetMagicShield() end
     end)
-    lbl("Armure", 0, -760)
-    msArmorEB = edt(110, 166, -758, applyAllMagicShield)
-    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -794, function()
+    lbl("Armure", 0, -722)
+    msArmorEB = edt(110, 166, -720, applyAllMagicShield)
+    mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -756, function()
       if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
     end)
     UI.manaShieldToggleBtn = mnsToggleBtn
-    mnsArmorLabel = mkLabel(UI.lowerBlock, "Armure", 246, -794 + LBL_Y + _LO)
+    mnsArmorLabel = mkLabel(UI.lowerBlock, "Armure", 246, -756 + LBL_Y + _LO)
     UI.manaShieldArmorLabel = mnsArmorLabel
-    mnsArmorEB = edt(100, 284, -794, applyAllManaShield)
+    mnsArmorEB = edt(100, 284, -756, applyAllManaShield)
     UI.manaShieldArmorEB = mnsArmorEB
     mnsToggleBtn:Hide(); mnsArmorLabel:Hide()
     if mnsArmorEB._wrap then mnsArmorEB._wrap:Hide() else mnsArmorEB:Hide() end
-    mkSep(-830)
+    mkSep(-792)
 
     -- Ressources header (rows pre-built above)
-    mkSectionHeader("Ressources", -842)
+    mkSectionHeader("Ressources", -804)
 
     -- Postures Élémentaires (Shaman uniquement)
     do
@@ -392,7 +382,7 @@ function ns.UI_BuildFicheTab(ctx)
       }
       local postureSection = UI.lowerBlock:CreateFontString(nil, "OVERLAY")
       postureSection:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-      postureSection:SetPoint("TOP", UI.lowerBlock, "TOP", 0, -1024 + _LO)
+      postureSection:SetPoint("TOP", UI.lowerBlock, "TOP", 0, -986 + _LO)
       postureSection:SetWidth(BLOCK_W)
       postureSection:SetJustifyH("CENTER")
       postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
@@ -402,8 +392,8 @@ function ns.UI_BuildFicheTab(ctx)
 
       local postureSepLine = UI.lowerBlock:CreateTexture(nil, "ARTWORK")
       postureSepLine:SetTexture(TEX.FLAT)
-      postureSepLine:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  0, -1042 + _LO)
-      postureSepLine:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", 0, -1042 + _LO)
+      postureSepLine:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  0, -1004 + _LO)
+      postureSepLine:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", 0, -1004 + _LO)
       postureSepLine:SetHeight(1)
       postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
       UI.postureSepLine = postureSepLine
@@ -414,7 +404,7 @@ function ns.UI_BuildFicheTab(ctx)
       local startX = math.floor((BLOCK_W - totalW) / 2)
       for i, def in ipairs(POSTURE_DEFS) do
         local bx = startX + (i - 1) * (BTN_W + GAP)
-        local b = mkButton(UI.lowerBlock, def.label, BTN_W, BTN_H2, bx, -1052 + _LO)
+        local b = mkButton(UI.lowerBlock, def.label, BTN_W, BTN_H2, bx, -1014 + _LO)
         b._postureKey = def.key
         b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
         local tipTitle, tipDesc = def.tip, def.desc
@@ -431,7 +421,7 @@ function ns.UI_BuildFicheTab(ctx)
       end
     end
 
-    paramChild:SetHeight(1116)
+    paramChild:SetHeight(1078)
   end
 
   -- Write widget refs into ctx.inputs
@@ -446,6 +436,114 @@ function ns.UI_BuildFicheTab(ctx)
     perception = perceptionEB,
     regenParTour = regenParTourEB,
   }
+end
+
+-- ── Tab 5 (Affixes) ──────────────────────────────────────────────────────────
+-- Zone-affix toggles, styled after the Shaman posture buttons: colored
+-- backdrop + border while active, tooltip describing the stat effects.
+-- ctx fields used: page (pageAffixes), C, TEX, Core, mkRowAnchor, mkButton,
+--   lastStateRef
+function ns.UI_BuildAffixesTab(ctx)
+  local UI   = ns.UI
+  local page = ctx.page
+  local C    = ctx.C
+  local TEX  = ctx.TEX
+  local Core = ctx.Core
+  local mkRowAnchor  = ctx.mkRowAnchor
+  local mkButton     = ctx.mkButton
+  local lastStateRef = ctx.lastStateRef
+
+  local AFFIX_DEFS = {
+    { key = "BELEDAR_JOUR", label = "Beledar : Jour", r = 1.00, g = 0.85, b = 0.30,
+      tip  = "Beledar : Jour",
+      desc = "+5 attaque (CaC et distance)\n+5 esquive\n+1 armure\n\n"
+        .. "Exclusif avec Beledar : Nuit.",
+      descMalus = "-5 attaque (CaC et distance)\n-5 esquive\n-1 armure\n\n"
+        .. "La lumière de Beledar brûle les démonistes et prêtres ombre.\n\n"
+        .. "Exclusif avec Beledar : Nuit." },
+    { key = "BELEDAR_NUIT", label = "Beledar : Nuit", r = 0.55, g = 0.35, b = 0.95,
+      tip  = "Beledar : Nuit",
+      desc = "-10 attaque (CaC et distance)\n-10 esquive\n-2 armure\n\n"
+        .. "Prêtre ombre : +2 Insanité à l'activation.\n\n"
+        .. "Exclusif avec Beledar : Jour." },
+    { key = "CAMBUSE_ATTAQUE", label = "Cambuse : Attaque", r = 1.00, g = 0.35, b = 0.10,
+      tip  = "Cambuse : Attaque",
+      desc = "+10 attaque (CaC et distance)\n+5 esquive" },
+    { key = "CAMBUSE_PV", label = "Cambuse : PV", r = 0.25, g = 0.85, b = 0.35,
+      tip  = "Cambuse : PV",
+      desc = "+20 PV maximum" },
+  }
+
+  local header = page:CreateFontString(nil, "OVERLAY")
+  header:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+  header:SetPoint("TOP", page, "TOP", 0, -14)
+  header:SetJustifyH("CENTER")
+  header:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  header:SetShadowOffset(1, -1)
+  header:SetShadowColor(0, 0, 0, 0.60)
+  header:SetText("Affixes")
+
+  local headerLine = page:CreateTexture(nil, "ARTWORK")
+  headerLine:SetTexture(TEX.FLAT)
+  headerLine:SetPoint("TOPLEFT",  page, "TOPLEFT",  16, -34)
+  headerLine:SetPoint("TOPRIGHT", page, "TOPRIGHT", -16, -34)
+  headerLine:SetHeight(1)
+  headerLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+
+  local hint = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  hint:SetPoint("TOP", page, "TOP", 0, -44)
+  hint:SetWidth(420)
+  hint:SetJustifyH("CENTER")
+  hint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  hint:SetText("Cliquez pour activer ou désactiver un affixe : ses effets sont appliqués "
+    .. "immédiatement à la fiche. Beledar Jour et Nuit sont mutuellement exclusifs.")
+
+  UI.affixButtons = {}
+  local BTN_W, BTN_H, GAP = 200, 34, 10
+  local rowW = BTN_W * 2 + GAP
+  local anchors = {
+    mkRowAnchor(page, rowW, -92),
+    mkRowAnchor(page, rowW, -(92 + BTN_H + GAP)),
+  }
+
+  for i, def in ipairs(AFFIX_DEFS) do
+    local row = math.floor((i - 1) / 2) + 1
+    local col = (i - 1) % 2
+    local b = mkButton(anchors[row], def.label, BTN_W, BTN_H, col * (BTN_W + GAP), 0)
+    b._affixKey = def.key
+    b._affixR, b._affixG, b._affixB = def.r, def.g, def.b
+    b:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
+      GameTooltip:AddLine(def.tip, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+      local desc = def.desc
+      if def.descMalus then
+        local ls = lastStateRef and lastStateRef.v
+        local ck = ls and ls.classKey
+        if ck == "WARLOCK" or ck == "SHADOWPRIEST" then desc = def.descMalus end
+      end
+      GameTooltip:AddLine(desc, 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnClick", function()
+      if Core and Core.ToggleAffix then Core.ToggleAffix(def.key) end
+    end)
+    UI.affixButtons[i] = b
+  end
+
+  function UI.refreshAffixButtons(s)
+    if not UI.affixButtons then return end
+    local af = (type(s.affixes) == "table") and s.affixes or {}
+    for _, b in ipairs(UI.affixButtons) do
+      if af[b._affixKey] then
+        b:SetBackdropColor(b._affixR * 0.35, b._affixG * 0.35, b._affixB * 0.35, 0.95)
+        b:SetBackdropBorderColor(b._affixR, b._affixG, b._affixB, 1.0)
+      else
+        b:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
+        b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
+      end
+    end
+  end
 end
 
 -- ── Tab 6 (Classes) ─────────────────────────────────────────────────────────
@@ -472,8 +570,8 @@ function ns.UI_BuildClassesTab(ctx)
 
   UI.classButtons = {}
   local CLASS_KEYS = {
-    "WARRIOR","MEDIC","PALADIN","PRIEST","SHADOWPRIEST","MAGE",
-    "ROGUE","WARLOCK","DRUID","MONK","SHAMAN",
+    "WARRIOR","MEDIC","PALADIN","PRIEST","SHADOWPRIEST","DISCPRIEST",
+    "MAGE","ROGUE","WARLOCK","DRUID","MONK","SHAMAN",
   }
 
   local classBtnPerRow = math.ceil(#CLASS_KEYS / 2)
@@ -752,7 +850,8 @@ function ns.UI_BuildPetFicheTab(ctx)
   local petAttaqueMeleeEB, petAttaqueDistanceEB, petTempArmorEB
   local petMsHpEB, petMsMaxHpEB, petMsArmorEB
   local petActionValEB
-  local petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn, petSurgeryBtn
+  local petDmgArmorBtn, petDmgTrueBtn, petDmgDirectBtn
+  local petHealBtn, petDivineBtn, petSurgeryBtn
 
   local function applyAllPet()
     if not Core then return end
@@ -901,21 +1000,26 @@ function ns.UI_BuildPetFicheTab(ctx)
     "Dégâts ignorant l'armure normale du familier — seuls l'esquive, le bouclier "
       .. "magique, l'armure invulnérable et temporaire s'appliquent.")
   local aPetBtns2 = mkRowAnchor(petPane, PET_ROW_W, -406)
-  petHealBtn = addTip(mkButton(aPetBtns2, "Soins", 180, 22, 0, 0, function()
+  petDmgDirectBtn = addTip(mkButton(aPetBtns2, "Dégâts directs", 180, 22, 0, 0, function()
+    if Core and Core.PetDamageDirect then Core.PetDamageDirect(ctx.getNumber(petActionValEB) or 0) end
+  end), "Dégâts directs",
+    "Dégâts sans aucune réduction : esquive, bouclier magique et armures du "
+      .. "familier (y compris l'armure invulnérable) sont ignorés.")
+  petHealBtn = addTip(mkButton(aPetBtns2, "Soins", 180, 22, 200, 0, function()
     if Core and Core.PetHeal then Core.PetHeal(ctx.getNumber(petActionValEB) or 0) end
   end), "Soins",
     "Rend la valeur en PV au familier, dans la limite du plafond de blessure.")
-  petDivineBtn = addTip(mkButton(aPetBtns2, "Soins divins (75%)", 180, 22, 200, 0, function()
+  local aPetBtns3 = mkRowAnchor(petPane, PET_ROW_W, -434)
+  petDivineBtn = addTip(mkButton(aPetBtns3, "Soins divins (75%)", 180, 22, 0, 0, function()
     if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
   end), "Soins divins",
     "Rend 75 % du max de PV du familier, en ignorant les plafonds de blessure.")
-  local aPetBtns3 = mkRowAnchor(petPane, PET_ROW_W, -434)
-  petSurgeryBtn = addTip(mkButton(aPetBtns3, "Chirurgie (50%)", 180, 22, 0, 0, function()
+  petSurgeryBtn = addTip(mkButton(aPetBtns3, "Chirurgie (50%)", 180, 22, 200, 0, function()
     if Core and Core.PetSurgery then Core.PetSurgery() end
   end), "Chirurgie",
     "Rend 50 % du max de PV du familier, en ignorant les plafonds de blessure.")
 
-  petPane:SetHeight(480)
+  petPane:SetHeight(508)
 
   -- Write refs
   UI.petToggleBtn = petToggleBtn
@@ -923,7 +1027,8 @@ function ns.UI_BuildPetFicheTab(ctx)
                      petArmorEB, petTrueArmorEB, petDodgeEB,
                      petAttaqueMeleeEB, petAttaqueDistanceEB, petTempArmorEB,
                      petMsHpEB, petMsMaxHpEB, petMsArmorEB, petActionValEB }
-  UI.petButtons  = { petDmgArmorBtn, petDmgTrueBtn, petHealBtn, petDivineBtn, petSurgeryBtn }
+  UI.petButtons  = { petDmgArmorBtn, petDmgTrueBtn, petDmgDirectBtn,
+                     petHealBtn, petDivineBtn, petSurgeryBtn }
   ctx.petInputs  = {
     petName = petNameEB, petHpCur = petHpCurEB, petHpMax = petHpMaxEB,
     petArmor = petArmorEB, petTrueArmor = petTrueArmorEB,
@@ -1130,7 +1235,11 @@ function ns.UI_BuildOnChangeCallback(ctx)
                 local tier = cur < 10 and "Nulle" or cur < 25 and "Passive" or cur < 45 and "Moyenne" or "Forte"
                 txt:SetText(string.format("%s : %d / %d (%d%%) — %s", p.label or "Corruption", cur, maxv, roundPct(pct), tier))
               elseif isShadowInsanity then
-                local tier = cur < 4 and "Nulle" or cur < 12 and "Légère" or cur < 20 and "Forte" or cur < 25 and "Intense" or "Folie latente"
+                local tier = cur < 2 and "Nulle"
+                  or cur < 11 and "Palier 1"
+                  or cur < 18 and "Palier 2"
+                  or cur < 25 and "Palier 3"
+                  or "Folie latente"
                 txt:SetText(string.format("%s : %d (%d%%) — %s", p.label or "Insanité", cur, roundPct(pct), tier))
               elseif isMageArcaneCharge then
                 local tier = cur >= 8 and "T5 disponible" or cur >= 4 and "T4 disponible" or nil
@@ -1232,6 +1341,9 @@ function ns.UI_BuildOnChangeCallback(ctx)
       end
     end
 
+    -- Affixes de zone
+    if UI.refreshAffixButtons then UI.refreshAffixButtons(s) end
+
     -- Scalar inputs
     ctx.setNumber(UI.inputs.hpCur, s.hp)
     ctx.setNumber(UI.inputs.hpMax, s.maxHp)
@@ -1255,11 +1367,11 @@ function ns.UI_BuildOnChangeCallback(ctx)
         local lbYAbs = isDead and 178 or 138
         local depth
         if ficheVisibleRows == 0 then
-          depth = 740   -- noResHint bottom
+          depth = 702   -- noResHint bottom
         elseif s.classKey == "SHAMAN" and ficheVisibleRows >= 4 then
-          depth = 900   -- posture buttons bottom
+          depth = 862   -- posture buttons bottom
         else
-          depth = 720 + (ficheVisibleRows - 1) * 28  -- row-n bottom
+          depth = 682 + (ficheVisibleRows - 1) * 28  -- row-n bottom
         end
         UI.ficheParamChild:SetHeight(lbYAbs + depth + 38)
       end

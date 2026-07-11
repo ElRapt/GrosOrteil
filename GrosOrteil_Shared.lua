@@ -14,6 +14,7 @@ Shared.CLASS_STYLES = {
   PALADIN      = { label = "Puissance sacrée",               r = 1.00, g = 0.82, b = 0.22 },
   PRIEST       = { label = "Puissance sacrée",               r = 1.00, g = 0.82, b = 0.22 },
   SHADOWPRIEST = { label = "Points de foi et insanité",      r = 0.60, g = 0.20, b = 0.85 },
+  DISCPRIEST   = { label = "Points de foi",                  r = 0.95, g = 0.92, b = 0.80 },
   MAGE         = { label = "Mana",                           r = 0.20, g = 0.55, b = 1.00 },
   ROGUE        = { label = "Énergie",                        r = 1.00, g = 0.90, b = 0.10 },
   WARLOCK      = { label = "Énergie gangrénée, Corruption et Fragments d'âme", r = 0.20, g = 0.85, b = 0.25 },
@@ -44,6 +45,9 @@ Shared.RES_PROFILES_BY_CLASS = {
     { idx = 1, label = "Points de foi", r = 1.00, g = 1.00, b = 1.00 },
     { idx = 2, label = "Insanité",      r = 0.60, g = 0.20, b = 0.85 },
   },
+  DISCPRIEST = {
+    { idx = 1, label = "Points de foi", r = 1.00, g = 1.00, b = 1.00 },
+  },
   SHAMAN = {
     { idx = 1, label = "Terre", r = 0.55, g = 0.35, b = 0.15 },
     { idx = 2, label = "Air",   r = 0.60, g = 0.95, b = 0.95 },
@@ -71,6 +75,7 @@ Shared.CLASS_NAMES_FR = {
   EVOKER       = "Évocateur",
   MEDIC        = "Médecin",
   SHADOWPRIEST = "Prêtre ombre",
+  DISCPRIEST   = "Prêtre discipline",
 }
 
 ---------------------------------------------------------------------------
@@ -99,6 +104,10 @@ Shared.CLASS_ICONS = {
   },
   SHADOWPRIEST = {
     texture = "Interface\\Icons\\inv12_ability_priest_powerwordmadness_eye",
+    coords  = { 0.07, 0.93, 0.07, 0.93 },
+  },
+  DISCPRIEST = {
+    texture = "Interface\\Icons\\inv12_apextalent_druid_ascendanceeclipses",
     coords  = { 0.07, 0.93, 0.07, 0.93 },
   },
 }
@@ -184,10 +193,10 @@ local RES_MARKER_DEFS = {
     { pct = 25/60, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
     { pct = 45/60, r = 1.00, g = 0.25, b = 0.25, a = 0.65, w = 3 },
   } },
-  SHADOWPRIEST = { [2] = {   -- Insanité (display cap 25)
-    { pct = 4/25,  r = 0.65, g = 0.95, b = 0.65, a = 0.45, w = 2 },
-    { pct = 12/25, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
-    { pct = 20/25, r = 1.00, g = 0.55, b = 0.10, a = 0.60, w = 2 },
+  SHADOWPRIEST = { [2] = {   -- Insanité (display cap 25): paliers 2 / 11 / 18, folie à 25
+    { pct = 2/25,  r = 0.65, g = 0.95, b = 0.65, a = 0.45, w = 2 },
+    { pct = 11/25, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
+    { pct = 18/25, r = 1.00, g = 0.55, b = 0.10, a = 0.60, w = 2 },
     { pct = 25/25, r = 1.00, g = 0.25, b = 0.25, a = 0.70, w = 3 },
   } },
   MAGE = { [2] = {   -- Charge arcanique (cap 8)
@@ -644,6 +653,7 @@ local CLASS_EMBLEM_ATLAS = {
   SHAMAN       = "classhall-circle-shaman",
   PRIEST       = "classhall-circle-priest",
   SHADOWPRIEST = "classhall-circle-priest",
+  DISCPRIEST   = "classhall-circle-priest",
   WARLOCK      = "classhall-circle-warlock",
   PALADIN      = "classhall-circle-paladin",
   DEATHKNIGHT  = "classhall-circle-deathknight",

@@ -19,8 +19,10 @@ local SEED_COUNT = 16
 
 local CLASSES = {
   "MAGE", "WARLOCK", "PRIEST", "PALADIN", "ROGUE", "SHAMAN",
-  "DRUID", "MONK", "MEDIC", "SHADOWPRIEST", "WARRIOR", "HUNTER",
+  "DRUID", "MONK", "MEDIC", "SHADOWPRIEST", "DISCPRIEST", "WARRIOR", "HUNTER",
 }
+
+local AFFIXES = { "BELEDAR_JOUR", "BELEDAR_NUIT", "CAMBUSE_ATTAQUE", "CAMBUSE_PV" }
 
 -- Each entry is { name, weight, fn(rng) }. Weight controls relative frequency.
 local OPS
@@ -120,6 +122,7 @@ OPS = {
       local p = ({ "TERRE", "AIR", "EAU", "FEU" })[pickInt(rng, 1, 4)]
       Core.SetShamanPosture(p)
     end },
+  { "ToggleAffix",    1, function(rng) Core.ToggleAffix(AFFIXES[pickInt(rng, 1, #AFFIXES)]) end },
   { "SetPetEnabled",  1, function(rng) Core.SetPetEnabled(rng() < 0.5) end },
   { "SetPetHP",       2, function(rng) Core.SetPetHP(pickInt(rng, 0, 50), pickInt(rng, 1, 50)) end },
   { "SetPetArmor",    1, function(rng) Core.SetPetArmor(pickInt(rng, 0, 10), pickInt(rng, 0, 5)) end },
