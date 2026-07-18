@@ -23,6 +23,7 @@ local CLASSES = {
 }
 
 local AFFIXES = { "BELEDAR_JOUR", "BELEDAR_NUIT", "CAMBUSE_ATTAQUE", "CAMBUSE_PV" }
+local SPECIAL_CASES = { "VIDE", "GANGREMAGIE" }
 
 -- Each entry is { name, weight, fn(rng) }. Weight controls relative frequency.
 local OPS
@@ -123,6 +124,13 @@ OPS = {
       Core.SetShamanPosture(p)
     end },
   { "ToggleAffix",    1, function(rng) Core.ToggleAffix(AFFIXES[pickInt(rng, 1, #AFFIXES)]) end },
+  { "TogglePetAffix", 1, function(rng) Core.TogglePetAffix(AFFIXES[pickInt(rng, 1, #AFFIXES)]) end },
+  { "ToggleSpecialCase", 1, function(rng)
+      Core.ToggleSpecialCase(SPECIAL_CASES[pickInt(rng, 1, #SPECIAL_CASES)])
+    end },
+  { "TogglePetSpecialCase", 1, function(rng)
+      Core.TogglePetSpecialCase(SPECIAL_CASES[pickInt(rng, 1, #SPECIAL_CASES)])
+    end },
   { "SetPetEnabled",  1, function(rng) Core.SetPetEnabled(rng() < 0.5) end },
   { "SetPetHP",       2, function(rng) Core.SetPetHP(pickInt(rng, 0, 50), pickInt(rng, 1, 50)) end },
   { "SetPetArmor",    1, function(rng) Core.SetPetArmor(pickInt(rng, 0, 10), pickInt(rng, 0, 5)) end },

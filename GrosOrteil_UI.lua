@@ -1290,7 +1290,7 @@ function ns.UI_Init()
     "Historique",       -- 7
     "Familier",         -- 8  familiar section (merged)
     "Historique",       -- 9  familiar history
-    "",                 -- 10 hidden slot
+    "Affixes",          -- 10 familiar affixes
   }
 
   local NAV_PAD = 5
@@ -1305,6 +1305,7 @@ function ns.UI_Init()
     [7] = "Journal des évènements du personnage.",
     [8] = "Fiche du familier : PV, armure, attaque et actions.",
     [9] = "Journal des évènements du familier.",
+    [10] = "Affixes de zone : bonus et malus temporaires appliqués au familier.",
   }
 
   local function mkTab(text, idx)
@@ -1432,17 +1433,15 @@ function ns.UI_Init()
   local pageAffixes = mkPage()   -- 5
   local pageClasses = mkPage()   -- 6 (was 3)
   local pageHistory = mkPage()   -- 7
-  local pagePetHP     = mkPage() -- 8: familiar – Fiche (merged)
-  local pagePetArmor  = mkPage() -- 9: familiar – Historique
-  local pagePetCombat = mkPage() -- 10: hidden slot
+  local pagePetHP      = mkPage() -- 8: familiar – Fiche (merged)
+  local pagePetArmor   = mkPage() -- 9: familiar – Historique
+  local pagePetAffixes = mkPage() -- 10: familiar – Affixes
   UI.pageHistory = pageHistory
 
   -- Tabs 2-4 are merged into tab 1 (Fiche). Tab 5 hosts the Affixes page.
-  -- Tab 10 is a hidden slot (familiar has only Fiche + Historique).
   UI.tabHidden[2] = true
   UI.tabHidden[3] = true
   UI.tabHidden[4] = true
-  UI.tabHidden[10] = true
 
   -- ── Section switcher buttons (bottom of sidebar) ────────────────────
   local SECT_BTN_H = 24
@@ -1677,6 +1676,10 @@ function ns.UI_Init()
   -- Onglet 9 : Familier — Historique
   tabCtx.page = pagePetArmor
   ns.UI_BuildPetHistoryTab(tabCtx)
+
+  -- Onglet 10 : Familier — Affixes
+  tabCtx.page = pagePetAffixes
+  ns.UI_BuildAffixesTab(tabCtx, { pet = true })
 
   setSidebarSection(1)
 

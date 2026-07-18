@@ -443,29 +443,41 @@ end
 -- backdrop + border while active, tooltip describing the stat effects.
 -- ctx fields used: page (pageAffixes), C, TEX, Core, mkRowAnchor, mkButton,
 --   lastStateRef
-function ns.UI_BuildAffixesTab(ctx)
-  local UI   = ns.UI
-  local page = ctx.page
-  local C    = ctx.C
-  local TEX  = ctx.TEX
-  local Core = ctx.Core
+-- opts.pet=true builds the familiar variant: toggles drive Core.TogglePetAffix,
+-- effects read pet.affixes, buttons grey out while no familiar is active.
+function ns.UI_BuildAffixesTab(ctx, opts)
+  local UI    = ns.UI
+  local page  = ctx.page
+  local C     = ctx.C
+  local TEX   = ctx.TEX
+  local Core  = ctx.Core
   local mkRowAnchor  = ctx.mkRowAnchor
   local mkButton     = ctx.mkButton
   local lastStateRef = ctx.lastStateRef
+  local setButtonEnabled = ctx.setButtonEnabled
+  local isPet = opts and opts.pet or false
 
+  -- Beledar Jour/Nuit suivent la classe du maître, y compris pour le familier ;
+  -- le gain d'Insanité de la Nuit ne concerne que le personnage.
+  local nuitDesc = "-10 attaque (CaC et distance)\n-10 esquive\n-2 armure\n\n"
+    .. (isPet and "" or "Prêtre ombre : +2 Insanité à l'activation.\n\n")
+    .. "Exclusif avec Beledar : Jour."
   local AFFIX_DEFS = {
     { key = "BELEDAR_JOUR", label = "Beledar : Jour", r = 1.00, g = 0.85, b = 0.30,
       tip  = "Beledar : Jour",
       desc = "+5 attaque (CaC et distance)\n+5 esquive\n+1 armure\n\n"
         .. "Exclusif avec Beledar : Nuit.",
       descMalus = "-5 attaque (CaC et distance)\n-5 esquive\n-1 armure\n\n"
-        .. "La lumière de Beledar brûle les démonistes et prêtres ombre.\n\n"
+        .. "La lumière de Beledar brûle les démonistes et prêtres ombre"
+        .. (isPet and " (et leurs familiers)" or "") .. ".\n\n"
         .. "Exclusif avec Beledar : Nuit." },
     { key = "BELEDAR_NUIT", label = "Beledar : Nuit", r = 0.55, g = 0.35, b = 0.95,
       tip  = "Beledar : Nuit",
-      desc = "-10 attaque (CaC et distance)\n-10 esquive\n-2 armure\n\n"
-        .. "Prêtre ombre : +2 Insanité à l'activation.\n\n"
-        .. "Exclusif avec Beledar : Jour." },
+      desc = nuitDesc,
+      descVide = "+10 attaque (CaC et distance)\n+10 esquive\n+2 armure\n\n"
+        .. "Le Vide se délecte de la nuit de Beledar : les malus deviennent des bonus."
+        .. (isPet and "" or "\n\nPrêtre ombre : +2 Insanité à l'activation.")
+        .. "\n\nExclusif avec Beledar : Jour." },
     { key = "CAMBUSE_ATTAQUE", label = "Cambuse : Attaque", r = 1.00, g = 0.35, b = 0.10,
       tip  = "Cambuse : Attaque",
       desc = "+10 attaque (CaC et distance)\n+5 esquive" },
@@ -496,15 +508,25 @@ function ns.UI_BuildAffixesTab(ctx)
   hint:SetJustifyH("CENTER")
   hint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
   hint:SetText("Cliquez pour activer ou désactiver un affixe : ses effets sont appliqués "
-    .. "immédiatement à la fiche. Beledar Jour et Nuit sont mutuellement exclusifs.")
+    .. (isPet and "immédiatement à la fiche du familier, indépendamment de ceux du personnage. "
+                or "immédiatement à la fiche. ")
+    .. "Beledar Jour et Nuit sont mutuellement exclusifs.")
 
-  UI.affixButtons = {}
+  local buttons = {}
   local BTN_W, BTN_H, GAP = 200, 34, 10
   local rowW = BTN_W * 2 + GAP
   local anchors = {
     mkRowAnchor(page, rowW, -92),
     mkRowAnchor(page, rowW, -(92 + BTN_H + GAP)),
   }
+
+  -- The sheet whose affixes/special case this tab drives (from lastStateRef).
+  local function currentHolder()
+    local ls = lastStateRef and lastStateRef.v
+    if not ls then return nil end
+    if isPet then return (type(ls.pet) == "table") and ls.pet or nil end
+    return ls
+  end
 
   for i, def in ipairs(AFFIX_DEFS) do
     local row = math.floor((i - 1) / 2) + 1
@@ -516,25 +538,91 @@ function ns.UI_BuildAffixesTab(ctx)
       GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
       GameTooltip:AddLine(def.tip, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
       local desc = def.desc
-      if def.descMalus then
-        local ls = lastStateRef and lastStateRef.v
-        local ck = ls and ls.classKey
-        if ck == "WARLOCK" or ck == "SHADOWPRIEST" then desc = def.descMalus end
+      local ls = lastStateRef and lastStateRef.v
+      local ck = ls and ls.classKey
+      local holder = currentHolder()
+      local sc = holder and holder.specialCase or nil
+      if def.descMalus and (ck == "WARLOCK" or ck == "SHADOWPRIEST"
+          or sc == "VIDE" or sc == "GANGREMAGIE") then
+        desc = def.descMalus
+      elseif def.descVide and sc == "VIDE" then
+        desc = def.descVide
       end
       GameTooltip:AddLine(desc, 1, 1, 1, true)
       GameTooltip:Show()
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     b:SetScript("OnClick", function()
-      if Core and Core.ToggleAffix then Core.ToggleAffix(def.key) end
+      if not Core then return end
+      if isPet then
+        if Core.TogglePetAffix then Core.TogglePetAffix(def.key) end
+      else
+        if Core.ToggleAffix then Core.ToggleAffix(def.key) end
+      end
     end)
-    UI.affixButtons[i] = b
+    buttons[i] = b
   end
 
-  function UI.refreshAffixButtons(s)
-    if not UI.affixButtons then return end
-    local af = (type(s.affixes) == "table") and s.affixes or {}
-    for _, b in ipairs(UI.affixButtons) do
+  -- ── Cas spéciaux : altèrent le sens des affixes de Beledar ─────────────
+  local SPECIAL_DEFS = {
+    { key = "VIDE", label = "Vide", r = 0.60, g = 0.30, b = 0.95,
+      tip  = "Vide",
+      desc = "Les bonus de Beledar : Jour deviennent des malus,\n"
+        .. "et les malus de Beledar : Nuit deviennent des bonus.\n\n"
+        .. "Un seul cas spécial actif à la fois (aucun possible)." },
+    { key = "GANGREMAGIE", label = "Gangremagie / Mort", r = 0.30, g = 0.85, b = 0.25,
+      tip  = "Gangremagie / Mort",
+      desc = "Les bonus de Beledar : Jour deviennent des malus.\n\n"
+        .. "Un seul cas spécial actif à la fois (aucun possible)." },
+  }
+
+  local scTop = 92 + 2 * (BTN_H + GAP) + 8   -- below the affix grid
+  local scHeader = page:CreateFontString(nil, "OVERLAY")
+  scHeader:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+  scHeader:SetPoint("TOP", page, "TOP", 0, -scTop)
+  scHeader:SetJustifyH("CENTER")
+  scHeader:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  scHeader:SetShadowOffset(1, -1)
+  scHeader:SetShadowColor(0, 0, 0, 0.60)
+  scHeader:SetText("Cas spéciaux")
+
+  local scLine = page:CreateTexture(nil, "ARTWORK")
+  scLine:SetTexture(TEX.FLAT)
+  scLine:SetPoint("TOPLEFT",  page, "TOPLEFT",  16, -(scTop + 16))
+  scLine:SetPoint("TOPRIGHT", page, "TOPRIGHT", -16, -(scTop + 16))
+  scLine:SetHeight(1)
+  scLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+
+  local scButtons = {}
+  local scAnchor = mkRowAnchor(page, rowW, -(scTop + 24))
+  for i, def in ipairs(SPECIAL_DEFS) do
+    local b = mkButton(scAnchor, def.label, BTN_W, BTN_H, (i - 1) * (BTN_W + GAP), 0)
+    b._scKey = def.key
+    b._scR, b._scG, b._scB = def.r, def.g, def.b
+    b:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
+      GameTooltip:AddLine(def.tip, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+      GameTooltip:AddLine(def.desc, 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnClick", function()
+      if not Core then return end
+      if isPet then
+        if Core.TogglePetSpecialCase then Core.TogglePetSpecialCase(def.key) end
+      else
+        if Core.ToggleSpecialCase then Core.ToggleSpecialCase(def.key) end
+      end
+    end)
+    scButtons[i] = b
+  end
+
+  local function refresh(s)
+    local holder = isPet and (type(s.pet) == "table" and s.pet or {}) or s
+    local af = (type(holder.affixes) == "table") and holder.affixes or {}
+    local enabled = (not isPet) or (not not holder.enabled)
+    for _, b in ipairs(buttons) do
+      setButtonEnabled(b, enabled)
       if af[b._affixKey] then
         b:SetBackdropColor(b._affixR * 0.35, b._affixG * 0.35, b._affixB * 0.35, 0.95)
         b:SetBackdropBorderColor(b._affixR, b._affixG, b._affixB, 1.0)
@@ -543,6 +631,24 @@ function ns.UI_BuildAffixesTab(ctx)
         b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
       end
     end
+    for _, b in ipairs(scButtons) do
+      setButtonEnabled(b, enabled)
+      if holder.specialCase == b._scKey then
+        b:SetBackdropColor(b._scR * 0.35, b._scG * 0.35, b._scB * 0.35, 0.95)
+        b:SetBackdropBorderColor(b._scR, b._scG, b._scB, 1.0)
+      else
+        b:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
+        b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
+      end
+    end
+  end
+
+  if isPet then
+    UI.petAffixButtons = buttons
+    UI.refreshPetAffixButtons = refresh
+  else
+    UI.affixButtons = buttons
+    UI.refreshAffixButtons = refresh
   end
 end
 
@@ -1341,8 +1447,9 @@ function ns.UI_BuildOnChangeCallback(ctx)
       end
     end
 
-    -- Affixes de zone
+    -- Affixes de zone (personnage + familier)
     if UI.refreshAffixButtons then UI.refreshAffixButtons(s) end
+    if UI.refreshPetAffixButtons then UI.refreshPetAffixButtons(s) end
 
     -- Scalar inputs
     ctx.setNumber(UI.inputs.hpCur, s.hp)
