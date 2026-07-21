@@ -39,18 +39,18 @@ local function check(state)
     assert(s.hp <= s.maxHp,                              "hp > maxHp: " .. tostring(s.hp) .. " > " .. tostring(s.maxHp))
   end
   -- Resource bounds (skip insanity special case).
-  local function resCheck(idx, isShadowInsanity)
+  local function resCheck(idx, isInsanity)
     local resKey, maxKey = ns.Shared.GetKeysForIdx(idx)
     if not resKey then return end
     local v, m = s[resKey], s[maxKey]
     if type(v) ~= "number" or type(m) ~= "number" then return end
     assert(m >= 0, ("%s < 0"):format(maxKey))
-    if not isShadowInsanity then
+    if not isInsanity then
       assert(v <= m, ("%s > %s (%s > %s)"):format(resKey, maxKey, tostring(v), tostring(m)))
     end
   end
   resCheck(1, false)
-  resCheck(2, s.classKey == "SHADOWPRIEST")
+  resCheck(2, ns.Shared.HasInsanity(s.classKey))
   resCheck(3, false)
   resCheck(4, false)
   resCheck(5, false)

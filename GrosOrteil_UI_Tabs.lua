@@ -460,7 +460,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
   -- Beledar Jour/Nuit suivent la classe du maître, y compris pour le familier ;
   -- le gain d'Insanité de la Nuit ne concerne que le personnage.
   local nuitDesc = "-10 attaque (CaC et distance)\n-10 esquive\n-2 armure\n\n"
-    .. (isPet and "" or "Prêtre ombre : +2 Insanité à l'activation.\n\n")
+    .. (isPet and "" or "Prêtre ombre/discipline : +2 Insanité à l'activation.\n\n")
     .. "Exclusif avec Beledar : Jour."
   local AFFIX_DEFS = {
     { key = "BELEDAR_JOUR", label = "Beledar : Jour", r = 1.00, g = 0.85, b = 0.30,
@@ -476,7 +476,11 @@ function ns.UI_BuildAffixesTab(ctx, opts)
       desc = nuitDesc,
       descVide = "+10 attaque (CaC et distance)\n+10 esquive\n+2 armure\n\n"
         .. "Le Vide se délecte de la nuit de Beledar : les malus deviennent des bonus."
-        .. (isPet and "" or "\n\nPrêtre ombre : +2 Insanité à l'activation.")
+        .. (isPet and "" or "\n\nPrêtre ombre/discipline : +2 Insanité à l'activation.")
+        .. "\n\nExclusif avec Beledar : Jour.",
+      descDisc = "+10 attaque (CaC et distance)\n+10 esquive\n+2 armure\n\n"
+        .. "Le prêtre discipline tire parti des deux états de Beledar."
+        .. (isPet and "" or "\n\nPrêtre discipline : +2 Insanité à l'activation.")
         .. "\n\nExclusif avec Beledar : Jour." },
     { key = "CAMBUSE_ATTAQUE", label = "Cambuse : Attaque", r = 1.00, g = 0.35, b = 0.10,
       tip  = "Cambuse : Attaque",
@@ -547,6 +551,8 @@ function ns.UI_BuildAffixesTab(ctx, opts)
         desc = def.descMalus
       elseif def.descVide and sc == "VIDE" then
         desc = def.descVide
+      elseif def.descDisc and ck == "DISCPRIEST" then
+        desc = def.descDisc
       end
       GameTooltip:AddLine(desc, 1, 1, 1, true)
       GameTooltip:Show()
@@ -1230,6 +1236,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
   local lastStateRef         = ctx.lastStateRef       -- { v = nil }
   local getResProfile        = ctx.getResProfile
   local getKeysForIdx        = ctx.getKeysForIdx
+  local hasInsanity          = ns.Shared.HasInsanity
   local positionMarkers      = ctx.positionMarkers
   local hideMarkers          = ctx.hideMarkers
   local setTab               = ctx.setTab
@@ -1319,13 +1326,13 @@ function ns.UI_BuildOnChangeCallback(ctx)
             end
             local resKey, maxKey = getKeysForIdx(p.idx)
             local cur = s[resKey] or 0; local maxv = s[maxKey] or 0
-            local isWarlockCorruption = (s.classKey == "WARLOCK"      and p.idx == 2)
-            local isShadowInsanity    = (s.classKey == "SHADOWPRIEST" and p.idx == 2)
-            local isMageArcaneCharge  = (s.classKey == "MAGE"         and p.idx == 2)
+            local isWarlockCorruption = (s.classKey == "WARLOCK" and p.idx == 2)
+            local isInsanity          = (hasInsanity(s.classKey) and p.idx == 2)
+            local isMageArcaneCharge  = (s.classKey == "MAGE"    and p.idx == 2)
             local displayMax = maxv
             if isWarlockCorruption then
               maxv = 60; cur = math.max(0, math.min(cur, 60)); displayMax = 60
-            elseif isShadowInsanity then
+            elseif isInsanity then
               displayMax = 25; cur = math.max(0, cur)
             elseif isMageArcaneCharge then
               maxv = 8; cur = math.max(0, math.min(cur, 8)); displayMax = 8
@@ -1340,7 +1347,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
               if isWarlockCorruption then
                 local tier = cur < 10 and "Nulle" or cur < 25 and "Passive" or cur < 45 and "Moyenne" or "Forte"
                 txt:SetText(string.format("%s : %d / %d (%d%%) — %s", p.label or "Corruption", cur, maxv, roundPct(pct), tier))
-              elseif isShadowInsanity then
+              elseif isInsanity then
                 local tier = cur < 2 and "Nulle"
                   or cur < 11 and "Palier 1"
                   or cur < 18 and "Palier 2"
@@ -1359,17 +1366,17 @@ function ns.UI_BuildOnChangeCallback(ctx)
               end
             end
             if isWarlockCorruption then positionMarkers(UI.corruptionMarkers, bar)
-            elseif isShadowInsanity then positionMarkers(UI.insanityMarkers, bar)
+            elseif isInsanity then positionMarkers(UI.insanityMarkers, bar)
             elseif isMageArcaneCharge then positionMarkers(UI.arcaneChargeMarkers, bar) end
             if row then row.resIdx = p.idx; row:Show() end
             if rowLabel and rowLabel.SetText then rowLabel:SetText(p.label or "Ressource") end
             if curEB then ctx.setNumber(curEB, cur) end
             if maxEB then
-              if isShadowInsanity then ctx.setNumber(maxEB, 25)
+              if isInsanity then ctx.setNumber(maxEB, 25)
               elseif isMageArcaneCharge then ctx.setNumber(maxEB, 8)
               else ctx.setNumber(maxEB, maxv) end
             end
-            local fixedMax = isWarlockCorruption or isShadowInsanity or isMageArcaneCharge
+            local fixedMax = isWarlockCorruption or isInsanity or isMageArcaneCharge
             setEditBoxEnabled(maxEB, not fixedMax)
           end
         end

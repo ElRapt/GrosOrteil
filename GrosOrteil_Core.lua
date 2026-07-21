@@ -458,6 +458,9 @@ local function recomputePetWounds(p)    if p then applyWounds(p, false) end end
 local WARLOCK_CORRUPTION_MAX  = 60
 local MAGE_ARCANE_CHARGE_MAX  = 8
 
+-- True for the priest specs that carry the Insanité (res2) mechanic.
+local hasInsanity = ns.Shared.HasInsanity
+
 local function clampWarlockCorruption(s)
   if not s then return end
   s.maxRes2 = WARLOCK_CORRUPTION_MAX
@@ -472,12 +475,13 @@ local function clampMageArcaneCharge(s)
   if s.res2 < 0 then s.res2 = 0 elseif s.res2 > MAGE_ARCANE_CHARGE_MAX then s.res2 = MAGE_ARCANE_CHARGE_MAX end
 end
 
--- Prêtre ombre : les paliers d'Insanité augmentent le jet d'attaque de base
--- (palier 2 : +10, palier 3 : +15). Le bonus est réellement appliqué aux deux
--- stats d'attaque ; s.insanityAtkApplied garde la part actuellement appliquée
--- pour n'ajuster que la différence quand l'Insanité ou la classe change.
+-- Prêtres ombre/discipline : les paliers d'Insanité augmentent le jet
+-- d'attaque de base (palier 2 : +10, palier 3 : +15). Le bonus est réellement
+-- appliqué aux deux stats d'attaque ; s.insanityAtkApplied garde la part
+-- actuellement appliquée pour n'ajuster que la différence quand l'Insanité ou
+-- la classe change.
 local function insanityTierAtkBonus(s)
-  if s.classKey ~= "SHADOWPRIEST" then return 0 end
+  if not hasInsanity(s.classKey) then return 0 end
   local ins = tonumber(s.res2) or 0
   if ins >= 18 then return 15 end
   if ins >= 11 then return 10 end
@@ -707,20 +711,20 @@ function Core.SetClassKey(classKey)
 
   -- Warlock: Corruption has a fixed max of 60.
   -- Mage: Arcane Charge has a fixed max of 8.
-  -- Other classes: ensure res2 ≤ maxRes2. SHADOWPRIEST's insanity (res2)
-  -- is intentionally allowed to exceed maxRes2; everywhere else, leaving
+  -- Other classes: ensure res2 ≤ maxRes2. The insanity specs' res2 is
+  -- intentionally allowed to exceed maxRes2; everywhere else, leaving
   -- a stale insanity value over the new class's cap is a bug.
   if classKey == "WARLOCK" then
     clampWarlockCorruption(s)
   elseif classKey == "MAGE" then
     clampMageArcaneCharge(s)
-  elseif classKey ~= "SHADOWPRIEST" then
+  elseif not hasInsanity(classKey) then
     clampToMax(s, "res2", "maxRes2")
   end
 
   -- Beledar Jour flips bonus/malus depending on class: recompute it in place.
   reapplyClassAffixes(s)
-  -- Entering/leaving SHADOWPRIEST applies/removes the insanity attack bonus.
+  -- Entering/leaving an insanity spec applies/removes the insanity attack bonus.
   updateInsanityAtkBonus(s)
   bump(); notify()
 end
@@ -899,7 +903,7 @@ function Core.SetResIndex(i, res, maxRes)
 
   -- Some resources have fixed maxima.
   local isWarlockCorruption = (i == 2 and s.classKey == "WARLOCK")
-  local isShadowInsanity    = (i == 2 and s.classKey == "SHADOWPRIEST")
+  local isInsanity          = (i == 2 and hasInsanity(s.classKey))
   local isMageArcaneCharge  = (i == 2 and s.classKey == "MAGE")
 
   if isWarlockCorruption then
@@ -916,7 +920,7 @@ function Core.SetResIndex(i, res, maxRes)
 
   if maxRes then s[maxKey] = maxRes end
   if res then s[resKey] = res end
-  if not isShadowInsanity then
+  if not isInsanity then
     clampToMax(s, resKey, maxKey)
   end
 
@@ -925,7 +929,7 @@ function Core.SetResIndex(i, res, maxRes)
   elseif isMageArcaneCharge then
     clampMageArcaneCharge(s)
   end
-  if isShadowInsanity then updateInsanityAtkBonus(s) end
+  if isInsanity then updateInsanityAtkBonus(s) end
   bump(); notify()
 end
 
@@ -936,7 +940,7 @@ function Core.AddResIndex(i, amount)
   if not resKey then return end
 
   local isWarlockCorruption = (i == 2 and s.classKey == "WARLOCK")
-  local isShadowInsanity    = (i == 2 and s.classKey == "SHADOWPRIEST")
+  local isInsanity          = (i == 2 and hasInsanity(s.classKey))
   local isMageArcaneCharge  = (i == 2 and s.classKey == "MAGE")
   amount = clampNumber(amount, -1e9, 1e9) or 0
   s[resKey] = (s[resKey] or 0) + amount
@@ -945,10 +949,10 @@ function Core.AddResIndex(i, amount)
     clampWarlockCorruption(s)
   elseif isMageArcaneCharge then
     clampMageArcaneCharge(s)
-  elseif not isShadowInsanity then
+  elseif not isInsanity then
     clampToMax(s, resKey, maxKey)
   end
-  if isShadowInsanity then updateInsanityAtkBonus(s) end
+  if isInsanity then updateInsanityAtkBonus(s) end
   bump(); notify()
 end
 
@@ -1227,31 +1231,9 @@ local function applyHit(s, t, rawAmount, opts)
   local absorbedBlock = 0
   local absorbedMagic
 
-  -- Block (player DamageWithArmor only)
-  if opts.armor and not opts.isPet then
-    local block = math.max(0, s.tempBlock or 0)
-    if block > 0 and amount > 0 then
-      absorbedBlock = math.min(block, amount)
-      s.tempBlock = block - absorbedBlock
-      amount = amount - absorbedBlock
-    end
-  end
-
-  -- Magic absorption
-  if opts.direct then
-    absorbedMagic = 0
-  elseif opts.isPet then
-    amount, absorbedMagic = consumeMagicShield(t, amount)
-  else
-    amount, absorbedMagic = consumeMagicShield(s, amount)
-  end
-
-  -- SFX
-  if absorbedMagic > 0 then sfxMagicShield()
-  elseif absorbedBlock > 0 then sfxBlock()
-  elseif amount > 0 then sfxDamage() end
-
-  -- Mitigation
+  -- Mitigation (armor). Computed from stats only (independent of `amount`),
+  -- so it's available before block runs — block must size its absorption
+  -- against the armor-reduced hit, not the raw one (see below).
   local mit
   if opts.direct then
     mit = 0
@@ -1273,6 +1255,35 @@ local function applyHit(s, t, rawAmount, opts)
     end
     mit = armorVal
   end
+
+  -- Block (player DamageWithArmor only). Armor still mitigates the hit while
+  -- block is active: block only has to soak what's left after armor, not the
+  -- raw hit. Previously block consumed the full raw amount and armor only
+  -- ever applied to the overflow once block ran dry, so armor did nothing
+  -- on any hit block could fully cover.
+  if opts.armor and not opts.isPet then
+    local block = math.max(0, s.tempBlock or 0)
+    if block > 0 and amount > 0 then
+      local afterArmor = math.max(0, amount - mit)
+      absorbedBlock = math.min(block, afterArmor)
+      s.tempBlock = block - absorbedBlock
+      amount = amount - absorbedBlock
+    end
+  end
+
+  -- Magic absorption
+  if opts.direct then
+    absorbedMagic = 0
+  elseif opts.isPet then
+    amount, absorbedMagic = consumeMagicShield(t, amount)
+  else
+    amount, absorbedMagic = consumeMagicShield(s, amount)
+  end
+
+  -- SFX
+  if absorbedMagic > 0 then sfxMagicShield()
+  elseif absorbedBlock > 0 then sfxBlock()
+  elseif amount > 0 then sfxDamage() end
 
   local afterAbsorb = amount
   local dmg = effDmg(amount, mit)
@@ -1543,7 +1554,8 @@ local SPECIAL_CASES = { VIDE = true, GANGREMAGIE = true }
 -- Deltas par champ pour un affixe. `t` est la fiche cible (son cas spécial
 -- compte) ; la classe vient toujours du personnage. L'attaque couvre CaC et
 -- distance. Beledar Jour est un malus pour démoniste/prêtre ombre ou quand un
--- cas spécial est actif sur la fiche.
+-- cas spécial est actif sur la fiche. Le prêtre discipline profite des DEUX
+-- états de Beledar : Jour et Nuit lui donnent tous deux un bonus.
 local function affixDeltas(s, t, key)
   local sc = t and t.specialCase or nil
   if key == "BELEDAR_JOUR" then
@@ -1552,7 +1564,10 @@ local function affixDeltas(s, t, key)
     local sign = malus and -1 or 1
     return { attaqueMelee = 5 * sign, attaqueDistance = 5 * sign, dodge = 5 * sign, armor = 1 * sign }
   elseif key == "BELEDAR_NUIT" then
-    local sign = (sc == "VIDE") and 1 or -1
+    -- Nuit est un malus par défaut ; il devient bonus pour le Vide et pour le
+    -- prêtre discipline (qui bénéficie des deux états de Beledar).
+    local bonus = (sc == "VIDE") or (s.classKey == "DISCPRIEST")
+    local sign = bonus and 1 or -1
     return { attaqueMelee = 10 * sign, attaqueDistance = 10 * sign, dodge = 10 * sign, armor = 2 * sign }
   elseif key == "CAMBUSE_ATTAQUE" then
     return { attaqueMelee = 10, attaqueDistance = 10, dodge = 5 }
@@ -1656,8 +1671,9 @@ local function toggleAffixTarget(s, t, key, isPet)
     end
     applyAffix(s, t, key)
     t.affixes[key] = true
-    -- Prêtre ombre : la nuit de Beledar nourrit l'Insanité, une fois par toggle.
-    if not isPet and key == "BELEDAR_NUIT" and s.classKey == "SHADOWPRIEST" then
+    -- Prêtres ombre/discipline : la nuit de Beledar nourrit l'Insanité, une
+    -- fois par toggle.
+    if not isPet and key == "BELEDAR_NUIT" and hasInsanity(s.classKey) then
       s.res2 = (s.res2 or 0) + 2
       updateInsanityAtkBonus(s)
     end

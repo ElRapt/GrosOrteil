@@ -92,7 +92,7 @@ T.describe("Core.DamageWithArmor", function()
     Core.DamageWithArmor(20)
     T.assertTrue(Core.state.hp < 100, "non-dodged hit should reduce HP")
   end)
-  T.it("tempBlock absorbs before armor mitigation", function()
+  T.it("tempBlock absorbs the armor-reduced hit (no armor set here → same as raw)", function()
     reset()
     Core.SetHP(100, 100)
     Core.SetTempBlock(20)
@@ -484,6 +484,17 @@ T.describe("Core tempBlock", function()
     Core.DamageWithArmor(20)  -- block soaks 10, then 10 - 5 (armor) = 5
     T.assertEq(Core.state.hp, 95)
     T.assertEq(Core.state.tempBlock, 0)
+  end)
+  T.it("armor still mitigates while block fully covers the hit, sparing block charge", function()
+    reset()
+    -- Bug fix: armor used to only kick in once block ran dry, so a hit block
+    -- could fully absorb drained block by the raw amount even though armor
+    -- would have stopped part of it. Armor now reduces the hit first, so
+    -- block only has to soak the armor-reduced remainder.
+    Core.SetHP(100, 100); Core.SetTempBlock(50); Core.SetArmor(10, 0)
+    Core.DamageWithArmor(30)  -- armor: 30-10=20 → block soaks 20, not 30
+    T.assertEq(Core.state.hp, 100)
+    T.assertEq(Core.state.tempBlock, 30)  -- 50-20, not the old buggy 50-30=20
   end)
   T.it("DamageTrue ignores block (block only applies to armor variant)", function()
     reset()
@@ -1278,7 +1289,9 @@ T.describe("State JSON-like shape stays serializable", function()
 end)
 
 -- ────────────────────────────────────────────────────────────────────
--- Order of operations: dodge → block → magic shield → mitigation → mana shield → HP
+-- Order of operations: dodge → block (armor-sized) → magic shield → mitigation → mana shield → HP
+-- Armor still reduces the hit while block is active: block only has to
+-- soak what's left after armor, not the raw amount.
 -- ────────────────────────────────────────────────────────────────────
 
 T.describe("Combat absorption ordering", function()
@@ -2422,6 +2435,81 @@ T.describe("Shadow Priest insanity tier attack bonus", function()
   end)
 end)
 
+T.describe("Discipline Priest insanity (ported from Shadow)", function()
+  T.it("insanity (idx 2) is not capped by maxRes2", function()
+    reset()
+    Core.SetClassKey("DISCPRIEST")
+    Core.SetResIndex(2, 999, 100)   -- max=100, res2=999 (insanity may exceed)
+    T.assertEq(Core.state.res2, 999)
+  end)
+
+  T.it("tier 2 (11-17) applies +10, tier 3 (18+) applies +15 to both attacks", function()
+    reset()
+    Core.SetClassKey("DISCPRIEST")
+    Core.SetAttaque(3, 5)
+    Core.SetResIndex(2, 11, 25)
+    T.assertEq(Core.state.attaqueMelee, 13)
+    T.assertEq(Core.state.attaqueDistance, 15)
+    T.assertEq(Core.state.insanityAtkApplied, 10)
+    Core.SetResIndex(2, 18, 25)
+    T.assertEq(Core.state.attaqueMelee, 18)
+    T.assertEq(Core.state.attaqueDistance, 20)
+    T.assertEq(Core.state.insanityAtkApplied, 15)
+  end)
+
+  T.it("AddResIndex crossing a tier threshold updates the bonus", function()
+    reset()
+    Core.SetClassKey("DISCPRIEST")
+    Core.SetAttaque(0, 0)
+    Core.SetResIndex(2, 10, 25)
+    T.assertEq(Core.state.attaqueMelee, 0)
+    Core.AddResIndex(2, 1)          -- 11: tier 2
+    T.assertEq(Core.state.attaqueMelee, 10)
+  end)
+
+  T.it("leaving DISCPRIEST removes the applied bonus", function()
+    reset()
+    Core.SetClassKey("DISCPRIEST")
+    Core.SetAttaque(3, 5)
+    Core.SetResIndex(2, 20, 25)
+    T.assertEq(Core.state.attaqueMelee, 18)
+    Core.SetClassKey("WARRIOR")
+    T.assertEq(Core.state.attaqueMelee, 3)
+    T.assertEq(Core.state.insanityAtkApplied, 0)
+  end)
+
+  T.it("Beledar Nuit grants +2 Insanity and can push into a tier", function()
+    reset()
+    Core.SetClassKey("DISCPRIEST")
+    Core.SetAttaque(20, 20)
+    Core.SetResIndex(2, 10, 25)
+    -- Nuit is a BONUS for disc: +10 att (affix), then insanity 10->12 crosses
+    -- tier 2 for another +10 att.
+    Core.ToggleAffix("BELEDAR_NUIT")
+    T.assertEq(Core.state.res2, 12)
+    T.assertEq(Core.state.attaqueMelee, 40)   -- 20 + 10 (affix) + 10 (tier 2)
+    T.assertEq(Core.state.attaqueDistance, 40)
+    T.assertEq(Core.state.insanityAtkApplied, 10)
+  end)
+
+  T.it("Beledar Nuit is a bonus for DISCPRIEST (both Beledar states help it)", function()
+    reset()
+    Core.SetClassKey("DISCPRIEST")
+    Core.SetAttaque(10, 10)
+    Core.SetDodge(10)
+    Core.SetArmor(3, 0)
+    Core.ToggleAffix("BELEDAR_NUIT")   -- bonus: +10/+10/+2
+    T.assertEq(Core.state.attaqueMelee, 20)
+    T.assertEq(Core.state.attaqueDistance, 20)
+    T.assertEq(Core.state.dodge, 20)
+    T.assertEq(Core.state.armor, 5)
+    Core.ToggleAffix("BELEDAR_NUIT")   -- clean toggle-off (insanity gain stays)
+    T.assertEq(Core.state.attaqueMelee, 10)
+    T.assertEq(Core.state.dodge, 10)
+    T.assertEq(Core.state.armor, 3)
+  end)
+end)
+
 T.describe("Core.ToggleAffix — zone affixes", function()
   T.it("Beledar Jour buffs attack/dodge/armor and toggles off cleanly", function()
     reset()
@@ -2456,6 +2544,18 @@ T.describe("Core.ToggleAffix — zone affixes", function()
     Core.ToggleAffix("BELEDAR_JOUR")
     T.assertEq(Core.state.attaqueMelee, 10)
     T.assertEq(Core.state.armor, 3)
+  end)
+
+  T.it("Beledar Jour stays a bonus for DISCPRIEST (Light healer, not void)", function()
+    reset()
+    Core.SetClassKey("DISCPRIEST")
+    Core.SetAttaque(10, 10)
+    Core.SetDodge(10)
+    Core.SetArmor(3, 0)
+    Core.ToggleAffix("BELEDAR_JOUR")   -- bonus: +5/+5/+1
+    T.assertEq(Core.state.attaqueMelee, 15)
+    T.assertEq(Core.state.dodge, 15)
+    T.assertEq(Core.state.armor, 4)
   end)
 
   T.it("malus clamps at 0 but deactivation restores the original value", function()

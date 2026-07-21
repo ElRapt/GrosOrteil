@@ -14,7 +14,7 @@ Shared.CLASS_STYLES = {
   PALADIN      = { label = "Puissance sacrée",               r = 1.00, g = 0.82, b = 0.22 },
   PRIEST       = { label = "Puissance sacrée",               r = 1.00, g = 0.82, b = 0.22 },
   SHADOWPRIEST = { label = "Points de foi et insanité",      r = 0.60, g = 0.20, b = 0.85 },
-  DISCPRIEST   = { label = "Points de foi",                  r = 0.95, g = 0.92, b = 0.80 },
+  DISCPRIEST   = { label = "Points de foi et insanité",      r = 0.95, g = 0.92, b = 0.80 },
   MAGE         = { label = "Mana",                           r = 0.20, g = 0.55, b = 1.00 },
   ROGUE        = { label = "Énergie",                        r = 1.00, g = 0.90, b = 0.10 },
   WARLOCK      = { label = "Énergie gangrénée, Corruption et Fragments d'âme", r = 0.20, g = 0.85, b = 0.25 },
@@ -47,6 +47,7 @@ Shared.RES_PROFILES_BY_CLASS = {
   },
   DISCPRIEST = {
     { idx = 1, label = "Points de foi", r = 1.00, g = 1.00, b = 1.00 },
+    { idx = 2, label = "Insanité",      r = 0.60, g = 0.20, b = 0.85 },
   },
   SHAMAN = {
     { idx = 1, label = "Terre", r = 0.55, g = 0.35, b = 0.15 },
@@ -153,6 +154,16 @@ function Shared.GetResProfile(state)
 end
 
 ---------------------------------------------------------------------------
+-- Classes that use the Insanité (res2) mechanic: a bar that may exceed its
+-- max, feeds a base-attack bonus at tiers 11 (+10) / 18 (+15), and gains +2
+-- from a Beledar Nuit toggle. Shadow and Discipline priests share it.
+---------------------------------------------------------------------------
+local INSANITY_CLASSES = { SHADOWPRIEST = true, DISCPRIEST = true }
+function Shared.HasInsanity(classKey)
+  return INSANITY_CLASSES[classKey] == true
+end
+
+---------------------------------------------------------------------------
 -- Wound cap from a wounds table ({hit25=bool, hit10=bool}): healing is
 -- capped at 25% of max HP after a 10% wound, 50% after a 25% wound.
 -- The single source of truth — Core, the main UI, the popup and the raid
@@ -168,13 +179,14 @@ end
 
 ---------------------------------------------------------------------------
 -- Fixed display maxima for special class resources (idx 2):
--- Warlock Corruption caps at 60, Shadow Priest Insanity displays out of 25
--- (the value itself may exceed it), Mage Arcane Charge caps at 8.
--- Returns the fixed max, or nil when the resource has no special cap.
+-- Warlock Corruption caps at 60, priest Insanity (Shadow + Discipline)
+-- displays out of 25 (the value itself may exceed it), Mage Arcane Charge
+-- caps at 8. Returns the fixed max, or nil when there's no special cap.
 ---------------------------------------------------------------------------
 local RES_DISPLAY_MAX = {
   WARLOCK      = { [2] = 60 },
   SHADOWPRIEST = { [2] = 25 },
+  DISCPRIEST   = { [2] = 25 },
   MAGE         = { [2] = 8 },
 }
 function Shared.GetResDisplayMax(classKey, idx)
@@ -187,18 +199,22 @@ end
 -- UI bars, the target popup, the hover popup and the raid panel cards.
 -- Each def: { pct, r, g, b, a, w }.
 ---------------------------------------------------------------------------
+-- Insanité (display cap 25): paliers 2 / 11 / 18, folie à 25. Shared by both
+-- priest specs that carry the bar (Shadow + Discipline).
+local INSANITY_MARKERS = {
+  { pct = 2/25,  r = 0.65, g = 0.95, b = 0.65, a = 0.45, w = 2 },
+  { pct = 11/25, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
+  { pct = 18/25, r = 1.00, g = 0.55, b = 0.10, a = 0.60, w = 2 },
+  { pct = 25/25, r = 1.00, g = 0.25, b = 0.25, a = 0.70, w = 3 },
+}
 local RES_MARKER_DEFS = {
   WARLOCK = { [2] = {   -- Corruption (cap 60)
     { pct = 10/60, r = 0.65, g = 0.95, b = 0.65, a = 0.55, w = 2 },
     { pct = 25/60, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
     { pct = 45/60, r = 1.00, g = 0.25, b = 0.25, a = 0.65, w = 3 },
   } },
-  SHADOWPRIEST = { [2] = {   -- Insanité (display cap 25): paliers 2 / 11 / 18, folie à 25
-    { pct = 2/25,  r = 0.65, g = 0.95, b = 0.65, a = 0.45, w = 2 },
-    { pct = 11/25, r = 1.00, g = 0.82, b = 0.22, a = 0.55, w = 2 },
-    { pct = 18/25, r = 1.00, g = 0.55, b = 0.10, a = 0.60, w = 2 },
-    { pct = 25/25, r = 1.00, g = 0.25, b = 0.25, a = 0.70, w = 3 },
-  } },
+  SHADOWPRIEST = { [2] = INSANITY_MARKERS },
+  DISCPRIEST   = { [2] = INSANITY_MARKERS },
   MAGE = { [2] = {   -- Charge arcanique (cap 8)
     { pct = 4/8, r = 1.00, g = 0.82, b = 0.22, a = 0.65, w = 2 },
     { pct = 8/8, r = 0.75, g = 0.30, b = 1.00, a = 0.80, w = 3 },
