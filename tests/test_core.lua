@@ -92,7 +92,7 @@ T.describe("Core.DamageWithArmor", function()
     Core.DamageWithArmor(20)
     T.assertTrue(Core.state.hp < 100, "non-dodged hit should reduce HP")
   end)
-  T.it("tempBlock absorbs the armor-reduced hit (no armor set here → same as raw)", function()
+  T.it("tempBlock absorbs before armor mitigation", function()
     reset()
     Core.SetHP(100, 100)
     Core.SetTempBlock(20)
@@ -485,16 +485,14 @@ T.describe("Core tempBlock", function()
     T.assertEq(Core.state.hp, 95)
     T.assertEq(Core.state.tempBlock, 0)
   end)
-  T.it("armor still mitigates while block fully covers the hit, sparing block charge", function()
+  T.it("armor does not mitigate while block fully covers the hit", function()
     reset()
-    -- Bug fix: armor used to only kick in once block ran dry, so a hit block
-    -- could fully absorb drained block by the raw amount even though armor
-    -- would have stopped part of it. Armor now reduces the hit first, so
-    -- block only has to soak the armor-reduced remainder.
+    -- Armor only applies once block is fully depleted: while block can cover
+    -- the raw hit, it soaks the whole amount and armor never enters.
     Core.SetHP(100, 100); Core.SetTempBlock(50); Core.SetArmor(10, 0)
-    Core.DamageWithArmor(30)  -- armor: 30-10=20 → block soaks 20, not 30
+    Core.DamageWithArmor(30)  -- block soaks the full raw 30; armor unused
     T.assertEq(Core.state.hp, 100)
-    T.assertEq(Core.state.tempBlock, 30)  -- 50-20, not the old buggy 50-30=20
+    T.assertEq(Core.state.tempBlock, 20)  -- 50 - 30
   end)
   T.it("DamageTrue ignores block (block only applies to armor variant)", function()
     reset()
@@ -1289,9 +1287,7 @@ T.describe("State JSON-like shape stays serializable", function()
 end)
 
 -- ────────────────────────────────────────────────────────────────────
--- Order of operations: dodge → block (armor-sized) → magic shield → mitigation → mana shield → HP
--- Armor still reduces the hit while block is active: block only has to
--- soak what's left after armor, not the raw amount.
+-- Order of operations: dodge → block → magic shield → mitigation → mana shield → HP
 -- ────────────────────────────────────────────────────────────────────
 
 T.describe("Combat absorption ordering", function()

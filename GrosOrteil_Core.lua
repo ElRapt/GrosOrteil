@@ -1231,9 +1231,32 @@ local function applyHit(s, t, rawAmount, opts)
   local absorbedBlock = 0
   local absorbedMagic
 
-  -- Mitigation (armor). Computed from stats only (independent of `amount`),
-  -- so it's available before block runs — block must size its absorption
-  -- against the armor-reduced hit, not the raw one (see below).
+  -- Block (player DamageWithArmor only). Block soaks the raw hit first; armor
+  -- only mitigates what overflows once block is fully depleted.
+  if opts.armor and not opts.isPet then
+    local block = math.max(0, s.tempBlock or 0)
+    if block > 0 and amount > 0 then
+      absorbedBlock = math.min(block, amount)
+      s.tempBlock = block - absorbedBlock
+      amount = amount - absorbedBlock
+    end
+  end
+
+  -- Magic absorption
+  if opts.direct then
+    absorbedMagic = 0
+  elseif opts.isPet then
+    amount, absorbedMagic = consumeMagicShield(t, amount)
+  else
+    amount, absorbedMagic = consumeMagicShield(s, amount)
+  end
+
+  -- SFX
+  if absorbedMagic > 0 then sfxMagicShield()
+  elseif absorbedBlock > 0 then sfxBlock()
+  elseif amount > 0 then sfxDamage() end
+
+  -- Mitigation (armor)
   local mit
   if opts.direct then
     mit = 0
@@ -1255,35 +1278,6 @@ local function applyHit(s, t, rawAmount, opts)
     end
     mit = armorVal
   end
-
-  -- Block (player DamageWithArmor only). Armor still mitigates the hit while
-  -- block is active: block only has to soak what's left after armor, not the
-  -- raw hit. Previously block consumed the full raw amount and armor only
-  -- ever applied to the overflow once block ran dry, so armor did nothing
-  -- on any hit block could fully cover.
-  if opts.armor and not opts.isPet then
-    local block = math.max(0, s.tempBlock or 0)
-    if block > 0 and amount > 0 then
-      local afterArmor = math.max(0, amount - mit)
-      absorbedBlock = math.min(block, afterArmor)
-      s.tempBlock = block - absorbedBlock
-      amount = amount - absorbedBlock
-    end
-  end
-
-  -- Magic absorption
-  if opts.direct then
-    absorbedMagic = 0
-  elseif opts.isPet then
-    amount, absorbedMagic = consumeMagicShield(t, amount)
-  else
-    amount, absorbedMagic = consumeMagicShield(s, amount)
-  end
-
-  -- SFX
-  if absorbedMagic > 0 then sfxMagicShield()
-  elseif absorbedBlock > 0 then sfxBlock()
-  elseif amount > 0 then sfxDamage() end
 
   local afterAbsorb = amount
   local dmg = effDmg(amount, mit)
