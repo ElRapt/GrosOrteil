@@ -1127,6 +1127,25 @@ function ns.UI_Init()
   UI.tabHidden = {}
   UI.activeTab = 1
 
+  -- Central tab map. Character/pet routing must use these names because adding
+  -- a character page shifts every pet page that follows it.
+  local TAB_IDS = {
+    PLAYER_MAIN = 1,
+    PLAYER_RESOURCES = 2,
+    PLAYER_ARMOR = 3,
+    PLAYER_ACTIONS = 4,
+    PLAYER_AFFIXES = 5,
+    PLAYER_CLASSES = 6,
+    PLAYER_GRIMOIRE = 7,
+    PLAYER_HISTORY = 8,
+    PET_MAIN = 9,
+    PET_HISTORY = 10,
+    PET_AFFIXES = 11,
+  }
+  local FIRST_PET_TAB = TAB_IDS.PET_MAIN
+  local LAST_PLAYER_TAB = FIRST_PET_TAB - 1
+  UI.TAB_IDS = TAB_IDS
+
   -- 1 = character section, 2 = familiar section.
   local activeSection    = 1
   local lastState        = nil
@@ -1200,17 +1219,17 @@ function ns.UI_Init()
 
   local function setTab(active)
     -- Don't activate a tab that belongs to the inactive section.
-    if active <= 7 and activeSection ~= 1 then return end
-    if active >= 8 and activeSection ~= 2 then return end
+    if active <= LAST_PLAYER_TAB and activeSection ~= 1 then return end
+    if active >= FIRST_PET_TAB and activeSection ~= 2 then return end
     if UI.tabHidden and UI.tabHidden[active] then
-      setTab(activeSection == 1 and 1 or 8)
+      setTab(activeSection == 1 and TAB_IDS.PLAYER_MAIN or TAB_IDS.PET_MAIN)
       return
     end
     if UI.tabDisabled and UI.tabDisabled[active] then
       -- The previously-active tab just became disabled (e.g. resources for a
       -- class with no resources). Fall back to the section's home tab so the
       -- pages stay in sync — without this the disabled page kept rendering.
-      local fallback = (activeSection == 1) and 1 or 8
+      local fallback = (activeSection == 1) and TAB_IDS.PLAYER_MAIN or TAB_IDS.PET_MAIN
       if active ~= fallback and not (UI.tabDisabled and UI.tabDisabled[fallback]) then
         setTab(fallback)
       end
@@ -1271,13 +1290,14 @@ function ns.UI_Init()
       end
     end
 
-    if active == 7 and UI.syncHistoryWidth then
+    if active == TAB_IDS.PLAYER_HISTORY and UI.syncHistoryWidth then
       UI.syncHistoryWidth()
     end
-    if active == 9 and UI.syncPetHistoryWidth then
+    if active == TAB_IDS.PET_HISTORY and UI.syncPetHistoryWidth then
       UI.syncPetHistoryWidth()
     end
   end
+  UI.setTab = setTab
 
   -- Sidebar navigation (vertical tabs)
   local TAB_TEXTS = {
@@ -1287,10 +1307,11 @@ function ns.UI_Init()
     "Actions",          -- 4 (was 5)
     "Affixes",          -- 5
     "Classes",          -- 6 (was 3)
-    "Historique",       -- 7
-    "Familier",         -- 8  familiar section (merged)
-    "Historique",       -- 9  familiar history
-    "Affixes",          -- 10 familiar affixes
+    "Grimoire",         -- 7
+    "Historique",       -- 8
+    "Familier",         -- 9  familiar section (merged)
+    "Historique",       -- 10 familiar history
+    "Affixes",          -- 11 familiar affixes
   }
 
   local NAV_PAD = 5
@@ -1302,10 +1323,11 @@ function ns.UI_Init()
     [1] = "Points de vie, armure, attaque, actions et ressources du personnage.",
     [5] = "Affixes de zone : bonus et malus temporaires appliqués à la fiche.",
     [6] = "Choix de la classe : couleurs, ressources et seuils associés.",
-    [7] = "Journal des évènements du personnage.",
-    [8] = "Fiche du familier : PV, armure, attaque et actions.",
-    [9] = "Journal des évènements du familier.",
-    [10] = "Affixes de zone : bonus et malus temporaires appliqués au familier.",
+    [7] = "Techniques personnelles, classées dans leur ordre d’affichage.",
+    [8] = "Journal des évènements du personnage.",
+    [9] = "Fiche du familier : PV, armure, attaque et actions.",
+    [10] = "Journal des évènements du familier.",
+    [11] = "Affixes de zone : bonus et malus temporaires appliqués au familier.",
   }
 
   local function mkTab(text, idx)
@@ -1406,7 +1428,8 @@ function ns.UI_Init()
       local tab = UI.tabs[i]
       if not tab then break end
       -- Hide tabs that belong to the inactive section or are explicitly hidden.
-      local sectionHide = (activeSection == 1 and i >= 8) or (activeSection == 2 and i <= 7)
+      local sectionHide = (activeSection == 1 and i >= FIRST_PET_TAB)
+        or (activeSection == 2 and i < FIRST_PET_TAB)
       if (UI.tabHidden and UI.tabHidden[i]) or sectionHide then
         tab:Hide()
       else
@@ -1432,11 +1455,13 @@ function ns.UI_Init()
   mkPage()                       -- 4  (hidden — merged into Paramètres)
   local pageAffixes = mkPage()   -- 5
   local pageClasses = mkPage()   -- 6 (was 3)
-  local pageHistory = mkPage()   -- 7
-  local pagePetHP      = mkPage() -- 8: familiar – Fiche (merged)
-  local pagePetArmor   = mkPage() -- 9: familiar – Historique
-  local pagePetAffixes = mkPage() -- 10: familiar – Affixes
+  local pageGrimoire = mkPage()  -- 7
+  local pageHistory = mkPage()   -- 8
+  local pagePetHP      = mkPage() -- 9: familiar – Fiche (merged)
+  local pagePetArmor   = mkPage() -- 10: familiar – Historique
+  local pagePetAffixes = mkPage() -- 11: familiar – Affixes
   UI.pageHistory = pageHistory
+  UI.grimoirePage = pageGrimoire
 
   -- Tabs 2-4 are merged into tab 1 (Fiche). Tab 5 hosts the Affixes page.
   UI.tabHidden[2] = true
@@ -1475,9 +1500,9 @@ function ns.UI_Init()
     styleSectBtn(sectChar, sect == 1)
     styleSectBtn(sectPet,  sect == 2)
     if sect == 1 then
-      if UI.activeTab and UI.activeTab >= 8 then setTab(1) end
+      if UI.activeTab and UI.activeTab >= FIRST_PET_TAB then setTab(TAB_IDS.PLAYER_MAIN) end
     else
-      if not UI.activeTab or UI.activeTab < 8 then setTab(8) end
+      if not UI.activeTab or UI.activeTab < FIRST_PET_TAB then setTab(TAB_IDS.PET_MAIN) end
     end
     -- Mystic-regen icon has no pet equivalent, so hide it in the pet section.
     if UI.iconRegenRes then
@@ -1490,6 +1515,7 @@ function ns.UI_Init()
     -- Full re-render for the newly active section.
     if lastState and onChangeCallback then onChangeCallback(lastState) end
   end
+  UI.setSidebarSection = setSidebarSection
 
   local function makeSectBtn(btn, label, x, onClick, tip)
     btn:SetSize(SECT_BTN_W, SECT_BTN_H)
@@ -1626,6 +1652,7 @@ function ns.UI_Init()
   -- Build the per-tab ctx dependency table.
   local tabCtx = {
     C = C, TEX = TEX, Core = Core, Shared = Shared,
+    Grimoire = ns.Grimoire, GrimoireIcons = ns.GrimoireIcons,
     mkLabel = mkLabel, mkLabelCenter = mkLabelCenter,
     mkEdit = mkEdit, mkButton = mkButton, mkRowAnchor = mkRowAnchor,
     getNumber = getNumber, setNumber = setNumber,
@@ -1645,6 +1672,7 @@ function ns.UI_Init()
     refreshHpDisplay = nil,  -- patched below after refreshHpDisplay is assigned
     mkActionIcon     = mkActionIcon,
     ICON_GAP         = ICON_GAP,
+    TAB_IDS          = TAB_IDS,
   }
 
   -- Onglet 1 : Fiche
@@ -1652,11 +1680,11 @@ function ns.UI_Init()
   ns.UI_BuildFicheTab(tabCtx)
   UI.inputs = tabCtx.inputs
 
-  -- Onglet 7 : Historique
+  -- Onglet 8 : Historique
   tabCtx.page = pageHistory
   ns.UI_BuildHistoryTab(tabCtx)
 
-  -- Onglet 8 : Familier — Fiche
+  -- Onglet 9 : Familier — Fiche
   tabCtx.page = pagePetHP
   ns.UI_BuildPetFicheTab(tabCtx)
   UI.inputs.petName            = tabCtx.petInputs.petName
@@ -1673,11 +1701,11 @@ function ns.UI_Init()
   UI.inputs.petMsArmor         = tabCtx.petInputs.petMsArmor
   UI.inputs.petActionVal       = tabCtx.petInputs.petActionVal
 
-  -- Onglet 9 : Familier — Historique
+  -- Onglet 10 : Familier — Historique
   tabCtx.page = pagePetArmor
   ns.UI_BuildPetHistoryTab(tabCtx)
 
-  -- Onglet 10 : Familier — Affixes
+  -- Onglet 11 : Familier — Affixes
   tabCtx.page = pagePetAffixes
   ns.UI_BuildAffixesTab(tabCtx, { pet = true })
 
@@ -1690,6 +1718,10 @@ function ns.UI_Init()
   -- Onglet 6 : Classes
   tabCtx.page = pageClasses
   ns.UI_BuildClassesTab(tabCtx)
+
+  -- Onglet 7 : Grimoire
+  tabCtx.page = pageGrimoire
+  ns.UI_BuildGrimoireTab(tabCtx)
 
   refreshHpDisplay = function(s)
     if activeSection == 2 then

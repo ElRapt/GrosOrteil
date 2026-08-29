@@ -258,6 +258,105 @@ describe("Comm round-trip", function()
   end)
 end)
 
+describe("Grimoire (in-game)", function()
+  it("initializes an empty normalized Grimoire idempotently", function()
+    reset()
+    local Core, Grimoire = ns.Core, ns.Grimoire
+    assertNotNil(Grimoire)
+    assertNotNil(ns.GrimoireIcons)
+    assertTrue(#ns.GrimoireIcons >= 8)
+    local iconCount = 0
+    for i = 1, #ns.GrimoireIcons do
+      iconCount = iconCount + #(ns.GrimoireIcons[i].icons or {})
+    end
+    assertTrue(iconCount >= 200)
+    assertNotNil(Core.state.grimoire)
+    assertEq(type(Core.state.grimoire.techniques), "table")
+    assertEq(#Core.state.grimoire.techniques, 0)
+    local nextId = Core.state.grimoire.nextTechniqueId
+    Grimoire.EnsureState(Core.state)
+    Grimoire.EnsureState(Core.state)
+    assertEq(Core.state.grimoire.nextTechniqueId, nextId)
+  end)
+
+  it("creates, edits, reorders and deletes by stable ID", function()
+    reset()
+    local Core, Grimoire = ns.Core, ns.Grimoire
+    Core.SetClassKey("MAGE")
+    local a = assert(Grimoire.CreateTechnique({ title = "A", description = "Alpha" }))
+    local b = assert(Grimoire.CreateTechnique({ title = "B", description = "Bravo" }))
+    assertTrue(Grimoire.MoveTechnique(b.id, -1))
+    assertEq(Grimoire.GetTechniques()[1].id, b.id)
+    local edited = assert(Grimoire.UpdateTechnique(b.id, {
+      title = "B2",
+      description = "Bravo modifié",
+      icon = { name = "INV_Misc_QuestionMark", type = "file", file = 134400 },
+      cost = { classKey = "MAGE", resourceIdx = 1, amount = 3 },
+      usesPerMission = 2,
+      damageHealing = 30,
+      damageHealingMax = 50,
+    }))
+    assertEq(edited.title, "B2")
+    assertEq(edited.icon.file, 134400)
+    assertEq(edited.cost.amount, 3)
+    assertEq(edited.usesPerMission, 2)
+    assertEq(edited.damageHealing, 30)
+    assertEq(edited.damageHealingMax, 50)
+    assertEq(Grimoire.FormatDamageHealing(edited), "R30-50")
+    assertTrue(Grimoire.DeleteTechnique(a.id))
+    assertEq(#Grimoire.GetTechniques(), 1)
+    assertEq(Grimoire.GetTechniques()[1].id, b.id)
+  end)
+
+  it("formats exact copy text and never spends informational cost/uses", function()
+    reset()
+    local Core, Grimoire = ns.Core, ns.Grimoire
+    Core.SetClassKey("MAGE")
+    Core.SetResIndex(1, 10, 20)
+    local technique = assert(Grimoire.CreateTechnique({
+      title = "Charge",
+      description = "Fonce vers la cible.",
+      cost = { classKey = "MAGE", resourceIdx = 1, amount = 3 },
+      usesPerMission = 2,
+      damageHealing = 30,
+      damageHealingMax = 50,
+    }))
+    assertEq(Grimoire.FormatTechniqueForCopy(technique), "[Charge : Fonce vers la cible.]")
+    local before = Core.state.res
+    Core.DamageTrue(1)
+    assertEq(Core.state.res, before)
+    assertEq(technique.usesPerMission, 2)
+    assertEq(technique.damageHealing, 30)
+    assertEq(technique.damageHealingMax, 50)
+    assertEq(Grimoire.FormatDamageHealing(technique), "R30-50")
+  end)
+
+  it("marks another class's cost stale instead of reinterpreting index 1", function()
+    reset()
+    local Core, Grimoire = ns.Core, ns.Grimoire
+    Core.SetClassKey("MAGE")
+    local technique = assert(Grimoire.CreateTechnique({
+      title = "Sort", cost = { classKey = "MAGE", resourceIdx = 1, amount = 2 },
+    }))
+    Core.SetClassKey("WARLOCK")
+    assertEq(technique.cost.classKey, "MAGE")
+    assertEq(Grimoire.GetCostResource("MAGE", 1).label, "Mana")
+    local valid = Grimoire.ValidateCost(Core.state, technique.cost)
+    assertFalse(valid)
+  end)
+
+  it("keeps Techniques out of Comm serialization", function()
+    reset()
+    local Core, Grimoire, Comm = ns.Core, ns.Grimoire, ns.Comm
+    assert(Grimoire.CreateTechnique({ title = "SECRET_GRIMOIRE", description = "LOCAL_ONLY" }))
+    local serialized = assert(Comm.SerializeState(Core.state))
+    assertNil(serialized:find("SECRET_GRIMOIRE", 1, true))
+    local remote = assert(Comm:DeserializeState("STATE_DATA", serialized, "Self"))
+    assertNil(remote.grimoire)
+    assertEq(remote.hp, Core.state.hp)
+  end)
+end)
+
 describe("Slash commands", function()
   it("/go show / hide toggles UI", function()
     if not ns.UI or not ns.UI.frame then return end
@@ -454,6 +553,46 @@ describe("UI smoke (in-game)", function()
   it("TargetPopup module exists", function()
     assertNotNil(ns.TargetPopup)
     assertNotNil(ns.TargetPopup.OnStateReceived)
+  end)
+  it("Grimoire is a Player tab and pet routing uses shifted named IDs", function()
+    local UI = ns.UI
+    assertNotNil(UI.TAB_IDS)
+    assertEq(UI.TAB_IDS.PLAYER_GRIMOIRE, 7)
+    assertEq(UI.TAB_IDS.PLAYER_HISTORY, 8)
+    assertEq(UI.TAB_IDS.PET_MAIN, 9)
+    assertNotNil(UI.grimoirePage)
+    assertNotNil(UI.refreshGrimoire)
+    assertNotNil(UI.openGrimoireEditor)
+    assertNotNil(UI.openGrimoireIconPicker)
+
+    UI.setSidebarSection(1)
+    UI.setTab(UI.TAB_IDS.PLAYER_GRIMOIRE)
+    assertEq(UI.activeTab, UI.TAB_IDS.PLAYER_GRIMOIRE)
+    UI.setSidebarSection(2)
+    assertEq(UI.activeTab, UI.TAB_IDS.PET_MAIN)
+    UI.setTab(UI.TAB_IDS.PLAYER_GRIMOIRE)
+    assertEq(UI.activeTab, UI.TAB_IDS.PET_MAIN)
+    UI.setSidebarSection(1)
+    assertEq(UI.activeTab, UI.TAB_IDS.PLAYER_MAIN)
+  end)
+  it("Grimoire list rebuilds at minimum/default/large sizes", function()
+    reset()
+    local UI, Grimoire = ns.UI, ns.Grimoire
+    for i = 1, 8 do
+      assert(Grimoire.CreateTechnique({
+        title = "Technique " .. i,
+        description = string.rep("Description longue ", 8),
+      }))
+    end
+    local oldW, oldH = UI.frame:GetWidth(), UI.frame:GetHeight()
+    local sizes = { { 680, 380 }, { 880, 460 }, { 1200, 760 } }
+    for i = 1, #sizes do
+      UI.frame:SetSize(sizes[i][1], sizes[i][2])
+      UI.refreshGrimoire(ns.Core.state)
+      assertTrue(#UI.grimoireRows >= 8)
+    end
+    UI.frame:SetSize(oldW, oldH)
+    reset()
   end)
 end)
 

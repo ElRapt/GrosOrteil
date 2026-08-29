@@ -189,6 +189,18 @@ local function copyAffixTables(src)
   return affixes, applied
 end
 
+local function deepCopyTable(value, seen)
+  if type(value) ~= "table" then return value end
+  seen = seen or {}
+  if seen[value] then return seen[value] end
+  local out = {}
+  seen[value] = out
+  for k, v in pairs(value) do
+    out[deepCopyTable(k, seen)] = deepCopyTable(v, seen)
+  end
+  return out
+end
+
 local function deepCopyState(s)
   local c = copyKeys(s, SNAPSHOT_SCALARS)
   c.affixes, c.affixApplied = copyAffixTables(s)
@@ -209,6 +221,9 @@ local function deepCopyState(s)
   local pms = p.magicShield
   pc.magicShield = pms and { hp = pms.hp, maxHp = pms.maxHp, armor = pms.armor } or { hp = 0, maxHp = 0, armor = 0 }
   c.pet = pc
+  -- Grimoire authoring participates in the global undo stack. Its nested icon
+  -- and cost tables must never be shared between live state and snapshots.
+  c.grimoire = deepCopyTable(s.grimoire)
   return c
 end
 
@@ -261,6 +276,10 @@ local function restoreSnapshot(snap)
   p.magicShield.hp    = spms and spms.hp    or 0
   p.magicShield.maxHp = spms and spms.maxHp or 0
   p.magicShield.armor = spms and spms.armor or 0
+  s.grimoire = deepCopyTable(snap.grimoire)
+  if ns.Grimoire and ns.Grimoire.EnsureState then
+    ns.Grimoire.EnsureState(s)
+  end
   s.rev = (s.rev or 0) + 1
 end
 
@@ -308,6 +327,14 @@ local function bump()
   end
   Core.state.rev = (Core.state.rev or 0) + 1
   prevSnapshot = deepCopyState(Core.state)
+end
+
+-- Grimoire owns its mutations, while Core owns revisioning, undo/redo and
+-- change notification. This narrow bridge keeps UI code away from SavedVars.
+function Core.CommitGrimoireMutation()
+  if not Core.state then return end
+  bump()
+  notify()
 end
 
 -- Forward declarations: defined later but referenced by setters.
@@ -625,6 +652,12 @@ function ns.Core_Init()
   end
   ensureHistory(db.state)
   ensurePet(db.state)
+  if ns.Grimoire and ns.Grimoire.EnsureState then
+    ns.Grimoire.EnsureState(db.state)
+  else
+    db.state.grimoire = type(db.state.grimoire) == "table" and db.state.grimoire
+      or { nextTechniqueId = 1, techniques = {} }
+  end
 
   -- Meter counters (added later): normalize old saves.
   if type(db.state.meter) ~= "table" then db.state.meter = {} end
