@@ -34,6 +34,8 @@ GrosOrteil_Heal.lua
 GrosOrteil_MeterSync.lua
 GrosOrteil_RaidMeter.lua
 GrosOrteil_RaidPanel.lua
+GrosOrteil_ReviewFixes.lua
 GrosOrteil_Bonus.lua
 GrosOrteil_Tests.lua
 GrosOrteil_PercentageHeal_Tests.lua
+GrosOrteil_ReviewFixes_Tests.lua
