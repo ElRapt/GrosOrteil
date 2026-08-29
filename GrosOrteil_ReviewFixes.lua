@@ -8,8 +8,9 @@ local Shared = ns.Shared
 local Comm = ns.Comm
 local Popup = ns.TargetPopup
 local Heal = ns.Heal
+local MeterSync = ns.MeterSync
 
-local type, tonumber, tostring = type, tonumber, tostring
+local type, tonumber = type, tonumber
 local math, pairs, rawget = math, pairs, rawget
 
 local ReviewFixes = {}
@@ -82,6 +83,34 @@ ReviewFixes.UniqueObservedIdentity = uniqueObservedIdentity
 ReviewFixes.IsAmbiguousShort = isAmbiguousShort
 ReviewFixes._exactByShort = exactByShort
 
+-- MeterSync used Shared.NormalizeNameKey, which deliberately strips realms.
+-- Keep an exact side-cache while retaining its existing broadcast/recovery flow.
+if MeterSync and MeterSync.Store and MeterSync.Get then
+  local exactMeterTotals = {}
+  local originalStore = MeterSync.Store
+  local originalGet = MeterSync.Get
+
+  MeterSync.Store = function(sender, dmg, heal)
+    observeIdentity(sender)
+    local key = identityKey(sender)
+    if key then
+      exactMeterTotals[key] = {
+        dmg = math.max(0, math.floor(tonumber(dmg) or 0)),
+        heal = math.max(0, math.floor(tonumber(heal) or 0)),
+      }
+    end
+    return originalStore(sender, dmg, heal)
+  end
+
+  MeterSync.Get = function(sender)
+    local resolved = uniqueObservedIdentity(sender)
+    if not resolved then return nil end
+    return exactMeterTotals[resolved] or originalGet(sender)
+  end
+
+  ReviewFixes._exactMeterTotals = exactMeterTotals
+end
+
 -- Maintain a realm-safe cache in front of TargetPopup's legacy short-name
 -- cache. Exact Name-Realm reads never collide. A short-name read is allowed
 -- only when the observed identity is unique; otherwise it fails closed.
@@ -90,6 +119,15 @@ if Popup and Popup.OnStateReceived and Popup.GetCachedState and Popup.InjectStat
   local originalOnStateReceived = Popup.OnStateReceived
   local originalGetCachedState = Popup.GetCachedState
   local originalInjectState = Popup.InjectState
+
+  local function withLiveMeter(state, name)
+    local live = MeterSync and MeterSync.Get and MeterSync.Get(name) or nil
+    if not state or not live then return state end
+    local proxy = {}
+    for k, v in pairs(state) do proxy[k] = v end
+    proxy.meter = { dmg = live.dmg, heal = live.heal }
+    return proxy
+  end
 
   Popup.OnStateReceived = function(self, sender, state)
     observeIdentity(sender)
@@ -102,7 +140,7 @@ if Popup and Popup.OnStateReceived and Popup.GetCachedState and Popup.InjectStat
     local resolved = uniqueObservedIdentity(name)
     if not resolved then return nil end
     local state = exactStateCache[resolved]
-    if state then return state end
+    if state then return withLiveMeter(state, resolved) end
     -- Preserve compatibility for peers not yet observed with a realm suffix.
     return originalGetCachedState(name)
   end
