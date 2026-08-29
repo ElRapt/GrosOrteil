@@ -94,8 +94,8 @@ Feature.RunTests = runPercentageTests
 if type(Tests.RunAll) == "function" then
   local originalRunAll = Tests.RunAll
   function Tests.RunAll(verbose)
-    local result = originalRunAll(verbose)
-    runPercentageTests()
-    return result
+    local result, passed, failed, failures = originalRunAll(verbose)
+    local percentageResult = runPercentageTests()
+    return result and percentageResult, passed, failed, failures
   end
 end
