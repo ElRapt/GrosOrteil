@@ -15,8 +15,14 @@ local UnitIsPlayer = rawget(_G, "UnitIsPlayer")
 local UnitName = rawget(_G, "UnitName")
 local UnitFullName = rawget(_G, "UnitFullName")
 local UnitGUID = rawget(_G, "UnitGUID")
+local UnitOwnerGUID = rawget(_G, "UnitOwnerGUID")
+local UnitNameFromGUID = rawget(_G, "UnitNameFromGUID")
+local UnitTokenFromGUID = rawget(_G, "UnitTokenFromGUID")
 local UnitIsUnit = rawget(_G, "UnitIsUnit")
+local IsPetUnit = rawget(_G, "IsPetUnit")
 local issecretvalue = rawget(_G, "issecretvalue")
+local canaccessvalue = rawget(_G, "canaccessvalue")
+local C_Secrets = rawget(_G, "C_Secrets")
 local IsInRaid = rawget(_G, "IsInRaid")
 local IsInGroup = rawget(_G, "IsInGroup")
 local CreateFrame = rawget(_G, "CreateFrame")
@@ -96,11 +102,17 @@ local function setCached(key, state)
   if oldestKey then stateCache[oldestKey] = nil end
 end
 
--- WoW can hand back "secret" values (unit names, GUIDs, tooltip text) when the
--- execution path is tainted by an addon; any compare/concat/string-op on one
--- raises "attempt to compare a secret string value". Treat secrets as absent.
+-- WoW 12.x can expose inaccessible/"secret" unit identity values in restricted
+-- contexts. Never inspect or transform them; treat them as absent.
 local function isSecret(v)
+  if canaccessvalue and not canaccessvalue(v) then return true end
   return issecretvalue ~= nil and issecretvalue(v) or false
+end
+
+local function unitIdentityIsRestricted(unit)
+  if isSecret(unit) then return true end
+  local shouldBeSecret = C_Secrets and C_Secrets.ShouldUnitIdentityBeSecret
+  return type(shouldBeSecret) == "function" and shouldBeSecret(unit) or false
 end
 
 -- nil unless v is a plain, non-empty, non-secret string.
@@ -144,6 +156,7 @@ local function namesMatch(a, b)
 end
 
 local function unitTargetName(unit)
+  if unitIdentityIsRestricted(unit) then return nil end
   if UnitFullName then
     local name, realm = UnitFullName(unit)
     name, realm = usableString(name), usableString(realm)
@@ -166,8 +179,6 @@ local function unitTargetName(unit)
 
   return nil
 end
-
-local ownerScanTooltip
 
 local function stripColorCodes(text)
   -- GetText() can return a secret string under taint; string ops on it raise.
@@ -198,37 +209,19 @@ local function extractOwnerNameFromTooltipText(text)
   return owner
 end
 
-local function resolveOwnerNameFromTooltip(unit)
-  if not unit or not CreateFrame then return nil end
-  if not ownerScanTooltip then
-    ownerScanTooltip = CreateFrame("GameTooltip", "GrosOrteilOwnerScanTooltip", nil, "GameTooltipTemplate")
-    ownerScanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
-  end
-
-  ownerScanTooltip:ClearLines()
-  securecall(ownerScanTooltip.SetUnit, ownerScanTooltip, unit)
-
-  for i = 2, 6 do
-    local left = _G["GrosOrteilOwnerScanTooltipTextLeft" .. i]
-    if left and left.GetText then
-      local owner = extractOwnerNameFromTooltipText(left:GetText())
-      if owner then return owner end
-    end
-  end
-  return nil
-end
-
 local function resolveOwnerNameFromPetUnit(unit)
   if not unit or not UnitExists then return nil end
   if not UnitExists(unit) then return nil end
+  if unitIdentityIsRestricted(unit) then return nil end
 
   -- Identity check via UnitIsUnit: pet GUIDs can be secret values under taint
   -- and comparing them with == raises. GUID equality is only the offline-test
   -- fallback (the harness has no UnitIsUnit), and skips secret GUIDs.
   local function ownerByUnit(ownerUnit)
     if not ownerUnit then return nil end
-    local petUnit = ownerUnit .. "pet"
+    local petUnit = ownerUnit == "player" and "pet" or (ownerUnit .. "pet")
     if not UnitExists(petUnit) then return nil end
+    if unitIdentityIsRestricted(petUnit) then return nil end
     if UnitIsUnit then
       if UnitIsUnit(petUnit, unit) then
         return unitTargetName(ownerUnit)
@@ -258,15 +251,35 @@ local function resolveOwnerNameFromPetUnit(unit)
     end
   end
 
-  return resolveOwnerNameFromTooltip(unit)
+  -- WoW 12.1 exposes the owner GUID directly. This preserves pet popups for
+  -- owners outside our group without mutating GameTooltip to scrape owner text.
+  if UnitOwnerGUID and UnitNameFromGUID then
+    local ownerGUID = UnitOwnerGUID(unit)
+    if ownerGUID and not isSecret(ownerGUID) then
+      local ownerName, ownerRealm = UnitNameFromGUID(ownerGUID)
+      ownerName, ownerRealm = usableString(ownerName), usableString(ownerRealm)
+      if ownerName then
+        if ownerRealm then
+          return ownerName .. "-" .. ownerRealm
+        end
+        return ownerName
+      end
+    end
+  end
+
+  return nil
 end
 
 local function resolveStateNameForUnit(unit)
-  if not unit or not UnitExists or not UnitExists(unit) then return nil end
+  if not unit or not UnitExists or not UnitExists(unit) then return nil, false end
+  if unitIdentityIsRestricted(unit) then return nil, false end
   if UnitIsPlayer and UnitIsPlayer(unit) then
-    return unitTargetName(unit)
+    return unitTargetName(unit), false
   end
-  return resolveOwnerNameFromPetUnit(unit)
+  if IsPetUnit and IsPetUnit(unit) then
+    return resolveOwnerNameFromPetUnit(unit), true
+  end
+  return nil, false
 end
 
 
@@ -1137,8 +1150,7 @@ function Popup:OnTargetChanged()
     return
   end
 
-  local isPet = not (UnitIsPlayer and UnitIsPlayer("target"))
-  local targetName = resolveStateNameForUnit("target")
+  local targetName, isPet = resolveStateNameForUnit("target")
   if not targetName then
     return
   end
@@ -1614,23 +1626,22 @@ tryShowHover = function()
   -- Resolve hovered unit name and detect whether it is a pet.
   local unitName, isPet
   if UnitExists("mouseover") then
-    unitName = resolveStateNameForUnit("mouseover")
-    if unitName then
-      isPet = not (UnitIsPlayer and UnitIsPlayer("mouseover"))
-    end
+    unitName, isPet = resolveStateNameForUnit("mouseover")
   end
   if not unitName then
     local gt = rawget(_G, "GameTooltip")
-    if gt and gt.GetUnit then
-      -- GetUnit returns (name, unitToken); either can be a secret value under
-      -- taint. Prefer the token, fall back to the name, drop secrets.
-      local tipName, tipUnit = gt:GetUnit()
-      local unit = usableString(tipUnit) or usableString(tipName)
-      if unit and UnitExists(unit) then
-        unitName = resolveStateNameForUnit(unit)
-        if unitName then
-          isPet = not (UnitIsPlayer and UnitIsPlayer(unit))
-        end
+    local tooltipDataType = rawget(_G, "Enum") and _G.Enum.TooltipDataType
+    if gt and tooltipDataType and gt.IsTooltipType and gt.GetPrimaryTooltipData
+        and gt:IsTooltipType(tooltipDataType.Unit) then
+      -- Retail 12.1: follow TRP3 and derive the unit token from primary tooltip
+      -- data instead of calling GameTooltip:GetUnit(), which can traverse unit
+      -- identity internally before addon code has a chance to reject secrets.
+      local tooltipData = gt:GetPrimaryTooltipData()
+      local guid = tooltipData and tooltipData.guid
+      local unit = guid and UnitTokenFromGUID and UnitTokenFromGUID(guid)
+      unit = usableString(unit)
+      if unit and UnitExists(unit) and not unitIdentityIsRestricted(unit) then
+        unitName, isPet = resolveStateNameForUnit(unit)
       end
     end
   end
