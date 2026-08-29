@@ -65,21 +65,33 @@ local function runReviewFixTests()
   end)
 
   check("unsolicited heal response is ignored", function()
-    if not Heal or not Core or not Core.state then return end
-    Core.state.meter = Core.state.meter or { dmg = 0, heal = 0 }
-    local before = Core.state.meter.heal or 0
-    eq(Heal:OnResponse("Reviewforged-Realm", true, 999999), false)
-    eq(Core.state.meter.heal or 0, before)
+    if not Heal or not Core then return end
+    local originalCredit = Core.CreditHealGiven
+    local credited = 0
+    Core.CreditHealGiven = function(amount) credited = credited + (tonumber(amount) or 0) end
+    local ok, err = pcall(function()
+      eq(Heal:OnResponse("Reviewforged-Realm", true, 999999), false)
+      eq(credited, 0)
+    end)
+    Core.CreditHealGiven = originalCredit
+    if not ok then error(err, 0) end
   end)
 
   check("heal response credit is capped to requested amount", function()
-    if not Heal or not Core or not Core.state then return end
-    Core.state.meter = Core.state.meter or { dmg = 0, heal = 0 }
-    local before = Core.state.meter.heal or 0
-    Heal.MarkPending("Reviewheal-Realm", 25, 0, false)
-    eq(Heal:OnResponse("Reviewheal-Realm", true, 999999), true)
-    eq(Core.state.meter.heal or 0, before + 25)
-    eq(Heal:OnResponse("Reviewheal-Realm", true, 25), false)
+    if not Heal or not Core then return end
+    local originalCredit = Core.CreditHealGiven
+    local credited = 0
+    Core.CreditHealGiven = function(amount) credited = credited + (tonumber(amount) or 0) end
+    local ok, err = pcall(function()
+      Heal.MarkPending("Reviewheal-Realm", 25, 0, false)
+      eq(Heal:OnResponse("Reviewheal-Realm", true, 999999), true)
+      eq(credited, 25)
+      eq(Heal:OnResponse("Reviewheal-Realm", true, 25), false)
+      eq(credited, 25)
+    end)
+    Heal.ClearPending("Reviewheal-Realm")
+    Core.CreditHealGiven = originalCredit
+    if not ok then error(err, 0) end
   end)
 
   local printer = rawget(_G, "print")
