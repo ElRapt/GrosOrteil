@@ -86,7 +86,7 @@ local function runPercentageTests()
     end
   end
 
-  return failed == 0
+  return failed == 0, passed, failed, failures
 end
 
 Feature.RunTests = runPercentageTests
@@ -94,8 +94,15 @@ Feature.RunTests = runPercentageTests
 if type(Tests.RunAll) == "function" then
   local originalRunAll = Tests.RunAll
   function Tests.RunAll(verbose)
-    local result = originalRunAll(verbose)
-    runPercentageTests()
-    return result
+    local result, passed, failed, failures = originalRunAll(verbose)
+    local percentageResult, pctPassed, pctFailed, pctFailures = runPercentageTests()
+    failures = failures or {}
+    for i = 1, #(pctFailures or {}) do
+      failures[#failures + 1] = { suite = "PercentageHeal", test = "extension", err = pctFailures[i] }
+    end
+    return result and percentageResult,
+      (passed or 0) + (pctPassed or 0),
+      (failed or 0) + (pctFailed or 0),
+      failures
   end
 end
