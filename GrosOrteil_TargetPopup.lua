@@ -19,7 +19,7 @@ local UnitOwnerGUID = rawget(_G, "UnitOwnerGUID")
 local UnitNameFromGUID = rawget(_G, "UnitNameFromGUID")
 local UnitTokenFromGUID = rawget(_G, "UnitTokenFromGUID")
 local UnitIsUnit = rawget(_G, "UnitIsUnit")
-local IsPetUnit = rawget(_G, "IsPetUnit")
+local UnitIsOtherPlayersPet = rawget(_G, "UnitIsOtherPlayersPet")
 local issecretvalue = rawget(_G, "issecretvalue")
 local canaccessvalue = rawget(_G, "canaccessvalue")
 local C_Secrets = rawget(_G, "C_Secrets")
@@ -223,7 +223,8 @@ local function resolveOwnerNameFromPetUnit(unit)
     if not UnitExists(petUnit) then return nil end
     if unitIdentityIsRestricted(petUnit) then return nil end
     if UnitIsUnit then
-      if UnitIsUnit(petUnit, unit) then
+      local isSameUnit = UnitIsUnit(petUnit, unit)
+      if not isSecret(isSameUnit) and isSameUnit then
         return unitTargetName(ownerUnit)
       end
       return nil
@@ -270,13 +271,43 @@ local function resolveOwnerNameFromPetUnit(unit)
   return nil
 end
 
+local function isPetUnit(unit)
+  if not unit or not UnitExists or not UnitExists(unit) then return false end
+  if unitIdentityIsRestricted(unit) then return false end
+
+  -- UnitIsOtherPlayersPet deliberately excludes the local player's pet, so
+  -- prove that case by comparing against WoW's actual local token: "pet".
+  if UnitExists("pet") and not unitIdentityIsRestricted("pet") then
+    if UnitIsUnit then
+      local isLocalPet = UnitIsUnit("pet", unit)
+      if not isSecret(isLocalPet) and isLocalPet then return true end
+    else
+      local petGUID = UnitGUID and UnitGUID("pet")
+      local unitGUID = UnitGUID and UnitGUID(unit)
+      if petGUID and unitGUID and not isSecret(petGUID) and not isSecret(unitGUID)
+          and petGUID == unitGUID then
+        return true
+      end
+    end
+  end
+
+  if UnitIsOtherPlayersPet then
+    local isOtherPet = UnitIsOtherPlayersPet(unit)
+    return not isSecret(isOtherPet) and isOtherPet == true
+  end
+  return false
+end
+
 local function resolveStateNameForUnit(unit)
   if not unit or not UnitExists or not UnitExists(unit) then return nil, false end
   if unitIdentityIsRestricted(unit) then return nil, false end
   if UnitIsPlayer and UnitIsPlayer(unit) then
     return unitTargetName(unit), false
   end
-  if IsPetUnit and IsPetUnit(unit) then
+
+  -- There is no Retail WoW global named IsPetUnit. Use the real pet predicates
+  -- before entering owner resolution so ordinary NPCs remain outside this path.
+  if isPetUnit(unit) then
     return resolveOwnerNameFromPetUnit(unit), true
   end
   return nil, false
@@ -1694,6 +1725,9 @@ Popup._test = {
   namesMatch                     = namesMatch,
   stripColorCodes                = stripColorCodes,
   extractOwnerNameFromTooltipText = extractOwnerNameFromTooltipText,
+  isPetUnit                       = isPetUnit,
+  resolveOwnerNameFromPetUnit     = resolveOwnerNameFromPetUnit,
+  resolveStateNameForUnit         = resolveStateNameForUnit,
   baseCharacterName              = baseCharacterName,
   senderToUnitID                 = senderToUnitID,
   getCached                      = getCached,

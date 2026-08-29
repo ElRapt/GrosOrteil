@@ -81,12 +81,54 @@ function M.install()
   end
 
   -- Unit info — keep simple and deterministic.
+  -- Tests can populate M.units with per-token identity data. Leaving it nil
+  -- preserves the original permissive defaults used by the wider suite.
+  M.units = nil
+  local function unitData(unit)
+    return M.units and M.units[unit] or nil
+  end
   _G.UnitClass = function(_) return "Mage", "MAGE" end
-  _G.UnitName = function(_) return "TestPlayer", "TestRealm" end
-  _G.UnitFullName = function(_) return "TestPlayer", "TestRealm" end
-  _G.UnitExists = function(_) return true end
-  _G.UnitIsPlayer = function(_) return true end
-  _G.UnitGUID = function(_) return "Player-1-00000001" end
+  _G.UnitName = function(unit)
+    local data = unitData(unit)
+    if data then return data.name, data.realm end
+    return "TestPlayer", "TestRealm"
+  end
+  _G.UnitFullName = _G.UnitName
+  _G.UnitExists = function(unit)
+    if M.units then return M.units[unit] ~= nil end
+    return true
+  end
+  _G.UnitIsPlayer = function(unit)
+    local data = unitData(unit)
+    if data then return data.isPlayer == true end
+    return true
+  end
+  _G.UnitGUID = function(unit)
+    local data = unitData(unit)
+    if data then return data.guid end
+    return "Player-1-00000001"
+  end
+  _G.UnitIsUnit = function(a, b)
+    local aData, bData = unitData(a), unitData(b)
+    if aData and bData then return aData.guid ~= nil and aData.guid == bData.guid end
+    return a == b
+  end
+  _G.UnitIsOtherPlayersPet = function(unit)
+    local data = unitData(unit)
+    return data and data.isOtherPlayersPet == true or false
+  end
+  _G.UnitOwnerGUID = function(unit)
+    local data = unitData(unit)
+    return data and data.ownerGUID or nil
+  end
+  _G.UnitNameFromGUID = function(guid)
+    if M.units then
+      for _, data in pairs(M.units) do
+        if data.guid == guid then return data.name, data.realm end
+      end
+    end
+    return nil
+  end
   _G.IsInRaid = function() return false end
   _G.IsInGroup = function() return false end
 
