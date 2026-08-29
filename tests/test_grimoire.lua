@@ -69,7 +69,8 @@ T.describe("Grimoire initialization and migration", function()
       grimoire = { techniques = {
         { id = 2, title = "Deux", description = "Seconde", usesPerMission = 0, damageHealing = 0,
           cost = { classKey = "MAGE", resourceIdx = 99, amount = 4 }, icon = { name = {} } },
-        { id = 1, title = "Un", description = "Première", usesPerMission = 3, damageHealing = 120 },
+        { id = 1, title = "Un", description = "Première", usesPerMission = 3,
+          damageHealing = 30, damageHealingMax = 50 },
       } },
     }
     Grimoire.EnsureState(state)
@@ -80,7 +81,8 @@ T.describe("Grimoire initialization and migration", function()
     T.assertNil(state.grimoire.techniques[1].icon)
     T.assertNil(state.grimoire.techniques[1].damageHealing)
     T.assertEq(state.grimoire.techniques[2].usesPerMission, 3)
-    T.assertEq(state.grimoire.techniques[2].damageHealing, 120)
+    T.assertEq(state.grimoire.techniques[2].damageHealing, 30)
+    T.assertEq(state.grimoire.techniques[2].damageHealingMax, 50)
   end)
 
   T.it("retains a legacy icon name with a safe normalized fallback", function()
@@ -129,7 +131,8 @@ T.describe("Grimoire CRUD and ordering", function()
       icon = { name = "INV_Misc_QuestionMark", type = "file", file = 134400 },
       cost = { classKey = "MAGE", resourceIdx = 1, amount = 3 },
       usesPerMission = 2,
-      damageHealing = 120,
+      damageHealing = 30,
+      damageHealingMax = 50,
     })
     T.assertNotNil(updated, err)
     T.assertEq(updated.title, "Nouveau")
@@ -139,7 +142,8 @@ T.describe("Grimoire CRUD and ordering", function()
     T.assertEq(updated.cost.resourceIdx, 1)
     T.assertEq(updated.cost.amount, 3)
     T.assertEq(updated.usesPerMission, 2)
-    T.assertEq(updated.damageHealing, 120)
+    T.assertEq(updated.damageHealing, 30)
+    T.assertEq(updated.damageHealingMax, 50)
     Grimoire.UpdateTechnique(a.id, {
       icon = { name = "AtlasIcon", type = "atlas", atlas = "some-atlas" },
     })
@@ -147,12 +151,14 @@ T.describe("Grimoire CRUD and ordering", function()
     T.assertEq(updated.icon.atlas, "some-atlas")
     T.assertNil(updated.icon.file)
     Grimoire.UpdateTechnique(a.id, {
-      icon = false, cost = false, usesPerMission = false, damageHealing = false,
+      icon = false, cost = false, usesPerMission = false,
+      damageHealing = false, damageHealingMax = false,
     })
     T.assertNil(updated.icon)
     T.assertNil(updated.cost)
     T.assertNil(updated.usesPerMission)
     T.assertNil(updated.damageHealing)
+    T.assertNil(updated.damageHealingMax)
   end)
 
   T.it("an isolated editor draft does not mutate persisted state", function()
@@ -161,17 +167,20 @@ T.describe("Grimoire CRUD and ordering", function()
       icon = { name = "A", type = "atlas", atlas = "some-atlas" },
       cost = { classKey = "MAGE", resourceIdx = 1, amount = 2 },
       damageHealing = 80,
+      damageHealingMax = 100,
     })
     local draft = Grimoire.CopyTechnique(a)
     draft.title = "Annulé"
     draft.icon.atlas = "changed"
     draft.cost.amount = 99
     draft.damageHealing = 999
+    draft.damageHealingMax = 1000
     local persisted = Grimoire.GetTechniqueById(a.id)
     T.assertEq(persisted.title, "Persisté")
     T.assertEq(persisted.icon.atlas, "some-atlas")
     T.assertEq(persisted.cost.amount, 2)
     T.assertEq(persisted.damageHealing, 80)
+    T.assertEq(persisted.damageHealingMax, 100)
   end)
 
   T.it("deletes exactly the requested stable ID", function()
@@ -209,6 +218,7 @@ T.describe("Grimoire CRUD and ordering", function()
       icon = { name = "old", type = "file", file = 1 },
       cost = { classKey = "MAGE", resourceIdx = 1, amount = 2 },
       damageHealing = 40,
+      damageHealingMax = 60,
     })
     Core.BreakUndoCoalesce()
     Grimoire.UpdateTechnique(a.id, {
@@ -216,6 +226,7 @@ T.describe("Grimoire CRUD and ordering", function()
       icon = { name = "new", type = "file", file = 2 },
       cost = { classKey = "MAGE", resourceIdx = 2, amount = 5 },
       damageHealing = 120,
+      damageHealingMax = 180,
     })
     Core.Undo()
     local restored = Grimoire.GetTechniqueById(a.id)
@@ -224,6 +235,7 @@ T.describe("Grimoire CRUD and ordering", function()
     T.assertEq(restored.cost.resourceIdx, 1)
     T.assertEq(restored.cost.amount, 2)
     T.assertEq(restored.damageHealing, 40)
+    T.assertEq(restored.damageHealingMax, 60)
   end)
 end)
 
@@ -264,13 +276,14 @@ T.describe("Grimoire resources and informational semantics", function()
     Core.SetResIndex(1, 10, 20)
     local a = create("Info", "", {
       cost = { classKey = "MAGE", resourceIdx = 1, amount = 4 },
-      usesPerMission = 2, damageHealing = 120,
+      usesPerMission = 2, damageHealing = 30, damageHealingMax = 50,
     })
     local before = Core.state.res
     Core.DamageTrue(1)
     T.assertEq(Core.state.res, before)
     T.assertEq(a.usesPerMission, 2)
-    T.assertEq(a.damageHealing, 120)
+    T.assertEq(a.damageHealing, 30)
+    T.assertEq(a.damageHealingMax, 50)
   end)
 
   T.it("rejects invalid finite uses and cost amounts", function()
@@ -279,6 +292,10 @@ T.describe("Grimoire resources and informational semantics", function()
     T.assertNil(Grimoire.CreateTechnique({ title = "X", usesPerMission = 1.5 }))
     T.assertNil(Grimoire.CreateTechnique({ title = "X", damageHealing = 0 }))
     T.assertNil(Grimoire.CreateTechnique({ title = "X", damageHealing = 1.5 }))
+    T.assertNil(Grimoire.CreateTechnique({
+      title = "X", damageHealing = 50, damageHealingMax = 30,
+    }))
+    T.assertNil(Grimoire.CreateTechnique({ title = "X", damageHealing = "30-foo" }))
     T.assertNil(Grimoire.CreateTechnique({
       title = "X", cost = { classKey = "MAGE", resourceIdx = 1, amount = -1 },
     }))
@@ -293,11 +310,42 @@ T.describe("Grimoire resources and informational semantics", function()
   end)
 end)
 
+T.describe("Grimoire damage and healing ranges", function()
+  T.it("parses and formats single values and optional ranges", function()
+    local minimum, maximum, err = Grimoire.ParseDamageHealingInput("30-50")
+    T.assertNil(err)
+    T.assertEq(minimum, 30)
+    T.assertEq(maximum, 50)
+    T.assertEq(Grimoire.FormatDamageHealing(minimum, maximum), "R30-50")
+
+    minimum, maximum, err = Grimoire.ParseDamageHealingInput("R120")
+    T.assertNil(err)
+    T.assertEq(minimum, 120)
+    T.assertNil(maximum)
+    T.assertEq(Grimoire.FormatDamageHealing(minimum, maximum), "R120")
+  end)
+
+  T.it("migrates a legacy range string and degrades an invalid stored maximum", function()
+    local state = {
+      classKey = "MAGE",
+      grimoire = { techniques = {
+        { title = "Plage", damageHealing = "30-50" },
+        { title = "Maximum invalide", damageHealing = 40, damageHealingMax = 20 },
+      } },
+    }
+    Grimoire.EnsureState(state)
+    T.assertEq(Grimoire.FormatDamageHealing(state.grimoire.techniques[1]), "R30-50")
+    T.assertEq(Grimoire.FormatDamageHealing(state.grimoire.techniques[2]), "R40")
+    T.assertNil(state.grimoire.techniques[2].damageHealingMax)
+  end)
+end)
+
 T.describe("Grimoire copy and communication boundary", function()
   T.it("formats the exact required representation", function()
     T.assertEq(
       Grimoire.FormatTechniqueForCopy({
-        title = "Charge", description = "Fonce vers la cible.", damageHealing = 120,
+        title = "Charge", description = "Fonce vers la cible.",
+        damageHealing = 30, damageHealingMax = 50,
       }),
       "[Charge : Fonce vers la cible.]"
     )
@@ -386,6 +434,7 @@ T.describe("Grimoire UI builder smoke", function()
     local function editFactory()
       local edit = mock.makeFrame()
       edit._wrap = mock.makeFrame()
+      function edit:SetNumeric(value) self._numeric = value end
       return edit
     end
     local ok, err = pcall(ns.UI_BuildGrimoireTab, {
@@ -400,6 +449,7 @@ T.describe("Grimoire UI builder smoke", function()
     T.assertNotNil(ns.UI.refreshGrimoire)
     T.assertNotNil(ns.UI.openGrimoireEditor)
     T.assertNotNil(ns.UI.openGrimoireIconPicker)
+    T.assertEq(ns.UI.grimoireDamageHealingEdit._numeric, false)
     ns.UI.refreshGrimoire(Core.state)
     for i = 1, 6 do create("Technique " .. i, string.rep("Longue description ", 5)) end
     ns.UI.refreshGrimoire(Core.state)

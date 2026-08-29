@@ -30,6 +30,54 @@ local function trim(value)
   return (value:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+local DAMAGE_HEALING_ERROR = "Les dégâts / soins doivent être un entier positif ou une plage valide (ex. 30-50)."
+
+function Grimoire.ParseDamageHealingInput(value)
+  if value == nil or value == false then return nil, nil, nil end
+  if type(value) == "number" then
+    if isPositiveInteger(value) then return value, nil, nil end
+    return nil, nil, DAMAGE_HEALING_ERROR
+  end
+
+  local text = trim(value)
+  if text == "" then return nil, nil, nil end
+  local minimum, maximum = text:match("^[Rr]?%s*(%d+)%s*%-%s*[Rr]?%s*(%d+)$")
+  if minimum then
+    minimum, maximum = tonumber(minimum), tonumber(maximum)
+    if not isPositiveInteger(minimum) or not isPositiveInteger(maximum) or maximum < minimum then
+      return nil, nil, DAMAGE_HEALING_ERROR
+    end
+    return minimum, maximum, nil
+  end
+
+  minimum = tonumber(text:match("^[Rr]?%s*(%d+)$"))
+  if isPositiveInteger(minimum) then return minimum, nil, nil end
+  return nil, nil, DAMAGE_HEALING_ERROR
+end
+
+local function normalizeStoredDamageHealing(minimumValue, maximumValue)
+  if maximumValue == nil then
+    local minimum, maximum = Grimoire.ParseDamageHealingInput(minimumValue)
+    return minimum, maximum
+  end
+  local minimum = tonumber(minimumValue)
+  local maximum = tonumber(maximumValue)
+  if not isPositiveInteger(minimum) then return nil, nil end
+  if not isPositiveInteger(maximum) or maximum < minimum then return minimum, nil end
+  return minimum, maximum
+end
+
+function Grimoire.FormatDamageHealing(value, maximumValue)
+  if type(value) == "table" then
+    maximumValue = value.damageHealingMax
+    value = value.damageHealing
+  end
+  local minimum, maximum = normalizeStoredDamageHealing(value, maximumValue)
+  if not minimum then return nil end
+  if maximum then return "R" .. tostring(minimum) .. "-" .. tostring(maximum) end
+  return "R" .. tostring(minimum)
+end
+
 local function copyIcon(icon)
   if type(icon) ~= "table" then return nil end
   return {
@@ -134,8 +182,9 @@ local function normalizeTechnique(raw, id)
   raw = type(raw) == "table" and raw or {}
   local uses = tonumber(raw.usesPerMission)
   if not isPositiveInteger(uses) then uses = nil end
-  local damageHealing = tonumber(raw.damageHealing)
-  if not isPositiveInteger(damageHealing) then damageHealing = nil end
+  local damageHealing, damageHealingMax = normalizeStoredDamageHealing(
+    raw.damageHealing, raw.damageHealingMax
+  )
   return {
     id = id,
     title = normalizeString(raw.title),
@@ -144,6 +193,7 @@ local function normalizeTechnique(raw, id)
     cost = normalizeStoredCost(raw.cost),
     usesPerMission = uses,
     damageHealing = damageHealing,
+    damageHealingMax = damageHealingMax,
   }
 end
 
@@ -157,7 +207,7 @@ end
 
 local TECHNIQUE_KEYS = {
   id = true, title = true, description = true, icon = true,
-  cost = true, usesPerMission = true, damageHealing = true,
+  cost = true, usesPerMission = true, damageHealing = true, damageHealingMax = true,
 }
 local ICON_KEYS = { name = true, type = true, file = true, atlas = true }
 local COST_KEYS = { classKey = true, resourceIdx = true, amount = true }
@@ -166,7 +216,8 @@ local function isAlreadyNormalized(raw, clean)
   if type(raw) ~= "table" or not hasOnlyKeys(raw, TECHNIQUE_KEYS) then return false end
   if raw.id ~= clean.id or raw.title ~= clean.title or raw.description ~= clean.description
       or raw.usesPerMission ~= clean.usesPerMission
-      or raw.damageHealing ~= clean.damageHealing then
+      or raw.damageHealing ~= clean.damageHealing
+      or raw.damageHealingMax ~= clean.damageHealingMax then
     return false
   end
   if raw.icon == nil ~= (clean.icon == nil) then return false end
@@ -317,11 +368,22 @@ local function validateAuthoredFields(state, fields)
   end
 
   local damageHealing = fields.damageHealing
-  if damageHealing == false then damageHealing = nil end
-  if damageHealing ~= nil then
-    damageHealing = tonumber(damageHealing)
-    if not isPositiveInteger(damageHealing) then
-      return nil, "Les dégâts / soins doivent être un entier positif."
+  local damageHealingMax = fields.damageHealingMax
+  if damageHealing == false then
+    damageHealing, damageHealingMax = nil, nil
+  else
+    if damageHealingMax == false then damageHealingMax = nil end
+    if damageHealingMax == nil then
+      local parseError
+      damageHealing, damageHealingMax, parseError = Grimoire.ParseDamageHealingInput(damageHealing)
+      if parseError then return nil, parseError end
+    else
+      damageHealing = tonumber(damageHealing)
+      damageHealingMax = tonumber(damageHealingMax)
+      if not isPositiveInteger(damageHealing) or not isPositiveInteger(damageHealingMax)
+          or damageHealingMax < damageHealing then
+        return nil, DAMAGE_HEALING_ERROR
+      end
     end
   end
 
@@ -339,6 +401,7 @@ local function validateAuthoredFields(state, fields)
     cost = normalizedCost,
     usesPerMission = uses,
     damageHealing = damageHealing,
+    damageHealingMax = damageHealingMax,
   }
 end
 
@@ -387,13 +450,23 @@ function Grimoire.UpdateTechnique(id, fields, state)
     cost = copyCost(technique.cost),
     usesPerMission = technique.usesPerMission,
     damageHealing = technique.damageHealing,
+    damageHealingMax = technique.damageHealingMax,
   }
   if fields.title ~= nil then merged.title = fields.title end
   if fields.description ~= nil then merged.description = fields.description end
   if fields.icon ~= nil then merged.icon = fields.icon end
   if fields.cost ~= nil then merged.cost = fields.cost end
   if fields.usesPerMission ~= nil then merged.usesPerMission = fields.usesPerMission end
-  if fields.damageHealing ~= nil then merged.damageHealing = fields.damageHealing end
+  if fields.damageHealing ~= nil then
+    merged.damageHealing = fields.damageHealing
+    if fields.damageHealing == false then
+      merged.damageHealingMax = false
+    elseif type(fields.damageHealing) == "string" and fields.damageHealing:find("%-")
+        and fields.damageHealingMax == nil then
+      merged.damageHealingMax = nil
+    end
+  end
+  if fields.damageHealingMax ~= nil then merged.damageHealingMax = fields.damageHealingMax end
   local clean, err = validateAuthoredFields(state, merged)
   if not clean then return nil, err end
   -- Cost validation defensively normalizes state, so reacquire by stable ID
@@ -407,6 +480,7 @@ function Grimoire.UpdateTechnique(id, fields, state)
     or not sameCost(technique.cost, clean.cost)
     or technique.usesPerMission ~= clean.usesPerMission
     or technique.damageHealing ~= clean.damageHealing
+    or technique.damageHealingMax ~= clean.damageHealingMax
   if not changed then return technique end
 
   technique.title = clean.title
@@ -415,6 +489,7 @@ function Grimoire.UpdateTechnique(id, fields, state)
   technique.cost = copyCost(clean.cost)
   technique.usesPerMission = clean.usesPerMission
   technique.damageHealing = clean.damageHealing
+  technique.damageHealingMax = clean.damageHealingMax
   commitIfActive(state)
   return technique
 end
@@ -460,5 +535,6 @@ function Grimoire.CopyTechnique(technique)
     cost = copyCost(technique.cost),
     usesPerMission = technique.usesPerMission,
     damageHealing = technique.damageHealing,
+    damageHealingMax = technique.damageHealingMax,
   }
 end

@@ -293,13 +293,16 @@ describe("Grimoire (in-game)", function()
       icon = { name = "INV_Misc_QuestionMark", type = "file", file = 134400 },
       cost = { classKey = "MAGE", resourceIdx = 1, amount = 3 },
       usesPerMission = 2,
-      damageHealing = 120,
+      damageHealing = 30,
+      damageHealingMax = 50,
     }))
     assertEq(edited.title, "B2")
     assertEq(edited.icon.file, 134400)
     assertEq(edited.cost.amount, 3)
     assertEq(edited.usesPerMission, 2)
-    assertEq(edited.damageHealing, 120)
+    assertEq(edited.damageHealing, 30)
+    assertEq(edited.damageHealingMax, 50)
+    assertEq(Grimoire.FormatDamageHealing(edited), "R30-50")
     assertTrue(Grimoire.DeleteTechnique(a.id))
     assertEq(#Grimoire.GetTechniques(), 1)
     assertEq(Grimoire.GetTechniques()[1].id, b.id)
@@ -315,14 +318,17 @@ describe("Grimoire (in-game)", function()
       description = "Fonce vers la cible.",
       cost = { classKey = "MAGE", resourceIdx = 1, amount = 3 },
       usesPerMission = 2,
-      damageHealing = 120,
+      damageHealing = 30,
+      damageHealingMax = 50,
     }))
     assertEq(Grimoire.FormatTechniqueForCopy(technique), "[Charge : Fonce vers la cible.]")
     local before = Core.state.res
     Core.DamageTrue(1)
     assertEq(Core.state.res, before)
     assertEq(technique.usesPerMission, 2)
-    assertEq(technique.damageHealing, 120)
+    assertEq(technique.damageHealing, 30)
+    assertEq(technique.damageHealingMax, 50)
+    assertEq(Grimoire.FormatDamageHealing(technique), "R30-50")
   end)
 
   it("marks another class's cost stale instead of reinterpreting index 1", function()

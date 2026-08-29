@@ -617,15 +617,15 @@ function ns.UI_BuildGrimoireTab(ctx)
   damageHealingLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -341)
   damageHealingLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
   damageHealingLabel:SetText("Dégâts / Soins (informatif)")
-  local damageHealingEdit = mkEdit(formChild, 82, 24, 0, 0)
+  local damageHealingEdit = mkEdit(formChild, 104, 24, 0, 0)
   damageHealingEdit._wrap:ClearAllPoints()
   damageHealingEdit._wrap:SetPoint("TOPLEFT", formChild, "TOPLEFT", 190, -335)
-  damageHealingEdit:SetNumeric(true)
-  damageHealingEdit:SetMaxLetters(9)
+  damageHealingEdit:SetNumeric(false)
+  damageHealingEdit:SetMaxLetters(19)
   local damageHealingHint = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   damageHealingHint:SetPoint("LEFT", damageHealingEdit._wrap, "RIGHT", 8, 0)
   damageHealingHint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
-  damageHealingHint:SetText("ex. R120")
+  damageHealingHint:SetText("ex. 120 ou 30-50")
 
   local usesLabel = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   usesLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -381)
@@ -682,7 +682,11 @@ function ns.UI_BuildGrimoireTab(ctx)
       usesEdit._wrap:Hide(); usesEdit:SetText("")
     end
     if not damageHealingEdit:HasFocus() then
-      damageHealingEdit:SetText(draft.damageHealing and tostring(draft.damageHealing) or "")
+      local damageHealingInput = draft.damageHealing and tostring(draft.damageHealing) or ""
+      if draft.damageHealing and draft.damageHealingMax then
+        damageHealingInput = damageHealingInput .. "-" .. tostring(draft.damageHealingMax)
+      end
+      damageHealingEdit:SetText(damageHealingInput)
     end
   end
 
@@ -772,7 +776,7 @@ function ns.UI_BuildGrimoireTab(ctx)
     else
       draft = {
         title = "", description = "", icon = nil, cost = nil,
-        usesPerMission = nil, damageHealing = nil,
+        usesPerMission = nil, damageHealing = nil, damageHealingMax = nil,
       }
       editorTitle:SetText("Nouvelle technique")
     end
@@ -793,16 +797,11 @@ function ns.UI_BuildGrimoireTab(ctx)
     draft.title = titleEdit:GetText() or ""
     draft.description = descEdit:GetText() or ""
     local damageHealingText = damageHealingEdit:GetText() or ""
-    if damageHealingText:find("%S") then
-      local damageHealing = tonumber(damageHealingText)
-      if not damageHealing or damageHealing < 1 or damageHealing ~= math.floor(damageHealing) then
-        errorText:SetText("Les dégâts / soins doivent être un entier positif.")
-        return
-      end
-      draft.damageHealing = damageHealing
-    else
-      draft.damageHealing = nil
-    end
+    local damageHealing, damageHealingMax, damageHealingError =
+      Grimoire.ParseDamageHealingInput(damageHealingText)
+    if damageHealingError then errorText:SetText(damageHealingError); return end
+    draft.damageHealing = damageHealing
+    draft.damageHealingMax = damageHealingMax
     if draft.cost then
       local amount = tonumber(amountEdit:GetText())
       if not amount or amount < 1 or amount ~= math.floor(amount) then
@@ -826,6 +825,7 @@ function ns.UI_BuildGrimoireTab(ctx)
       cost = draft.cost or false,
       usesPerMission = draft.usesPerMission or false,
       damageHealing = draft.damageHealing or false,
+      damageHealingMax = draft.damageHealingMax or false,
     }
     local result, err
     if editingId then result, err = Grimoire.UpdateTechnique(editingId, fields)
@@ -845,7 +845,7 @@ function ns.UI_BuildGrimoireTab(ctx)
       card.desc:SetText(technique.description ~= "" and technique.description or "Aucune description.")
       local costText = costTextFor(state, technique.cost)
       local usesText = technique.usesPerMission and (tostring(technique.usesPerMission) .. " / mission") or "Illimité"
-      local damageHealingText = technique.damageHealing and ("R" .. tostring(technique.damageHealing)) or "Aucun"
+      local damageHealingText = Grimoire.FormatDamageHealing(technique) or "Aucun"
       card.meta:SetText("Coût : " .. costText
         .. "\nDégâts / Soins : " .. damageHealingText
         .. "\nUtilisations : " .. usesText)
@@ -865,6 +865,7 @@ function ns.UI_BuildGrimoireTab(ctx)
   end
 
   UI.grimoireRows = cards
+  UI.grimoireDamageHealingEdit = damageHealingEdit
   UI.refreshGrimoire = refresh
   UI.openGrimoireEditor = openEditor
   page:HookScript("OnHide", function()
