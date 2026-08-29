@@ -92,6 +92,65 @@ T.describe("TargetPopup owner-tooltip parser", function()
   end)
 end)
 
+T.describe("TargetPopup safe pet resolution", function()
+  local function withUnits(units, callback)
+    _G.MOCKS.units = units
+    local ok, err = pcall(callback)
+    _G.MOCKS.units = nil
+    if not ok then error(err, 0) end
+  end
+
+  T.it("resolves the local player's pet through the real 'pet' token", function()
+    withUnits({
+      player = { name = "Owner", realm = "Realm", guid = "Player-1-OWNER", isPlayer = true },
+      pet = { name = "Fluffy", guid = "Pet-1-FLUFFY", ownerGUID = "Player-1-OWNER" },
+      target = { name = "Fluffy", guid = "Pet-1-FLUFFY", ownerGUID = "Player-1-OWNER" },
+    }, function()
+      local name, isPet = h.resolveStateNameForUnit("target")
+      T.assertEq(name, "Owner-Realm")
+      T.assertTrue(isPet)
+    end)
+  end)
+
+  T.it("ignores an ordinary NPC with no pet owner", function()
+    withUnits({
+      player = { name = "Owner", realm = "Realm", guid = "Player-1-OWNER", isPlayer = true },
+      target = { name = "Ordinary Mob", guid = "Creature-1-MOB" },
+    }, function()
+      local name, isPet = h.resolveStateNameForUnit("target")
+      T.assertNil(name)
+      T.assertFalse(isPet)
+    end)
+  end)
+
+  T.it("rejects an owned guardian that is not classified as another player's pet", function()
+    withUnits({
+      player = { name = "Local", realm = "Realm", guid = "Player-1-LOCAL", isPlayer = true },
+      remote = { name = "Remote", realm = "OtherRealm", guid = "Player-1-REMOTE", isPlayer = true },
+      target = { name = "Guardian", guid = "Creature-1-GUARDIAN", ownerGUID = "Player-1-REMOTE" },
+    }, function()
+      local name, isPet = h.resolveStateNameForUnit("target")
+      T.assertNil(name)
+      T.assertFalse(isPet)
+    end)
+  end)
+
+  T.it("uses UnitOwnerGUID for a pet outside the group", function()
+    withUnits({
+      player = { name = "Local", realm = "Realm", guid = "Player-1-LOCAL", isPlayer = true },
+      remote = { name = "Remote", realm = "OtherRealm", guid = "Player-1-REMOTE", isPlayer = true },
+      target = {
+        name = "Remote Pet", guid = "Pet-1-REMOTE", ownerGUID = "Player-1-REMOTE",
+        isOtherPlayersPet = true,
+      },
+    }, function()
+      local name, isPet = h.resolveStateNameForUnit("target")
+      T.assertEq(name, "Remote-OtherRealm")
+      T.assertTrue(isPet)
+    end)
+  end)
+end)
+
 T.describe("TargetPopup state cache", function()
   local function clearCache()
     for k in pairs(h.cache) do h.cache[k] = nil end
