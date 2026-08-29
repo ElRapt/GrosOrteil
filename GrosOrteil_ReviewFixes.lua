@@ -44,7 +44,7 @@ end
 local function observeIdentity(name)
   local full = identityKey(name)
   local short = shortKey(name)
-  if not full or not short then return end
+  if not full or not short or not full:find("-", 1, true) then return end
   local set = exactByShort[short]
   if not set then set = {}; exactByShort[short] = set end
   set[full] = true
@@ -220,6 +220,7 @@ if Comm and Comm.DeserializeState and Comm.OnChatMsgAddon then
 
   Comm.OnChatMsgAddon = function(self, prefixMsg, msg, channel, sender)
     if prefixMsg == self.PREFIX then
+      if Shared and Shared.IsSecret and Shared.IsSecret(sender) then return end
       if type(sender) ~= "string" or sender == "" or #sender > 128 then return end
       observeIdentity(sender)
       prunePartialMessages(self)
