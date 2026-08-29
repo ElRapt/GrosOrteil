@@ -21,6 +21,212 @@ local function makeState(overrides)
   return base
 end
 
+local function sortedNames(rows, criterion, direction)
+  local out = RaidPanel._sortDisplayData(rows, {
+    criterion = criterion,
+    direction = direction,
+  })
+  local names = {}
+  for i, row in ipairs(out) do names[i] = row.name end
+  return table.concat(names, ","), out
+end
+
+T.describe("RaidPanel sort specification and compatibility", function()
+  T.it("accepts only supported criteria and directions", function()
+    local spec = RaidPanel._validateSortSpec({ criterion = "hp", direction = "desc" })
+    T.assertEq(spec.criterion, "hp")
+    T.assertEq(spec.direction, "desc")
+    T.assertNil(RaidPanel._validateSortSpec({ criterion = "level", direction = "asc" }))
+    T.assertNil(RaidPanel._validateSortSpec({ criterion = "name", direction = "sideways" }))
+    T.assertNil(RaidPanel._validateSortSpec("name"))
+  end)
+
+  T.it("falls back to Name ascending for malformed specs", function()
+    local spec = RaidPanel._normalizeSortSpec({ criterion = "bogus", direction = "desc" })
+    T.assertEq(spec.criterion, "name")
+    T.assertEq(spec.direction, "asc")
+  end)
+
+  T.it("preserves existing custom order when no valid automatic preference exists", function()
+    T.assertNil(RaidPanel._resolveSortSpec(nil, { "cleo", "alice" }))
+    T.assertNil(RaidPanel._resolveSortSpec({ criterion = "bad", direction = "asc" }, { "cleo" }))
+  end)
+
+  T.it("fresh state resolves to Name ascending", function()
+    local spec = RaidPanel._resolveSortSpec(nil, nil)
+    T.assertEq(spec.criterion, "name")
+    T.assertEq(spec.direction, "asc")
+  end)
+
+  T.it("valid automatic preference wins without changing custom order", function()
+    local db = { raidPanelOrder = { "cleo", "alice" } }
+    local spec = RaidPanel._persistAutomaticSort(db, { criterion = "resource", direction = "desc" })
+    T.assertEq(spec.criterion, "resource")
+    T.assertEq(db.raidPanelSort.direction, "desc")
+    T.assertEq(table.concat(db.raidPanelOrder, ","), "cleo,alice")
+    local resolved = RaidPanel._resolveSortSpec(db.raidPanelSort, db.raidPanelOrder)
+    T.assertEq(resolved.criterion, "resource")
+  end)
+
+  T.it("manual mode clears only the automatic preference", function()
+    local db = {
+      raidPanelOrder = { "bob", "alice" },
+      raidPanelSort = { criterion = "class", direction = "asc" },
+    }
+    RaidPanel._persistManualSort(db)
+    T.assertNil(db.raidPanelSort)
+    T.assertEq(table.concat(db.raidPanelOrder, ","), "bob,alice")
+    T.assertNil(RaidPanel._resolveSortSpec(db.raidPanelSort, db.raidPanelOrder))
+  end)
+end)
+
+T.describe("RaidPanel Name sorting", function()
+  local rows = {
+    { name = "Cleo-Realm", unit = "raid3" },
+    { name = "alice", unit = "raid1" },
+    { name = "Bob", unit = "raid2" },
+  }
+
+  T.it("sorts ascending and descending by normalized name", function()
+    T.assertEq(sortedNames(rows, "name", "asc"), "alice,Bob,Cleo-Realm")
+    T.assertEq(sortedNames(rows, "name", "desc"), "Cleo-Realm,Bob,alice")
+  end)
+
+  T.it("fails closed for malformed names instead of throwing", function()
+    local bad1, bad2 = { name = {} }, { name = false }
+    local ok, out = pcall(RaidPanel._sortDisplayData, {
+      bad1, { name = "Known" }, bad2,
+    }, { criterion = "name", direction = "desc" })
+    T.assertTrue(ok)
+    T.assertEq(out[1].name, "Known")
+    T.assertEq(out[2], bad1)
+    T.assertEq(out[3], bad2)
+  end)
+end)
+
+T.describe("RaidPanel HP sorting", function()
+  local rows = {
+    { name = "Fort", hp = 90, maxHp = 100 },
+    { name = "Faible", hp = 20, maxHp = 100 },
+    { name = "Milieu", hp = 60, maxHp = 100 },
+  }
+
+  T.it("sorts ascending and descending", function()
+    T.assertEq(sortedNames(rows, "hp", "asc"), "Faible,Milieu,Fort")
+    T.assertEq(sortedNames(rows, "hp", "desc"), "Fort,Milieu,Faible")
+  end)
+
+  T.it("compares remaining percentages before raw HP", function()
+    local mixed = {
+      { name = "FortRaw", hp = 60, maxHp = 200 },
+      { name = "PetitRaw", hp = 40, maxHp = 100 },
+    }
+    T.assertEq(sortedNames(mixed, "hp", "asc"), "FortRaw,PetitRaw")
+  end)
+
+  T.it("uses normalized name as the final tie-break", function()
+    local tied = {
+      { name = "Zulu", hp = 50, maxHp = 100 },
+      { name = "Alpha", hp = 50, maxHp = 100 },
+    }
+    T.assertEq(sortedNames(tied, "hp", "asc"), "Alpha,Zulu")
+    T.assertEq(sortedNames(tied, "hp", "desc"), "Alpha,Zulu")
+  end)
+
+  T.it("keeps placeholder HP rows last in both directions", function()
+    local mixed = {
+      { name = "MissingB" },
+      { name = "Known", hp = 10, maxHp = 100 },
+      { name = "MissingA", hp = 10, maxHp = 0 },
+    }
+    T.assertEq(sortedNames(mixed, "hp", "asc"), "Known,MissingA,MissingB")
+    T.assertEq(sortedNames(mixed, "hp", "desc"), "Known,MissingA,MissingB")
+  end)
+end)
+
+T.describe("RaidPanel Resource sorting", function()
+  local rows = {
+    { name = "High", resources = { { cur = 90, max = 100 } } },
+    { name = "Low", resources = { { cur = 20, max = 100 } } },
+    { name = "Mid", resources = { { cur = 60, max = 100 } } },
+  }
+
+  T.it("sorts ascending and descending using resources[1]", function()
+    T.assertEq(sortedNames(rows, "resource", "asc"), "Low,Mid,High")
+    T.assertEq(sortedNames(rows, "resource", "desc"), "High,Mid,Low")
+    local primaryOnly = {
+      { name = "FirstLow", resources = { { cur = 10, max = 100 }, { cur = 100, max = 100 } } },
+      { name = "FirstHigh", resources = { { cur = 80, max = 100 }, { cur = 0, max = 100 } } },
+    }
+    T.assertEq(sortedNames(primaryOnly, "resource", "asc"), "FirstLow,FirstHigh")
+  end)
+
+  T.it("compares percentages across different maximums", function()
+    local mixed = {
+      { name = "Thirty", resources = { { cur = 60, max = 200 } } },
+      { name = "Forty", resources = { { cur = 4, max = 10 } } },
+    }
+    T.assertEq(sortedNames(mixed, "resource", "asc"), "Thirty,Forty")
+  end)
+
+  T.it("keeps members without an active resource last in both directions", function()
+    local mixed = {
+      { name = "NoResource", resources = {} },
+      { name = "Known", resources = { { cur = 5, max = 10 } } },
+      { name = "Placeholder" },
+    }
+    T.assertEq(sortedNames(mixed, "resource", "asc"), "Known,NoResource,Placeholder")
+    T.assertEq(sortedNames(mixed, "resource", "desc"), "Known,NoResource,Placeholder")
+  end)
+end)
+
+T.describe("RaidPanel Class sorting", function()
+  local rows = {
+    { name = "Mage", classKey = "MAGE", classLabel = "Mage" },
+    { name = "Chaman", classKey = "SHAMAN", classLabel = "Chaman" },
+    { name = "Druide", classKey = "DRUID", classLabel = "Druide" },
+  }
+
+  T.it("sorts ascending and descending by the display-facing French label", function()
+    T.assertEq(sortedNames(rows, "class", "asc"), "Chaman,Druide,Mage")
+    T.assertEq(sortedNames(rows, "class", "desc"), "Mage,Druide,Chaman")
+  end)
+
+  T.it("uses normalized name for members of the same class", function()
+    local tied = {
+      { name = "Zulu", classKey = "MAGE", classLabel = "Mage" },
+      { name = "Alpha", classKey = "MAGE", classLabel = "Mage" },
+    }
+    T.assertEq(sortedNames(tied, "class", "asc"), "Alpha,Zulu")
+    T.assertEq(sortedNames(tied, "class", "desc"), "Alpha,Zulu")
+  end)
+
+  T.it("keeps unknown classes last in both directions", function()
+    local mixed = {
+      { name = "Unknown", classKey = "NOT_A_CLASS", classLabel = "Aardvark" },
+      { name = "Known", classKey = "MAGE", classLabel = "Mage" },
+      { name = "Placeholder" },
+    }
+    T.assertEq(sortedNames(mixed, "class", "asc"), "Known,Placeholder,Unknown")
+    T.assertEq(sortedNames(mixed, "class", "desc"), "Known,Placeholder,Unknown")
+  end)
+end)
+
+T.describe("RaidPanel sorting preserves display rows", function()
+  T.it("does not mutate the input and keeps row identity and unit tokens", function()
+    local alpha = { name = "Alpha", hp = 90, maxHp = 100, unit = "raid1", extra = "keep" }
+    local beta = { name = "Beta", hp = 10, maxHp = 100, unit = "raid2", extra = "also keep" }
+    local input = { alpha, beta }
+    local _, out = sortedNames(input, "hp", "asc")
+    T.assertNeq(out, input)
+    T.assertEq(input[1], alpha)
+    T.assertEq(input[2], beta)
+    T.assertEq(out[1], beta)
+    T.assertEq(out[1].unit, "raid2")
+    T.assertEq(out[1].extra, "also keep")
+  end)
+end)
+
 -- ── RaidPanel._getDisplayData ─────────────────────────────────────────────────
 
 T.describe("RaidPanel.getDisplayData — nil / missing state", function()

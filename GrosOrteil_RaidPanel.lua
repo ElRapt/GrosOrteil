@@ -217,6 +217,117 @@ end
 
 -- ── Pure ordering helpers (drag-to-reorder; testable offline) ──────────────────
 
+-- Group-view sorting is deliberately kept separate from RaidMeter ranking.
+-- A nil sort spec means the legacy custom/manual order is active.
+local DEFAULT_SORT_SPEC = { criterion = "name", direction = "asc" }
+local VALID_SORT_CRITERIA = { name = true, hp = true, resource = true, class = true }
+local VALID_SORT_DIRECTIONS = { asc = true, desc = true }
+
+local function validateSortSpec(spec)
+  if type(spec) ~= "table" then return nil end
+  if not VALID_SORT_CRITERIA[spec.criterion] then return nil end
+  if not VALID_SORT_DIRECTIONS[spec.direction] then return nil end
+  return { criterion = spec.criterion, direction = spec.direction }
+end
+
+local function normalizeSortSpec(spec, fallback)
+  return validateSortSpec(spec)
+      or validateSortSpec(fallback)
+      or { criterion = DEFAULT_SORT_SPEC.criterion, direction = DEFAULT_SORT_SPEC.direction }
+end
+
+local function safeNormalizeName(name)
+  local ok, key = pcall(normalizeKey, name)
+  if not ok or type(key) ~= "string" or key == "" then return nil end
+  return key
+end
+
+local function safeNumber(value)
+  local ok, n = pcall(tonumber, value)
+  if not ok or type(n) ~= "number" or n ~= n then return nil end
+  return n
+end
+
+local function safeSortString(value)
+  local ok, result = pcall(function()
+    if Shared.IsSecret(value) or type(value) ~= "string" or value == "" then return nil end
+    return value
+  end)
+  return ok and result or nil
+end
+
+-- Extract only plain sortable values. Secret-like or malformed fields are
+-- treated as missing so comparison never performs an unsafe string operation.
+local function getSortValue(data, criterion)
+  data = type(data) == "table" and data or {}
+  local name = safeNormalizeName(data.name)
+  if criterion == "name" then
+    return { known = name ~= nil, primary = name, name = name }
+  elseif criterion == "hp" then
+    local hp, maxHp = safeNumber(data.hp), safeNumber(data.maxHp)
+    if hp == nil or maxHp == nil or maxHp <= 0 then
+      return { known = false, name = name }
+    end
+    return { known = true, primary = hp / maxHp, secondary = hp, name = name }
+  elseif criterion == "resource" then
+    local resources = type(data.resources) == "table" and data.resources or nil
+    local primary = resources and type(resources[1]) == "table" and resources[1] or nil
+    local cur = primary and safeNumber(primary.cur) or nil
+    local maxv = primary and safeNumber(primary.max) or nil
+    if cur == nil or maxv == nil or maxv <= 0 then
+      return { known = false, name = name }
+    end
+    return { known = true, primary = cur / maxv, secondary = cur, name = name }
+  elseif criterion == "class" then
+    local classKey = safeSortString(data.classKey)
+    local knownClass = classKey and Shared.CLASS_NAMES_FR
+      and Shared.CLASS_NAMES_FR[classKey] ~= nil
+    if not knownClass then return { known = false, name = name } end
+    local label = safeSortString(data.classLabel) or classKey
+    return { known = true, primary = label, name = name }
+  end
+  return { known = false, name = name }
+end
+
+local function tieByName(a, b)
+  if a.name == b.name then return nil end
+  if a.name == nil then return false end
+  if b.name == nil then return true end
+  return a.name < b.name
+end
+
+-- Return a new array containing the original row objects. Missing values stay
+-- last in both directions; original index is the final deterministic tie-break.
+local function sortDisplayData(dataList, spec)
+  local normalized = normalizeSortSpec(spec)
+  local decorated = {}
+  for i, row in ipairs(dataList or {}) do
+    decorated[i] = { row = row, index = i, value = getSortValue(row, normalized.criterion) }
+  end
+  table.sort(decorated, function(a, b)
+    local av, bv = a.value, b.value
+    if av.known ~= bv.known then return av.known end
+    if av.known then
+      if av.primary ~= bv.primary then
+        if normalized.direction == "desc" then return av.primary > bv.primary end
+        return av.primary < bv.primary
+      end
+      if av.secondary ~= bv.secondary then
+        if av.secondary == nil then return false end
+        if bv.secondary == nil then return true end
+        if normalized.direction == "desc" then return av.secondary > bv.secondary end
+        return av.secondary < bv.secondary
+      end
+    end
+    local byName = tieByName(av, bv)
+    if byName ~= nil then return byName end
+    return a.index < b.index
+  end)
+  local out = {}
+  for i, entry in ipairs(decorated) do out[i] = entry.row end
+  return out
+end
+
 -- Move list[fromIdx] so it lands at insertion slot toIdx (slots are positions
 -- in the ORIGINAL list, 1..#list+1). Returns a new list; out-of-range moves
 -- return an unchanged copy.
@@ -241,7 +352,7 @@ local function applySavedOrder(members, order)
   if type(order) ~= "table" or #order == 0 then return members end
   local byKey, used, out = {}, {}, {}
   for _, m in ipairs(members) do
-    local k = normalizeKey(m.name)
+    local k = safeNormalizeName(m.name)
     if k and byKey[k] == nil then byKey[k] = m end
   end
   for _, k in ipairs(order) do
@@ -252,7 +363,7 @@ local function applySavedOrder(members, order)
     end
   end
   for _, m in ipairs(members) do
-    local k = normalizeKey(m.name)
+    local k = safeNormalizeName(m.name)
     if not (k and used[k]) then out[#out + 1] = m end
   end
   return out
@@ -282,19 +393,49 @@ local function saveOrder(names)
   if type(db) ~= "table" then return end
   local order = {}
   for _, n in ipairs(names or {}) do
-    local k = normalizeKey(n)
+    local k = safeNormalizeName(n)
     if k then order[#order + 1] = k end
   end
   db.raidPanelOrder = order
 end
 
+-- Automatic mode is persisted as a validated spec. Manual mode is represented
+-- by no raidPanelSort entry, leaving raidPanelOrder untouched and reusable.
+local function resolveSortSpec(savedSort, savedOrder)
+  local explicit = validateSortSpec(savedSort)
+  if explicit then return explicit end
+  if type(savedOrder) == "table" and #savedOrder > 0 then return nil end
+  return normalizeSortSpec(nil)
+end
+
+local function persistAutomaticSort(db, spec)
+  local normalized = normalizeSortSpec(spec)
+  if type(db) == "table" then
+    db.raidPanelSort = {
+      criterion = normalized.criterion,
+      direction = normalized.direction,
+    }
+  end
+  return normalized
+end
+
+local function persistManualSort(db)
+  if type(db) == "table" then db.raidPanelSort = nil end
+end
+
+local function getSavedSort()
+  local db = ns.GetDB and ns.GetDB()
+  return type(db) == "table" and validateSortSpec(db.raidPanelSort) or nil
+end
+
 -- ── Frame layer (WoW-only; lazily built, sections pooled to avoid leaks) ───────
 
-local frame, scrollFrame, content, headerFs, countFs, fadeIn, fadeOut, hintFs
+local frame, scrollFrame, content, headerFs, countFs, fadeIn, fadeOut, hintFs, sortButton
 local sectionPool    = {}
 local petPool        = {}
 local currentMembers = nil
 local pendingRelayout = false  -- a relayout was requested while in combat
+local currentSort, sortStateLoaded
 
 -- View switcher + meter state.
 local currentView    = "group"   -- "group" (cards) | "meter" (damage/heal)
@@ -314,8 +455,84 @@ local dragging, dropLine, dropSlot
 -- from closures created in buildSection/ensureFrame (resolved at call time).
 local relayout, Refresh, applyView, layoutMeter
 local applyFooterHint, styleViewTabs, styleModeBtns
+local updateSortButton, setAutomaticSort, setManualSort
 local startCardDrag, stopCardDrag
 local setScrollGeometry
+
+local SORT_LABELS = { name = "Nom", hp = "PV", resource = "Ressource", class = "Classe" }
+local SORT_MENU_CHOICES = {
+  { criterion = "name",     direction = "asc"  },
+  { criterion = "name",     direction = "desc" },
+  { criterion = "hp",       direction = "asc"  },
+  { criterion = "hp",       direction = "desc" },
+  { criterion = "resource", direction = "asc"  },
+  { criterion = "resource", direction = "desc" },
+  { criterion = "class",    direction = "asc"  },
+  { criterion = "class",    direction = "desc" },
+}
+
+local function ensureSortState()
+  if sortStateLoaded then return end
+  local db = ns.GetDB and ns.GetDB()
+  local rawSaved = type(db) == "table" and db.raidPanelSort or nil
+  currentSort = resolveSortSpec(rawSaved, getSavedOrder())
+  sortStateLoaded = true
+end
+
+local function sortDescription(spec)
+  if not spec then return "Ordre manuel" end
+  local label = SORT_LABELS[spec.criterion] or "Nom"
+  local direction = spec.direction == "desc" and "décroissant" or "croissant"
+  return label .. " — " .. direction
+end
+
+updateSortButton = function()
+  if not sortButton then return end
+  ensureSortState()
+  if sortButton._icon then
+    if currentSort then
+      sortButton._icon:SetVertexColor(1.00, 0.84, 0.30, 1)
+    else
+      sortButton._icon:SetVertexColor(0.62, 0.53, 0.42, 1)
+    end
+  end
+end
+
+setAutomaticSort = function(spec)
+  local db = ns.GetDB and ns.GetDB()
+  currentSort = persistAutomaticSort(db, spec)
+  sortStateLoaded = true
+  updateSortButton()
+  if relayout then relayout() end
+end
+
+setManualSort = function()
+  local db = ns.GetDB and ns.GetDB()
+  persistManualSort(db)
+  currentSort = nil
+  sortStateLoaded = true
+  updateSortButton()
+end
+
+local function openSortMenu(anchor)
+  local menuUtil = rawget(_G, "MenuUtil")
+  if not (menuUtil and menuUtil.CreateContextMenu) then return end
+  ensureSortState()
+  menuUtil.CreateContextMenu(anchor, function(_, root)
+    root:CreateTitle("Trier le groupe")
+    for _, choice in ipairs(SORT_MENU_CHOICES) do
+      -- Copy loop values for Lua 5.1 closures.
+      local criterion, direction = choice.criterion, choice.direction
+      local active = currentSort and currentSort.criterion == criterion
+        and currentSort.direction == direction
+      local label = sortDescription(choice)
+      if active then label = "|cff20ff20✓|r " .. label end
+      root:CreateButton(label, function()
+        setAutomaticSort({ criterion = criterion, direction = direction })
+      end)
+    end
+  end)
+end
 
 -- The panel's cache lookup, shared with the meter.
 local function getStateFor(name)
@@ -1012,10 +1229,50 @@ local function ensureFrame()
   meterTotalFs:SetShadowOffset(1, -1)
   meterTotalFs:SetText("")
 
+  -- Ordinary addon-owned sort control, kept left of the 16x16 resize grip.
+  -- It never inherits a secure template and only changes presentation state.
+  sortButton = CreateFrame("Button", nil, frame, "BackdropTemplate")
+  sortButton:SetSize(28, 18)
+  sortButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -24, 24)
+  sortButton:SetFrameLevel((frame:GetFrameLevel() or 0) + 10)
+  if sortButton.SetBackdrop then
+    sortButton:SetBackdrop(BACKDROP_PLAQUE)
+    sortButton:SetBackdropColor(0.10, 0.075, 0.05, 0.95)
+    sortButton:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 0.90)
+  end
+  local sortIcon = sortButton:CreateTexture(nil, "ARTWORK")
+  sortIcon:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
+  sortIcon:SetSize(15, 15)
+  sortIcon:SetPoint("CENTER", sortButton, "CENTER", 0, 0)
+  sortButton._icon = sortIcon
+  sortButton:SetHighlightTexture("Interface\\Buttons\\UI-Listbox-Highlight2")
+  sortButton:SetScript("OnClick", function(self) openSortMenu(self) end)
+  sortButton:SetScript("OnEnter", function(self)
+    local tip = rawget(_G, "GameTooltip")
+    if not tip then return end
+    ensureSortState()
+    tip:SetOwner(self, "ANCHOR_TOPLEFT")
+    tip:ClearLines()
+    tip:AddLine("Tri du groupe", GOLD[1], GOLD[2], GOLD[3])
+    tip:AddLine(sortDescription(currentSort), 1, 1, 1)
+    if not currentSort then
+      tip:AddLine("Un glisser-déposer a activé l'ordre manuel.", 0.72, 0.62, 0.50, true)
+    end
+    tip:AddLine("Cliquez pour choisir le critère et le sens du tri.", 0.72, 0.62, 0.50, true)
+    tip:Show()
+  end)
+  sortButton:SetScript("OnLeave", function()
+    local tip = rawget(_G, "GameTooltip")
+    if tip then tip:Hide() end
+  end)
+  updateSortButton()
+
   -- Footer hint just above the bottom rail (text set per view/drag state).
   hintFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  hintFs:SetPoint("BOTTOM", frame, "BOTTOM", 0, EDGE + WOOD + 3)
+  hintFs:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", CONTENT_X, EDGE + WOOD + 3)
+  hintFs:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -56, EDGE + WOOD + 3)
   hintFs:SetHeight(FOOTER_H)
+  hintFs:SetJustifyH("LEFT")
   hintFs:SetTextColor(0.42, 0.34, 0.25, 1)
   hintFs:SetText("Clic g. : cibler  —  Clic d. : actions  —  Glisser : réordonner")
 
@@ -1118,7 +1375,7 @@ local function ensureFrame()
     end
     if pendingRelayout then
       pendingRelayout = false
-      layoutSections(collectData(currentMembers))
+      if relayout then relayout() end
     end
   end)
 
@@ -1291,6 +1548,7 @@ applyView = function(view)
     setScrollGeometry(isMeter and SCROLL_TOP_METER or SCROLL_TOP_GROUP)
   end
   if meterBar then meterBar:SetShown(isMeter) end
+  if sortButton then sortButton:SetShown(not isMeter) end
   if scrollFrame and content and meterContent then
     scrollFrame:SetScrollChild(isMeter and meterContent or content)
     content:SetShown(not isMeter)
@@ -1303,6 +1561,7 @@ applyView = function(view)
   end
   styleViewTabs()
   styleModeBtns()
+  updateSortButton()
   applyFooterHint()
   relayout()
 end
@@ -1367,6 +1626,7 @@ stopCardDrag = function(sec)
   local fromIdx = sec._displayIndex
   if fromIdx and dropSlot and not inCombat() then
     saveOrder(moveInList(currentDisplayNames, fromIdx, dropSlot))
+    setManualSort()
     currentMembers = applySavedOrder(currentMembers or {}, getSavedOrder())
   end
   applyFooterHint()
@@ -1382,7 +1642,10 @@ relayout = function()
     return
   end
   if inCombat() then pendingRelayout = true; return end
-  layoutSections(collectData(currentMembers))
+  ensureSortState()
+  local data = collectData(currentMembers)
+  if currentSort then data = sortDisplayData(data, currentSort) end
+  layoutSections(data)
 end
 
 -- GROUP_ROSTER_UPDATE fires in bursts while a raid forms; one state request
@@ -1455,11 +1718,19 @@ RaidPanel._getRaidMembers      = getRaidMembers
 RaidPanel._collectData         = collectData
 RaidPanel._resMarkerDefs       = resMarkerDefs
 RaidPanel._normalizeKey        = normalizeKey
+RaidPanel._normalizeSortSpec   = normalizeSortSpec
+RaidPanel._validateSortSpec    = validateSortSpec
+RaidPanel._getSortValue        = getSortValue
+RaidPanel._sortDisplayData     = sortDisplayData
+RaidPanel._resolveSortSpec     = resolveSortSpec
+RaidPanel._persistAutomaticSort = persistAutomaticSort
+RaidPanel._persistManualSort   = persistManualSort
 RaidPanel._moveInList          = moveInList
 RaidPanel._applySavedOrder     = applySavedOrder
 RaidPanel._dropIndexFromOffset = dropIndexFromOffset
 RaidPanel._saveOrder           = saveOrder
 RaidPanel._getSavedOrder       = getSavedOrder
+RaidPanel._getSavedSort        = getSavedSort
 
 function ns.RaidPanel_Init()
   RaidPanel.Init()
