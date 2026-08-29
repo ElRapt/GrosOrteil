@@ -101,7 +101,7 @@ local function runReviewFixTests()
       printer("|cFFFF5555GrosOrteil/test|r " .. failures[i])
     end
   end
-  return failed == 0
+  return failed == 0, passed, failed, failures
 end
 
 Fixes.RunTests = runReviewFixTests
@@ -110,7 +110,14 @@ if type(Tests.RunAll) == "function" then
   local originalRunAll = Tests.RunAll
   function Tests.RunAll(verbose)
     local result, passed, failed, failures = originalRunAll(verbose)
-    local reviewResult = runReviewFixTests()
-    return result and reviewResult, passed, failed, failures
+    local reviewResult, reviewPassed, reviewFailed, reviewFailures = runReviewFixTests()
+    failures = failures or {}
+    for i = 1, #(reviewFailures or {}) do
+      failures[#failures + 1] = { suite = "ReviewFixes", test = "hardening", err = reviewFailures[i] }
+    end
+    return result and reviewResult,
+      (passed or 0) + (reviewPassed or 0),
+      (failed or 0) + (reviewFailed or 0),
+      failures
   end
 end
