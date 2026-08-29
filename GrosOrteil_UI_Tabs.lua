@@ -871,7 +871,7 @@ function ns.UI_BuildClassesTab(ctx)
   page:SetScript("OnSizeChanged", updateClassPageLayout)
 end
 
--- ── Tab 7 (Historique) ───────────────────────────────────────────────────────
+-- ── Tab 8 (Historique) ───────────────────────────────────────────────────────
 -- ctx fields used: page (pageHistory), C, TEX, Core, mkButton, CONTENT_W
 function ns.UI_BuildHistoryTab(ctx)
   local UI = ns.UI
@@ -941,7 +941,7 @@ function ns.UI_BuildHistoryTab(ctx)
   UI.historyClear = clearBtn
 end
 
--- ── Tab 8 (Familier — Fiche) ─────────────────────────────────────────────────
+-- ── Tab 9 (Familier — Fiche) ─────────────────────────────────────────────────
 -- ctx fields used: page (pagePetHP), C, TEX, Core, mkLabel, mkEdit, mkButton,
 --   mkRowAnchor, getNumber, rowAnchors
 function ns.UI_BuildPetFicheTab(ctx)
@@ -1152,7 +1152,7 @@ function ns.UI_BuildPetFicheTab(ctx)
   }
 end
 
--- ── Tab 9 (Historique Familier) ──────────────────────────────────────────────
+-- ── Tab 10 (Historique Familier) ─────────────────────────────────────────────
 -- ctx fields used: page (pagePetArmor), C, TEX, Core, mkButton, CONTENT_W
 function ns.UI_BuildPetHistoryTab(ctx)
   local UI = ns.UI
@@ -1457,6 +1457,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
     -- Affixes de zone (personnage + familier)
     if UI.refreshAffixButtons then UI.refreshAffixButtons(s) end
     if UI.refreshPetAffixButtons then UI.refreshPetAffixButtons(s) end
+    if UI.refreshGrimoire then UI.refreshGrimoire(s) end
 
     -- Scalar inputs
     ctx.setNumber(UI.inputs.hpCur, s.hp)

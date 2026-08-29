@@ -22,7 +22,10 @@ GrosOrteil_Main.lua
 GrosOrteil_Shared.lua
 GrosOrteil_History.lua
 GrosOrteil_Core.lua
+GrosOrteil_Grimoire.lua
+GrosOrteil_GrimoireIcons.lua
 GrosOrteil_UI_Tabs.lua
+GrosOrteil_UI_Grimoire.lua
 GrosOrteil_PercentageHeal.lua
 GrosOrteil_UI.lua
 GrosOrteil_Comm.lua

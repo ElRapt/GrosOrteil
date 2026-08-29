@@ -30,6 +30,7 @@ local TESTS = {
   "test_shared",
   "test_history",
   "test_core",
+  "test_grimoire",
   "test_comm",
   "test_popup",
   "test_raid_panel",
