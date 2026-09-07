@@ -1130,7 +1130,8 @@ function Popup:OnStateReceived(sender, state)
   setCached(toCacheKey(sender), state)
 
   for _, cb in ipairs(arrivedCallbacks) do
-    xpcall(cb, geterrorhandler(), sender, state)
+    -- Standard Lua 5.1 does not forward extra xpcall arguments.
+    xpcall(function() cb(sender, state) end, geterrorhandler())
   end
 
   -- Refresh hover popup if it is showing for this sender, or try to show it
