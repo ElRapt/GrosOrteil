@@ -1056,54 +1056,9 @@ local function layoutSections(dataList)
   end
 end
 
-local function ensureFrame()
-  if frame then return end
-
-  frame = CreateFrame("Frame", "GrosOrteilRaidPanel", UIParent, "BackdropTemplate")
-  frame:SetSize(PANEL_W, PANEL_H)
-  frame:SetPoint("CENTER")
-  frame:SetClampedToScreen(true)
-  frame:SetMovable(true)
-  frame:EnableMouse(true)
-  frame:SetToplevel(true)
-  frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", function(f) if not inCombat() then f:StartMoving() end end)
-  frame:SetScript("OnDragStop",  function(f) f:StopMovingOrSizing() end)
-
-  -- Shared slate shell and fine gold accents.
-  Shared.ApplyBoardSkin(frame)
-  Shared.ApplyBoardRails(frame)
-
-  -- ESC closes it (standard pattern; taint-safe for a non-protected frame).
-  local specials = rawget(_G, "UISpecialFrames")
-  if type(specials) == "table" then
-    table.insert(specials, "GrosOrteilRaidPanel")
-  end
-
-  local plaque = Shared.MakePlaque(frame, PLAQUE_H)
-
-  headerFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  headerFs:SetPoint("LEFT",  plaque, "LEFT",  10, 0)
-  headerFs:SetJustifyH("LEFT")
-  headerFs:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
-  headerFs:SetShadowColor(0, 0, 0, 0.8)
-  headerFs:SetShadowOffset(1, -1)
-  headerFs:SetText("Ressources du Groupe")
-
-  local closeBtn = CreateFrame("Button", nil, plaque, "UIPanelCloseButton")
-  closeBtn:SetSize(26, 26)
-  Theme.StyleClose(closeBtn)
-  closeBtn:SetPoint("RIGHT", plaque, "RIGHT", -2, 0)
-  closeBtn:SetScript("OnClick", function() RaidPanel.Hide() end)
-
-  countFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  countFs:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
-  countFs:SetJustifyH("RIGHT")
-  countFs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
-  countFs:SetText("")
-  headerFs:SetPoint("RIGHT", countFs, "LEFT", -8, 0)
-  headerFs:SetWordWrap(false)
-
+-- Keep control construction separate so each closure stays within Lua 5.1
+-- limits on captured locals. All controls still share the panel state above.
+local function createPanelControls()
   -- View switcher pinned under the plaque: Groupe (cards) / Compteur (meter).
   local tabW = math.floor((SCROLL_W - 6) / 2)
   local function makeViewTab(label, view, x)
@@ -1254,6 +1209,58 @@ local function ensureFrame()
     if tip then tip:Hide() end
   end)
   updateSortButton()
+
+end
+
+local function ensureFrame()
+  if frame then return end
+
+  frame = CreateFrame("Frame", "GrosOrteilRaidPanel", UIParent, "BackdropTemplate")
+  frame:SetSize(PANEL_W, PANEL_H)
+  frame:SetPoint("CENTER")
+  frame:SetClampedToScreen(true)
+  frame:SetMovable(true)
+  frame:EnableMouse(true)
+  frame:SetToplevel(true)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetScript("OnDragStart", function(f) if not inCombat() then f:StartMoving() end end)
+  frame:SetScript("OnDragStop",  function(f) f:StopMovingOrSizing() end)
+
+  -- Shared slate shell and fine gold accents.
+  Shared.ApplyBoardSkin(frame)
+  Shared.ApplyBoardRails(frame)
+
+  -- ESC closes it (standard pattern; taint-safe for a non-protected frame).
+  local specials = rawget(_G, "UISpecialFrames")
+  if type(specials) == "table" then
+    table.insert(specials, "GrosOrteilRaidPanel")
+  end
+
+  local plaque = Shared.MakePlaque(frame, PLAQUE_H)
+
+  headerFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  headerFs:SetPoint("LEFT",  plaque, "LEFT",  10, 0)
+  headerFs:SetJustifyH("LEFT")
+  headerFs:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  headerFs:SetShadowColor(0, 0, 0, 0.8)
+  headerFs:SetShadowOffset(1, -1)
+  headerFs:SetText("Ressources du Groupe")
+
+  local closeBtn = CreateFrame("Button", nil, plaque, "UIPanelCloseButton")
+  closeBtn:SetSize(26, 26)
+  Theme.StyleClose(closeBtn)
+  closeBtn:SetPoint("RIGHT", plaque, "RIGHT", -2, 0)
+  closeBtn:SetScript("OnClick", function() RaidPanel.Hide() end)
+
+  countFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  countFs:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+  countFs:SetJustifyH("RIGHT")
+  countFs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  countFs:SetText("")
+  headerFs:SetPoint("RIGHT", countFs, "LEFT", -8, 0)
+  headerFs:SetWordWrap(false)
+
+  createPanelControls()
 
   -- Footer hint just above the bottom rail (text set per view/drag state).
   hintFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
