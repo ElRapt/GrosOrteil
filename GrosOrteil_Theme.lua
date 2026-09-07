@@ -230,8 +230,12 @@ function Theme.SectionHeader(parent, text, y, width)
 end
 
 function Theme.StyleClose(button)
-  button:SetNormalTexture(nil); button:SetPushedTexture(nil)
-  button:SetHighlightTexture(nil); button:SetDisabledTexture(nil)
+  for _, getter in ipairs({
+    "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture", "GetDisabledTexture",
+  }) do
+    local texture = button[getter](button)
+    if texture then texture:Hide() end
+  end
   local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
   label:SetPoint("CENTER", 0, 0); label:SetText("×")
   label:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
