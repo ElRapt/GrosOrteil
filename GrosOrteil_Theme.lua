@@ -7,7 +7,7 @@ local Shared = ns.Shared
 local Theme = {}
 ns.Theme = Theme
 
-local C = {
+local PALETTES = { slate = {
   GOLD = {0.78, 0.64, 0.39}, GOLD_BRIGHT = {0.94, 0.79, 0.49},
   GOLD_LIGHT = {0.98, 0.88, 0.68}, GOLD_DIM = {0.71, 0.67, 0.57},
   GOLD_MUTED = {0.30, 0.35, 0.42},
@@ -20,24 +20,115 @@ local C = {
   TEXT_DIM = {0.57, 0.64, 0.72}, TEXT_DISABLED = {0.40, 0.46, 0.53},
   RED_HP = {0.72, 0.20, 0.27}, BG_PANEL = {0.025, 0.035, 0.05},
   SUCCESS = {0.36, 0.78, 0.65}, DANGER = {0.95, 0.48, 0.43},
-}
+}, legacy = {
+  GOLD = {1.00, 0.675, 0.125}, GOLD_BRIGHT = {1.00, 0.82, 0.22},
+  GOLD_LIGHT = {1.00, 0.90, 0.55}, GOLD_DIM = {0.85, 0.70, 0.40},
+  GOLD_MUTED = {0.55, 0.42, 0.18},
+  BROWN_DEEP = {0.08, 0.05, 0.02}, BROWN_DARK = {0.14, 0.09, 0.04},
+  BROWN_MED = {0.24, 0.17, 0.08}, BROWN_WARM = {0.32, 0.24, 0.12},
+  CREAM = {0.92, 0.86, 0.74}, CREAM_DIM = {0.78, 0.72, 0.58},
+  TEXT_TITLE = {1.00, 0.84, 0.30}, TEXT_BRIGHT = {1.00, 0.95, 0.80},
+  TEXT_NORMAL = {0.90, 0.84, 0.68}, TEXT_LABEL = {0.82, 0.74, 0.55},
+  TEXT_DIM = {0.60, 0.52, 0.36}, TEXT_DISABLED = {0.40, 0.34, 0.22},
+  RED_HP = {0.80, 0.15, 0.15}, BG_PANEL = {0.06, 0.04, 0.02},
+  SUCCESS = {0.36, 0.78, 0.65}, DANGER = {0.95, 0.48, 0.43},
+} }
+local C = {}
 Theme.Colors = C
 Theme.Textures = {
   FLAT = "Interface/Buttons/WHITE8x8",
   STATUSBAR = "Interface/Buttons/WHITE8x8",
 }
 local FLAT = Theme.Textures.FLAT
-Theme.Backdrop = {
+local SLATE_BACKDROP = {
   bgFile = FLAT, edgeFile = FLAT, edgeSize = 1,
   insets = {left = 1, right = 1, top = 1, bottom = 1},
 }
 
-Shared.THEME = {
-  CREAMY_BROWN = C.GOLD_MUTED, GOLD = C.GOLD,
-  CARD_BG = C.BROWN_DARK, PLAQUE_BG = C.BROWN_MED, EDGE = 4, WOOD = 0,
+local LEGACY_BACKDROP = {
+  bgFile = FLAT, edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 12,
+  insets = {left = 3, right = 3, top = 3, bottom = 3},
 }
-Shared.BACKDROP_BOARD = Theme.Backdrop
+local LEGACY_BOARD = {edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 16}
+local LEGACY_SURFACES = {
+  CREAMY_BROWN = {0.48, 0.39, 0.32}, GOLD = PALETTES.legacy.GOLD,
+  CARD_BG = {0.085, 0.065, 0.045}, PLAQUE_BG = {0.10, 0.075, 0.05},
+  EDGE = 4, WOOD = 20,
+}
+local TRP3_BG = "Interface/AddOns/totalRP3/Resources/UI/ui-frame-neutral-background"
+local TRP3_WOOD_V = "Interface/AddOns/totalRP3/Resources/UI/!ui-frame-wooden-border"
+local TRP3_WOOD_H = "Interface/AddOns/totalRP3/Resources/UI/_ui-frame-wooden-border"
+local BLIZZ_BG = "Interface/FrameGeneral/UIFrameNeutralBackground"
+Theme.Backdrop = {}
+Shared.THEME = {}
+Shared.BACKDROP_BOARD = {}
 Shared.BACKDROP_NOTE = Theme.Backdrop
+
+-- UI modules capture these tables (and individual RGB tables) while loading,
+-- before WoW restores SavedVariables. Preserve every captured reference.
+local function copyInto(target, source)
+  for key in pairs(target) do
+    if source[key] == nil then target[key] = nil end
+  end
+  for key, value in pairs(source) do
+    if type(value) == "table" then
+      if type(target[key]) ~= "table" then target[key] = {} end
+      copyInto(target[key], value)
+    else
+      target[key] = value
+    end
+  end
+end
+
+local activeName, initialized = "slate", false
+local function applyPalette(name)
+  activeName = name
+  local legacy = name == "legacy"
+  copyInto(C, PALETTES[name])
+  copyInto(Theme.Backdrop, legacy and LEGACY_BACKDROP or SLATE_BACKDROP)
+  copyInto(Shared.BACKDROP_BOARD, legacy and LEGACY_BOARD or SLATE_BACKDROP)
+  copyInto(Shared.THEME, legacy and LEGACY_SURFACES or {
+    CREAMY_BROWN = C.GOLD_MUTED, GOLD = C.GOLD,
+    CARD_BG = C.BROWN_DARK, PLAQUE_BG = C.BROWN_MED, EDGE = 4, WOOD = 0,
+  })
+  Theme.Textures.STATUSBAR = legacy and "Interface/TargetingFrame/UI-StatusBar" or FLAT
+end
+applyPalette("slate")
+
+function Theme.GetName() return activeName end
+
+function Theme.GetSelectedName()
+  local db = ns.GetDB and ns.GetDB()
+  local settings = type(db) == "table" and db.settings
+  return type(settings) == "table" and settings.theme == "legacy" and "legacy" or "slate"
+end
+
+-- Saving the selection never restyles existing (potentially secure) frames.
+-- The UI applies it through an explicit reload, outside combat.
+function Theme.SetName(name)
+  if type(name) ~= "string" or not PALETTES[name] then return false end
+  local db = ns.GetDB and ns.GetDB()
+  if type(db) ~= "table" then return false end
+  if type(db.settings) ~= "table" then db.settings = {} end
+  db.settings.theme = name
+  return true
+end
+
+function Theme.RequiresReload()
+  return Theme.GetSelectedName() ~= activeName
+end
+
+-- Called after ADDON_LOADED restores the character's settings, before any UI
+-- is built. Repeated initialization must not apply a pending choice live.
+function Theme.Initialize()
+  if initialized then return end
+  local name = Theme.GetSelectedName()
+  Theme.SetName(name)
+  local db = ns.GetDB and ns.GetDB()
+  if type(db) == "table" and type(db.settings) == "table" then db.settings.reduceMotion = nil end
+  applyPalette(name)
+  initialized = true
+end
 
 local function color(region, rgb, alpha)
   region:SetColorTexture(rgb[1], rgb[2], rgb[3], alpha or 1)
@@ -45,11 +136,31 @@ end
 
 function Theme.ApplyNoteSkin(frame, alpha)
   frame:SetBackdrop(Theme.Backdrop)
+  if activeName == "legacy" then
+    local T = Shared.THEME
+    frame:SetBackdropColor(T.CARD_BG[1], T.CARD_BG[2], T.CARD_BG[3], alpha or 0.92)
+    frame:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 0.90)
+    return
+  end
   frame:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], alpha or 0.98)
   frame:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.65)
 end
 
 function Theme.ApplyBoardSkin(frame)
+  if activeName == "legacy" then
+    local T = Shared.THEME
+    frame:SetBackdrop(Shared.BACKDROP_BOARD)
+    frame:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 1)
+    if rawget(frame, "_goBoard") then return frame._goBoard end
+    local board = frame:CreateTexture(nil, "BACKGROUND")
+    board:SetTexture(rawget(_G, "TRP3_API") and TRP3_BG or BLIZZ_BG, "REPEAT", "REPEAT")
+    board:SetHorizTile(true); board:SetVertTile(true)
+    board:SetPoint("TOPLEFT", frame, "TOPLEFT", T.EDGE, -T.EDGE)
+    board:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -T.EDGE, T.EDGE)
+    board:SetVertexColor(0.60, 0.60, 0.60)
+    frame._goBoard = board
+    return board
+  end
   Theme.ApplyNoteSkin(frame, 1)
   frame:SetBackdropColor(C.BG_PANEL[1], C.BG_PANEL[2], C.BG_PANEL[3], 0.98)
   if rawget(frame, "_goBoard") then return frame._goBoard end
@@ -67,10 +178,48 @@ function Theme.ApplyBoardSkin(frame)
   return bg
 end
 
--- Fine corner accents replace thick wooden rails; no external art dependency.
+local function applyLegacyRails(frame)
+  local EDGE, WOOD = Shared.THEME.EDGE, Shared.THEME.WOOD
+  if rawget(_G, "TRP3_API") then
+    local function woodV(point, x, flip)
+      local t = frame:CreateTexture(nil, "BORDER", nil, -3)
+      t:SetTexture(TRP3_WOOD_V, "REPEAT", "REPEAT"); t:SetVertTile(true)
+      t:SetWidth(WOOD)
+      t:SetPoint("TOP" .. point, frame, "TOP" .. point, x, -EDGE)
+      t:SetPoint("BOTTOM" .. point, frame, "BOTTOM" .. point, x, EDGE)
+      if flip then t:SetTexCoord(0.2265625, 0.0078125, 0, 1)
+      else t:SetTexCoord(0.0078125, 0.2265625, 0, 1) end
+      t:SetVertexColor(1, 0.8, 0.8)
+    end
+    local function woodH(point, y, top, bottom)
+      local t = frame:CreateTexture(nil, "BORDER", nil, -2)
+      t:SetTexture(TRP3_WOOD_H, "REPEAT", "REPEAT"); t:SetHorizTile(true)
+      t:SetHeight(WOOD)
+      t:SetPoint(point .. "LEFT", frame, point .. "LEFT", EDGE, y)
+      t:SetPoint(point .. "RIGHT", frame, point .. "RIGHT", -EDGE, y)
+      t:SetTexCoord(0, 1, top, bottom); t:SetVertexColor(1, 0.8, 0.8)
+    end
+    woodV("LEFT", EDGE, false); woodV("RIGHT", -EDGE, true)
+    woodH("TOP", -EDGE, 0.484375, 0.921875)
+    woodH("BOTTOM", EDGE, 0.015625, 0.453125)
+  else
+    local function rail()
+      local t = frame:CreateTexture(nil, "BORDER", nil, -2)
+      t:SetColorTexture(0.23, 0.16, 0.10, 1)
+      return t
+    end
+    local left, right, top, bottom = rail(), rail(), rail(), rail()
+    left:SetPoint("TOPLEFT", EDGE, -EDGE); left:SetPoint("BOTTOMLEFT", EDGE, EDGE); left:SetWidth(WOOD)
+    right:SetPoint("TOPRIGHT", -EDGE, -EDGE); right:SetPoint("BOTTOMRIGHT", -EDGE, EDGE); right:SetWidth(WOOD)
+    top:SetPoint("TOPLEFT", EDGE, -EDGE); top:SetPoint("TOPRIGHT", -EDGE, -EDGE); top:SetHeight(WOOD)
+    bottom:SetPoint("BOTTOMLEFT", EDGE, EDGE); bottom:SetPoint("BOTTOMRIGHT", -EDGE, EDGE); bottom:SetHeight(WOOD)
+  end
+end
+
 function Theme.ApplyBoardRails(frame)
   if rawget(frame, "_goRails") then return end
   frame._goRails = true
+  if activeName == "legacy" then applyLegacyRails(frame); return end
   for _, corner in ipairs({"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT"}) do
     local left = corner:find("LEFT", 1, true)
     local top = corner:find("TOP", 1, true)
@@ -87,18 +236,19 @@ function Theme.MakePlaque(frame, height)
   plaque:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -10)
   plaque:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -10)
   plaque:SetHeight(height or 38)
+  if activeName == "legacy" then
+    local T = Shared.THEME
+    Theme.ApplyNoteSkin(plaque)
+    plaque:SetBackdropColor(T.PLAQUE_BG[1], T.PLAQUE_BG[2], T.PLAQUE_BG[3], 0.97)
+    plaque:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 1)
+    return plaque
+  end
   local line = plaque:CreateTexture(nil, "BACKGROUND")
   line:SetPoint("BOTTOMLEFT", 0, 0); line:SetPoint("BOTTOMRIGHT", 0, 0)
   line:SetHeight(1); color(line, C.GOLD, 0.32)
   return plaque
 end
 
-function Theme.MotionEnabled()
-  local db = ns.GetDB and ns.GetDB()
-  return not (type(db) == "table" and type(db.settings) == "table" and db.settings.reduceMotion)
-end
-
-local animations = setmetatable({}, {__mode = "k"})
 local fades = setmetatable({}, {__mode = "k"})
 
 -- Small controllers keep native animation groups private. Stopping a close
@@ -114,24 +264,14 @@ local function animation(region, from, to, duration, finish, allowed, looping)
     group:Stop()
   end
   function control:IsPlaying() return group:IsPlaying() end
-  function control:Settle()
-    local playing = group:IsPlaying()
-    self:Stop()
-    if playing and finish and (not allowed or allowed()) then finish() end
-  end
   function control:Play()
     self:Stop()
     if allowed and not allowed() then return end
-    if not Theme.MotionEnabled() then
-      if finish then finish() end
-      return
-    end
     group:Play()
   end
   group:SetScript("OnFinished", function()
     if finish and (not allowed or allowed()) then finish() end
   end)
-  animations[control] = true
   return control
 end
 
@@ -170,17 +310,6 @@ function Theme.MakeFadeOut(frame, duration, allowed)
 end
 function Theme.MakePulse(region)
   return animation(region, 1, 0.55, 0.85, nil, nil, true)
-end
-
-function Theme.SetReducedMotion(reduced)
-  local db = ns.GetDB and ns.GetDB()
-  if type(db) ~= "table" then return end
-  db.settings = type(db.settings) == "table" and db.settings or {}
-  db.settings.reduceMotion = not not reduced
-  if reduced then
-    -- Finish pending closes through their normal guards; stop decorative work.
-    for control in pairs(animations) do control:Settle() end
-  end
 end
 
 -- Texture-only hover feedback. HookScript preserves each control's tooltip
@@ -230,6 +359,7 @@ function Theme.SectionHeader(parent, text, y, width)
 end
 
 function Theme.StyleClose(button)
+  if activeName == "legacy" then Theme.AddHover(button); return end
   for _, getter in ipairs({
     "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture", "GetDisabledTexture",
   }) do
@@ -252,7 +382,7 @@ function Theme.WatchBar(bar)
   bar._goValueFlash = flash
   local previous
   bar:HookScript("OnValueChanged", function(_, value)
-    if previous ~= nil and value ~= previous and bar:IsVisible() and Theme.MotionEnabled() then
+    if previous ~= nil and value ~= previous and bar:IsVisible() then
       color(flash, value < previous and C.DANGER or C.SUCCESS, 0.24)
       flash:Show(); effect:Play()
     end

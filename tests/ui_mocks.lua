@@ -137,6 +137,8 @@ function methods:RegisterEvent(event) self._events[event]=true end
 function methods:UnregisterEvent(event) self._events[event]=nil end
 function methods:UnregisterAllEvents() self._events={} end
 function methods:SetTexture(t) self._texture=t; return true end
+function methods:SetHorizTile(value) self._horizTile=value end
+function methods:SetVertTile(value) self._vertTile=value end
 function methods:GetTexture() return self._texture end
 function methods:SetAtlas(a) self._atlas=a; return true end
 function methods:GetAtlas() return self._atlas end
@@ -231,6 +233,11 @@ function M.install()
   _G.GameTooltip=M.new("GameTooltip",nil,UIParent); GameTooltip:Hide()
   _G.StaticPopupDialogs={}; _G.SlashCmdList={}
   _G.StaticPopup_Show=function(name,_,_,data) M.popup={name=name,data=data} end
+  M.reloads=0
+  _G.ReloadUI=function()
+    assert(not M.combat, "ReloadUI in combat")
+    M.reloads=M.reloads+1
+  end
   _G.GetCurrentKeyBoardFocus=function() return M.focus end
   _G.IsControlKeyDown=function() return M.ctrl end
   _G.GetCursorPosition=function() return M.cursorX,M.cursorY end

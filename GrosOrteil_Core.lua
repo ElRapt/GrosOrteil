@@ -153,13 +153,12 @@ local SNAPSHOT_SCALARS = {
   -- snapshotting them keeps an undone toggle consistent with its recorded
   -- applied deltas.
   "attaqueMelee", "attaqueDistance", "insanityAtkApplied",
-  "specialCase",
 }
 local SNAPSHOT_PET_FIELDS = {
   "enabled", "name", "hp", "maxHp",
   "armor", "trueArmor", "dodge",
   "attaqueMelee", "attaqueDistance", "tempArmor",
-  "authorityEnabled", "specialCase",
+  "authorityEnabled",
 }
 local SNAPSHOT_POSTURE_BASE = {
   "armor", "dodge", "maxHp",
@@ -173,7 +172,7 @@ local function copyKeys(src, keys)
 end
 
 local function copyAffixTables(src)
-  local affixes, applied = nil, nil
+  local affixes, applied, turns = nil, nil, nil
   if type(src.affixes) == "table" then
     affixes = {}
     for k, v in pairs(src.affixes) do affixes[k] = v end
@@ -181,12 +180,18 @@ local function copyAffixTables(src)
   if type(src.affixApplied) == "table" then
     applied = {}
     for k, deltas in pairs(src.affixApplied) do
-      local d = {}
-      for f, v in pairs(deltas) do d[f] = v end
-      applied[k] = d
+      if type(deltas) == "table" then
+        local d = {}
+        for f, v in pairs(deltas) do d[f] = v end
+        applied[k] = d
+      end
     end
   end
-  return affixes, applied
+  if type(src.affixTurns) == "table" then
+    turns = {}
+    for k, v in pairs(src.affixTurns) do turns[k] = v end
+  end
+  return affixes, applied, turns
 end
 
 local function deepCopyTable(value, seen)
@@ -203,7 +208,7 @@ end
 
 local function deepCopyState(s)
   local c = copyKeys(s, SNAPSHOT_SCALARS)
-  c.affixes, c.affixApplied = copyAffixTables(s)
+  c.affixes, c.affixApplied, c.affixTurns = copyAffixTables(s)
   local ms = s.magicShield
   c.magicShield = ms and { hp = ms.hp, maxHp = ms.maxHp, armor = ms.armor } or nil
   local mns = s.manaShield
@@ -215,7 +220,7 @@ local function deepCopyState(s)
   c.meter = mt and { dmg = mt.dmg or 0, heal = mt.heal or 0 } or nil
   local p = s.pet or {}
   local pc = copyKeys(p, SNAPSHOT_PET_FIELDS)
-  pc.affixes, pc.affixApplied = copyAffixTables(p)
+  pc.affixes, pc.affixApplied, pc.affixTurns = copyAffixTables(p)
   local pw = p.wounds or {}
   pc.wounds = { hit25 = pw.hit25, hit10 = pw.hit10 }
   local pms = p.magicShield
@@ -250,9 +255,10 @@ local function restoreSnapshot(snap)
   end
   local spb = snap.shamanPostureBase
   s.shamanPostureBase = spb and copyKeys(spb, SNAPSHOT_POSTURE_BASE) or nil
-  local affixes, affixApplied = copyAffixTables(snap)
+  local affixes, affixApplied, affixTurns = copyAffixTables(snap)
   s.affixes      = affixes      or {}
   s.affixApplied = affixApplied or {}
+  s.affixTurns   = affixTurns   or {}
   s.wounds.hit25 = snap.wounds.hit25
   s.wounds.hit10 = snap.wounds.hit10
   if snap.meter then
@@ -267,9 +273,10 @@ local function restoreSnapshot(snap)
     local k = SNAPSHOT_PET_FIELDS[i]
     p[k] = sp[k]
   end
-  local pAffixes, pApplied = copyAffixTables(sp)
+  local pAffixes, pApplied, pTurns = copyAffixTables(sp)
   p.affixes      = pAffixes or {}
   p.affixApplied = pApplied or {}
+  p.affixTurns   = pTurns or {}
   p.wounds.hit25 = sp.wounds.hit25; p.wounds.hit10 = sp.wounds.hit10
   local spms = sp.magicShield
   p.magicShield = p.magicShield or {}
@@ -340,7 +347,7 @@ end
 -- Forward declarations: defined later but referenced by setters.
 local applyManaShieldActive
 local deactivateShamanPosture
-local reapplyClassAffixes
+local migrateAffixes
 
 local function clampNumber(x, minv, maxv)
   if type(x) ~= "number" then return nil end
@@ -687,6 +694,8 @@ function ns.Core_Init()
   -- Affixes de zone (added later): ensure the maps exist on old saves.
   if type(db.state.affixes)      ~= "table" then db.state.affixes      = {} end
   if type(db.state.affixApplied) ~= "table" then db.state.affixApplied = {} end
+  migrateAffixes(db.state)
+  migrateAffixes(db.state.pet)
   -- Bonus d'attaque des paliers d'Insanité : applique la part manquante sur
   -- les vieilles sauvegardes (insanityAtkApplied absent = rien d'appliqué).
   if type(db.state.insanityAtkApplied) ~= "number" then db.state.insanityAtkApplied = 0 end
@@ -755,8 +764,6 @@ function Core.SetClassKey(classKey)
     clampToMax(s, "res2", "maxRes2")
   end
 
-  -- Beledar Jour flips bonus/malus depending on class: recompute it in place.
-  reapplyClassAffixes(s)
   -- Entering/leaving an insanity spec applies/removes the insanity attack bonus.
   updateInsanityAtkBonus(s)
   bump(); notify()
@@ -1561,45 +1568,21 @@ function Core.SetShamanPosture(posture)
   bump(); notify()
 end
 
--- ── Affixes de zone ──────────────────────────────────────────────────────
--- Toggles (Beledar Jour/Nuit, Cambuse) qui modifient la fiche tant qu'ils
--- sont actifs. Beledar Jour et Nuit sont mutuellement exclusifs (par fiche :
--- personnage et familier gèrent leurs affixes indépendamment). Chaque
--- activation enregistre dans s.affixApplied les deltas réellement appliqués
--- (après clamp à 0), pour que la désactivation restaure exactement les
--- valeurs d'origine même si un clamp a tronqué le malus.
-local AFFIX_EXCLUSIVE = {
-  BELEDAR_JOUR = "BELEDAR_NUIT",
-  BELEDAR_NUIT = "BELEDAR_JOUR",
-}
+-- ── Affixes et élixirs ───────────────────────────────────────────────────
+-- Cambuse reste actif jusqu'à désactivation. Les élixirs expirent après trois
+-- tours partagés par le personnage et le familier. Chaque fiche conserve ses
+-- propres effets et deltas, restaurés ensemble par annuler/rétablir.
+local TIMED_AFFIXES = { ELIXIR_PUISSANCE = 3, ELIXIR_RESISTANCE = 3 }
 
--- Cas spéciaux (par fiche, un seul à la fois, aucun possible) : ils altèrent
--- le sens des affixes de Beledar. VIDE inverse Jour (bonus→malus) ET Nuit
--- (malus→bonus) ; GANGREMAGIE (gangremagie/mort) n'inverse que Jour.
-local SPECIAL_CASES = { VIDE = true, GANGREMAGIE = true }
-
--- Deltas par champ pour un affixe. `t` est la fiche cible (son cas spécial
--- compte) ; la classe vient toujours du personnage. L'attaque couvre CaC et
--- distance. Beledar Jour est un malus pour démoniste/prêtre ombre ou quand un
--- cas spécial est actif sur la fiche. Le prêtre discipline profite des DEUX
--- états de Beledar : Jour et Nuit lui donnent tous deux un bonus.
-local function affixDeltas(s, t, key)
-  local sc = t and t.specialCase or nil
-  if key == "BELEDAR_JOUR" then
-    local malus = (s.classKey == "WARLOCK" or s.classKey == "SHADOWPRIEST")
-      or sc == "VIDE" or sc == "GANGREMAGIE"
-    local sign = malus and -1 or 1
-    return { attaqueMelee = 5 * sign, attaqueDistance = 5 * sign, dodge = 5 * sign, armor = 1 * sign }
-  elseif key == "BELEDAR_NUIT" then
-    -- Nuit est un malus par défaut ; il devient bonus pour le Vide et pour le
-    -- prêtre discipline (qui bénéficie des deux états de Beledar).
-    local bonus = (sc == "VIDE") or (s.classKey == "DISCPRIEST")
-    local sign = bonus and 1 or -1
-    return { attaqueMelee = 10 * sign, attaqueDistance = 10 * sign, dodge = 10 * sign, armor = 2 * sign }
-  elseif key == "CAMBUSE_ATTAQUE" then
+local function affixDeltas(key)
+  if key == "CAMBUSE_ATTAQUE" then
     return { attaqueMelee = 10, attaqueDistance = 10, dodge = 5 }
   elseif key == "CAMBUSE_PV" then
     return { maxHp = 20, hp = 20 }
+  elseif key == "ELIXIR_PUISSANCE" then
+    return { attaqueMelee = 30, attaqueDistance = 30 }
+  elseif key == "ELIXIR_RESISTANCE" then
+    return { armor = 6 }
   end
   return nil
 end
@@ -1607,6 +1590,7 @@ end
 local function ensureAffixTables(t)
   if type(t.affixes)      ~= "table" then t.affixes      = {} end
   if type(t.affixApplied) ~= "table" then t.affixApplied = {} end
+  if type(t.affixTurns)   ~= "table" then t.affixTurns   = {} end
 end
 
 local function affixFieldMin(field)
@@ -1615,17 +1599,17 @@ end
 
 local function applyAffixField(t, applied, field, delta)
   local old = t[field] or 0
-  local new = old + delta
-  local minv = affixFieldMin(field)
-  if new < minv then new = minv end
+  local new = math.min(1e9, math.max(affixFieldMin(field), old + delta))
   t[field] = new
   applied[field] = new - old
+  -- Feu restores its saved armor on exit; keep timed effects in that base too.
+  if field == "armor" and t.shamanPosture == "FEU" and t.shamanPostureBase then
+    t.shamanPostureBase.armor = math.max(0, (t.shamanPostureBase.armor or 0) + applied[field])
+  end
 end
 
--- `t` est la cible (fiche du personnage ou du familier) ; les deltas sont
--- calculés depuis la classe du personnage (le familier suit son maître).
-local function applyAffix(s, t, key)
-  local deltas = affixDeltas(s, t, key)
+local function applyAffix(t, key)
+  local deltas = affixDeltas(key)
   if not deltas then return end
   local applied = {}
   -- maxHp d'abord, pour que le clamp des PV voie le nouveau plafond.
@@ -1643,14 +1627,21 @@ end
 local function removeAffix(t, key)
   local applied = t.affixApplied[key]
   t.affixApplied[key] = nil
-  if not applied then return end
+  t.affixes[key] = nil
+  t.affixTurns[key] = nil
+  if type(applied) ~= "table" then return end
   local touchedHp = false
   for field, delta in pairs(applied) do
-    local new = (t[field] or 0) - delta
-    local minv = affixFieldMin(field)
-    if new < minv then new = minv end
-    t[field] = new
-    if field == "maxHp" or field == "hp" then touchedHp = true end
+    -- Only recorded, finite stat deltas can be reversed on legacy saves.
+    if (field == "attaqueMelee" or field == "attaqueDistance" or field == "dodge"
+        or field == "armor" or field == "maxHp" or field == "hp")
+        and type(delta) == "number" and delta == delta and math.abs(delta) <= 1e9 then
+      t[field] = math.max(affixFieldMin(field), (t[field] or 0) - delta)
+      if field == "armor" and t.shamanPosture == "FEU" and t.shamanPostureBase then
+        t.shamanPostureBase.armor = math.max(0, (t.shamanPostureBase.armor or 0) - delta)
+      end
+      if field == "maxHp" or field == "hp" then touchedHp = true end
+    end
   end
   if touchedHp then
     clampHpToEffectiveMax(t)
@@ -1658,60 +1649,50 @@ local function removeAffix(t, key)
   end
 end
 
--- Recalcule sur place les affixes de Beledar actifs d'une fiche (leur signe
--- dépend de la classe et du cas spécial) : retire les deltas enregistrés puis
--- réapplique avec les deltas courants.
-local function reapplyBeledarAffixes(s, t)
-  if not t or type(t.affixes) ~= "table" then return end
+-- Retire les anciens affixes une seule fois, à partir des deltas réellement
+-- appliqués (y compris les malus tronqués à zéro). L'Insanité déjà acquise reste.
+migrateAffixes = function(t)
+  if type(t) ~= "table" then return end
   ensureAffixTables(t)
-  if t.affixes.BELEDAR_JOUR then
-    removeAffix(t, "BELEDAR_JOUR")
-    applyAffix(s, t, "BELEDAR_JOUR")
+  removeAffix(t, "BELEDAR_JOUR")
+  removeAffix(t, "BELEDAR_NUIT")
+  t.specialCase = nil
+  for key, duration in pairs(TIMED_AFFIXES) do
+    if t.affixes[key] then
+      local turns = t.affixTurns[key]
+      if turns == nil then turns = duration end
+      if type(turns) ~= "number" or turns ~= turns or turns < 1 or turns > duration then
+        removeAffix(t, key)
+      else
+        t.affixTurns[key] = math.floor(turns)
+      end
+    else
+      t.affixTurns[key] = nil
+    end
   end
-  if t.affixes.BELEDAR_NUIT then
-    removeAffix(t, "BELEDAR_NUIT")
-    applyAffix(s, t, "BELEDAR_NUIT")
-  end
-end
-
-reapplyClassAffixes = function(s)
-  reapplyBeledarAffixes(s, s)
-  reapplyBeledarAffixes(s, s.pet)
 end
 
 function Core.IsAffixActive(key)
   local s = Core.state
-  return (s and type(s.affixes) == "table" and s.affixes[key]) and true or false
+  return (s and affixDeltas(key) and type(s.affixes) == "table" and s.affixes[key]) and true or false
 end
 
--- isPet=false : le gain d'Insanité de Beledar Nuit ne concerne que le personnage.
-local function toggleAffixTarget(s, t, key, isPet)
+local function toggleAffixTarget(t, key)
   ensureAffixTables(t)
   if t.affixes[key] then
     removeAffix(t, key)
-    t.affixes[key] = nil
   else
-    local other = AFFIX_EXCLUSIVE[key]
-    if other and t.affixes[other] then
-      removeAffix(t, other)
-      t.affixes[other] = nil
-    end
-    applyAffix(s, t, key)
+    applyAffix(t, key)
     t.affixes[key] = true
-    -- Prêtres ombre/discipline : la nuit de Beledar nourrit l'Insanité, une
-    -- fois par toggle.
-    if not isPet and key == "BELEDAR_NUIT" and hasInsanity(s.classKey) then
-      s.res2 = (s.res2 or 0) + 2
-      updateInsanityAtkBonus(s)
-    end
+    t.affixTurns[key] = TIMED_AFFIXES[key]
   end
 end
 
 function Core.ToggleAffix(key)
   local s = Core.state
   if not s then return end
-  if type(key) ~= "string" or not affixDeltas(s, s, key) then return end
-  toggleAffixTarget(s, s, key, false)
+  if type(key) ~= "string" or not affixDeltas(key) then return end
+  toggleAffixTarget(s, key)
   bump(); notify()
 end
 
@@ -1720,40 +1701,38 @@ function Core.TogglePetAffix(key)
   if not s then return end
   local p = ensurePet(s)
   if not p or not p.enabled then return end
-  if type(key) ~= "string" or not affixDeltas(s, p, key) then return end
-  toggleAffixTarget(s, p, key, true)
+  if type(key) ~= "string" or not affixDeltas(key) then return end
+  toggleAffixTarget(p, key)
   bump(); notify()
 end
 
--- Cas spéciaux : un seul actif par fiche (réactiver le même le retire, en
--- activer un autre le remplace). Les affixes de Beledar actifs sont
--- recalculés sur place avec le nouveau signe.
-local function toggleSpecialCaseTarget(s, t, key)
-  if t.specialCase == key then
-    t.specialCase = nil
-  else
-    t.specialCase = key
+local function advanceAffixTurns(t)
+  if not t then return false end
+  ensureAffixTables(t)
+  local changed = false
+  for key in pairs(TIMED_AFFIXES) do
+    if t.affixes[key] then
+      local remaining = (t.affixTurns[key] or TIMED_AFFIXES[key]) - 1
+      if remaining <= 0 then removeAffix(t, key)
+      else t.affixTurns[key] = remaining end
+      changed = true
+    end
   end
-  reapplyBeledarAffixes(s, t)
+  return changed
 end
 
-function Core.ToggleSpecialCase(key)
+-- Un tour passe pour les deux fiches, même si le familier est masqué.
+function Core.NextTurn()
   local s = Core.state
   if not s then return end
-  if not SPECIAL_CASES[key] then return end
-  toggleSpecialCaseTarget(s, s, key)
-  bump(); notify()
+  local playerChanged = advanceAffixTurns(s)
+  local petChanged = advanceAffixTurns(s.pet)
+  if playerChanged or petChanged then bump(); notify() end
 end
 
-function Core.TogglePetSpecialCase(key)
-  local s = Core.state
-  if not s then return end
-  local p = ensurePet(s)
-  if not p or not p.enabled then return end
-  if not SPECIAL_CASES[key] then return end
-  toggleSpecialCaseTarget(s, p, key)
-  bump(); notify()
-end
+-- Compatibility for old macros: removed special cases cannot alter a sheet.
+function Core.ToggleSpecialCase() end
+function Core.TogglePetSpecialCase() end
 
 -- Restaure les PV au maximum.
 function Core.RestoreHP()

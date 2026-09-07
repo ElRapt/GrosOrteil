@@ -115,6 +115,7 @@ f:RegisterEvent("PLAYER_LOGIN")
 f:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == ADDON then
     ensureCharacterDB()
+    if ns.Theme then ns.Theme.Initialize() end
     initMinimapIcon()
   elseif event == "PLAYER_LOGIN" then
     ns.Core_Init()

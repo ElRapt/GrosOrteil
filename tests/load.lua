@@ -49,6 +49,7 @@ local SOURCES = {
   "GrosOrteil_Core.lua",
   "GrosOrteil_Grimoire.lua",
   "GrosOrteil_GrimoireIcons.lua",
+  "GrosOrteil_PercentageHeal.lua",
   "GrosOrteil_UI_Grimoire.lua",
   "GrosOrteil_Comm.lua",
   "GrosOrteil_TargetPopup.lua",
@@ -58,7 +59,7 @@ local SOURCES = {
   "GrosOrteil_RaidPanel.lua",
 }
 
-function M.load(fullUI)
+function M.load(fullUI, savedDB)
   local ns = {}
   -- Stand in for ns.GetDB so Core_Init has a savedvars target.
   rawset(_G, "GrosOrteilDB", {})
@@ -87,7 +88,14 @@ function M.load(fullUI)
     loadAs(p, "GrosOrteil", ns)
   end
 
+  -- WoW restores SavedVariables after evaluating addon files, before ADDON_LOADED.
+  if savedDB then
+    rawset(_G, "GrosOrteilDBPC", savedDB)
+    ns.db = savedDB
+  end
+
   if not fullUI then
+    if ns.Theme then ns.Theme.Initialize() end
     if type(ns.Core_Init) == "function" then ns.Core_Init() end
     if type(ns.Comm_Init) == "function" then ns.Comm_Init() end
   end

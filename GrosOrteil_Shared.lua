@@ -156,7 +156,7 @@ end
 ---------------------------------------------------------------------------
 -- Classes that use the Insanité (res2) mechanic: a bar that may exceed its
 -- max, feeds a base-attack bonus at tiers 11 (+10) / 18 (+15), and gains +2
--- from a Beledar Nuit toggle. Shadow and Discipline priests share it.
+-- from a resource change. Shadow and Discipline priests share it.
 ---------------------------------------------------------------------------
 local INSANITY_CLASSES = { SHADOWPRIEST = true, DISCPRIEST = true }
 function Shared.HasInsanity(classKey)
@@ -413,7 +413,7 @@ function Shared.MakeBarFrame(parent, w, h)
 
   local bar = CreateFrame("StatusBar", nil, barFrame)
   bar:SetAllPoints(barFrame)
-  bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+  bar:SetStatusBarTexture(ns.Theme and ns.Theme.Textures.STATUSBAR or "Interface\\Buttons\\WHITE8x8")
   if ns.Theme then ns.Theme.WatchBar(bar) end
   bar:SetMinMaxValues(0, 100)
   bar:SetValue(0)
@@ -482,7 +482,6 @@ function Shared.AttachFloatingText(anchor)
   end
 
   return function(text, r, g, b)
-    if ns.Theme and not ns.Theme.MotionEnabled() then return end
     local e = acquire()
     e.anim:Stop()
     e.fs:SetText(text)

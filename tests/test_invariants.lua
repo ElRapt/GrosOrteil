@@ -22,7 +22,7 @@ local CLASSES = {
   "DRUID", "MONK", "MEDIC", "SHADOWPRIEST", "DISCPRIEST", "WARRIOR", "HUNTER",
 }
 
-local AFFIXES = { "BELEDAR_JOUR", "BELEDAR_NUIT", "CAMBUSE_ATTAQUE", "CAMBUSE_PV" }
+local AFFIXES = { "ELIXIR_PUISSANCE", "ELIXIR_RESISTANCE", "CAMBUSE_ATTAQUE", "CAMBUSE_PV" }
 local SPECIAL_CASES = { "VIDE", "GANGREMAGIE" }
 
 -- Each entry is { name, weight, fn(rng) }. Weight controls relative frequency.
@@ -88,6 +88,20 @@ local function check(state)
   if p.magicShield and (p.magicShield.maxHp or 0) > 0 then
     assert(p.magicShield.hp <= p.magicShield.maxHp, "pet shield hp > maxHp")
   end
+  for _, holder in ipairs({s, p}) do
+    assert(holder.specialCase == nil, "removed special case restored")
+    local flags, turns = holder.affixes or {}, holder.affixTurns or {}
+    assert(not flags.BELEDAR_JOUR and not flags.BELEDAR_NUIT, "removed Beledar restored")
+    for _, key in ipairs({"ELIXIR_PUISSANCE", "ELIXIR_RESISTANCE"}) do
+      if flags[key] then
+        assert(type(turns[key]) == "number" and turns[key] >= 1 and turns[key] <= 3
+          and turns[key] == math.floor(turns[key]), "invalid elixir duration")
+        assert(type(holder.affixApplied[key]) == "table", "missing elixir deltas")
+      else
+        assert(turns[key] == nil, "inactive elixir has remaining turns")
+      end
+    end
+  end
 end
 
 OPS = {
@@ -125,6 +139,7 @@ OPS = {
     end },
   { "ToggleAffix",    1, function(rng) Core.ToggleAffix(AFFIXES[pickInt(rng, 1, #AFFIXES)]) end },
   { "TogglePetAffix", 1, function(rng) Core.TogglePetAffix(AFFIXES[pickInt(rng, 1, #AFFIXES)]) end },
+  { "NextTurn",       2, function(rng) Core.NextTurn() end },
   { "ToggleSpecialCase", 1, function(rng)
       Core.ToggleSpecialCase(SPECIAL_CASES[pickInt(rng, 1, #SPECIAL_CASES)])
     end },

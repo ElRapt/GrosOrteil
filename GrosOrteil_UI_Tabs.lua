@@ -428,37 +428,15 @@ function ns.UI_BuildAffixesTab(ctx, opts)
   local setButtonEnabled = ctx.setButtonEnabled
   local isPet = opts and opts.pet or false
 
-  -- Beledar Jour/Nuit suivent la classe du maître, y compris pour le familier ;
-  -- le gain d'Insanité de la Nuit ne concerne que le personnage.
-  local nuitDesc = "-10 attaque (CaC et distance)\n-10 esquive\n-2 armure\n\n"
-    .. (isPet and "" or "Prêtre ombre/discipline : +2 Insanité à l'activation.\n\n")
-    .. "Exclusif avec Beledar : Jour."
   local AFFIX_DEFS = {
-    { key = "BELEDAR_JOUR", label = "Beledar : Jour", r = 1.00, g = 0.85, b = 0.30,
-      tip  = "Beledar : Jour",
-      desc = "+5 attaque (CaC et distance)\n+5 esquive\n+1 armure\n\n"
-        .. "Exclusif avec Beledar : Nuit.",
-      descMalus = "-5 attaque (CaC et distance)\n-5 esquive\n-1 armure\n\n"
-        .. "La lumière de Beledar brûle les démonistes et prêtres ombre"
-        .. (isPet and " (et leurs familiers)" or "") .. ".\n\n"
-        .. "Exclusif avec Beledar : Nuit." },
-    { key = "BELEDAR_NUIT", label = "Beledar : Nuit", r = 0.55, g = 0.35, b = 0.95,
-      tip  = "Beledar : Nuit",
-      desc = nuitDesc,
-      descVide = "+10 attaque (CaC et distance)\n+10 esquive\n+2 armure\n\n"
-        .. "Le Vide se délecte de la nuit de Beledar : les malus deviennent des bonus."
-        .. (isPet and "" or "\n\nPrêtre ombre/discipline : +2 Insanité à l'activation.")
-        .. "\n\nExclusif avec Beledar : Jour.",
-      descDisc = "+10 attaque (CaC et distance)\n+10 esquive\n+2 armure\n\n"
-        .. "Le prêtre discipline tire parti des deux états de Beledar."
-        .. (isPet and "" or "\n\nPrêtre discipline : +2 Insanité à l'activation.")
-        .. "\n\nExclusif avec Beledar : Jour." },
     { key = "CAMBUSE_ATTAQUE", label = "Cambuse : Attaque", r = 1.00, g = 0.35, b = 0.10,
-      tip  = "Cambuse : Attaque",
       desc = "+10 attaque (CaC et distance)\n+5 esquive" },
     { key = "CAMBUSE_PV", label = "Cambuse : PV", r = 0.25, g = 0.85, b = 0.35,
-      tip  = "Cambuse : PV",
       desc = "+20 PV maximum" },
+    { key = "ELIXIR_PUISSANCE", label = "Élixir de puissance", r = 0.95, g = 0.62, b = 0.20,
+      desc = "Augmente le jet d'attaque de 30 (CaC et distance) pour les 3 prochains tours." },
+    { key = "ELIXIR_RESISTANCE", label = "Élixir de résistance", r = 0.35, g = 0.65, b = 0.95,
+      desc = "Augmente l'armure de 6 pour les 3 prochains tours." },
   }
 
   local header = page:CreateFontString(nil, "OVERLAY")
@@ -484,8 +462,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
   hint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
   hint:SetText("Cliquez pour activer ou désactiver un affixe : ses effets sont appliqués "
     .. (isPet and "immédiatement à la fiche du familier, indépendamment de ceux du personnage. "
-                or "immédiatement à la fiche. ")
-    .. "Beledar Jour et Nuit sont mutuellement exclusifs.")
+                or "immédiatement à la fiche. "))
 
   local buttons = {}
   local BTN_W, BTN_H, GAP = 200, 34, 10
@@ -495,7 +472,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
     mkRowAnchor(page, rowW, -(92 + BTN_H + GAP)),
   }
 
-  -- The sheet whose affixes/special case this tab drives (from lastStateRef).
+  -- The sheet whose affixes this tab drives (from lastStateRef).
   local function currentHolder()
     local ls = lastStateRef and lastStateRef.v
     if not ls then return nil end
@@ -508,22 +485,16 @@ function ns.UI_BuildAffixesTab(ctx, opts)
     local col = (i - 1) % 2
     local b = mkButton(anchors[row], def.label, BTN_W, BTN_H, col * (BTN_W + GAP), 0)
     b._affixKey = def.key
+    b._affixLabel = def.label
     b._affixR, b._affixG, b._affixB = def.r, def.g, def.b
     b:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
-      GameTooltip:AddLine(def.tip, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+      GameTooltip:AddLine(def.label, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
       local desc = def.desc
-      local ls = lastStateRef and lastStateRef.v
-      local ck = ls and ls.classKey
       local holder = currentHolder()
-      local sc = holder and holder.specialCase or nil
-      if def.descMalus and (ck == "WARLOCK" or ck == "SHADOWPRIEST"
-          or sc == "VIDE" or sc == "GANGREMAGIE") then
-        desc = def.descMalus
-      elseif def.descVide and sc == "VIDE" then
-        desc = def.descVide
-      elseif def.descDisc and ck == "DISCPRIEST" then
-        desc = def.descDisc
+      local turns = holder and holder.affixTurns and holder.affixTurns[def.key]
+      if turns then
+        desc = desc .. "\n\nTours restants : " .. turns
       end
       GameTooltip:AddLine(desc, 1, 1, 1, true)
       GameTooltip:Show()
@@ -540,59 +511,28 @@ function ns.UI_BuildAffixesTab(ctx, opts)
     buttons[i] = b
   end
 
-  -- ── Cas spéciaux : altèrent le sens des affixes de Beledar ─────────────
-  local SPECIAL_DEFS = {
-    { key = "VIDE", label = "Vide", r = 0.60, g = 0.30, b = 0.95,
-      tip  = "Vide",
-      desc = "Les bonus de Beledar : Jour deviennent des malus,\n"
-        .. "et les malus de Beledar : Nuit deviennent des bonus.\n\n"
-        .. "Un seul cas spécial actif à la fois (aucun possible)." },
-    { key = "GANGREMAGIE", label = "Gangremagie / Mort", r = 0.30, g = 0.85, b = 0.25,
-      tip  = "Gangremagie / Mort",
-      desc = "Les bonus de Beledar : Jour deviennent des malus.\n\n"
-        .. "Un seul cas spécial actif à la fois (aucun possible)." },
-  }
+  local turnHint = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  turnHint:SetPoint("TOP", page, "TOP", 0, -192)
+  turnHint:SetWidth(420)
+  turnHint:SetJustifyH("CENTER")
+  turnHint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  turnHint:SetText("Les élixirs durent 3 tours. À la fin de chaque tour, cliquez sur\n"
+    .. "« Tour suivant » pour le personnage et le familier.")
 
-  local scTop = 92 + 2 * (BTN_H + GAP) + 8   -- below the affix grid
-  local scHeader = page:CreateFontString(nil, "OVERLAY")
-  scHeader:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-  scHeader:SetPoint("TOP", page, "TOP", 0, -scTop)
-  scHeader:SetJustifyH("CENTER")
-  scHeader:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
-  scHeader:SetShadowOffset(1, -1)
-  scHeader:SetShadowColor(0, 0, 0, 0.60)
-  scHeader:SetText("Cas spéciaux")
-
-  local scLine = page:CreateTexture(nil, "ARTWORK")
-  scLine:SetTexture(TEX.FLAT)
-  scLine:SetPoint("TOPLEFT",  page, "TOPLEFT",  16, -(scTop + 16))
-  scLine:SetPoint("TOPRIGHT", page, "TOPRIGHT", -16, -(scTop + 16))
-  scLine:SetHeight(1)
-  scLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
-
-  local scButtons = {}
-  local scAnchor = mkRowAnchor(page, rowW, -(scTop + 24))
-  for i, def in ipairs(SPECIAL_DEFS) do
-    local b = mkButton(scAnchor, def.label, BTN_W, BTN_H, (i - 1) * (BTN_W + GAP), 0)
-    b._scKey = def.key
-    b._scR, b._scG, b._scB = def.r, def.g, def.b
-    b:SetScript("OnEnter", function(self)
-      GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
-      GameTooltip:AddLine(def.tip, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
-      GameTooltip:AddLine(def.desc, 1, 1, 1, true)
-      GameTooltip:Show()
-    end)
-    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    b:SetScript("OnClick", function()
-      if not Core then return end
-      if isPet then
-        if Core.TogglePetSpecialCase then Core.TogglePetSpecialCase(def.key) end
-      else
-        if Core.ToggleSpecialCase then Core.ToggleSpecialCase(def.key) end
-      end
-    end)
-    scButtons[i] = b
-  end
+  local turnAnchor = mkRowAnchor(page, BTN_W, -232)
+  local nextTurn = mkButton(turnAnchor, "Tour suivant", BTN_W, BTN_H, 0, 0)
+  nextTurn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
+    GameTooltip:AddLine("Tour suivant", C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+    GameTooltip:AddLine("Termine un tour pour le personnage et le familier.\n"
+      .. "Les élixirs perdent un tour et leurs bonus disparaissent après le troisième.\n"
+      .. "Cambuse reste actif. Vous pouvez annuler cette action.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  nextTurn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  nextTurn:SetScript("OnClick", function()
+    if Core and Core.NextTurn then Core.NextTurn() end
+  end)
 
   local function refresh(s)
     local holder = isPet and (type(s.pet) == "table" and s.pet or {}) or s
@@ -600,6 +540,8 @@ function ns.UI_BuildAffixesTab(ctx, opts)
     local enabled = (not isPet) or (not not holder.enabled)
     for _, b in ipairs(buttons) do
       setButtonEnabled(b, enabled)
+      local turns = holder.affixTurns and holder.affixTurns[b._affixKey]
+      b:SetText(b._affixLabel .. (turns and (" (" .. turns .. ")") or ""))
       if af[b._affixKey] then
         b:SetBackdropColor(b._affixR * 0.35, b._affixG * 0.35, b._affixB * 0.35, 0.95)
         b:SetBackdropBorderColor(b._affixR, b._affixG, b._affixB, 1.0)
@@ -608,23 +550,18 @@ function ns.UI_BuildAffixesTab(ctx, opts)
         b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
       end
     end
-    for _, b in ipairs(scButtons) do
-      setButtonEnabled(b, enabled)
-      if holder.specialCase == b._scKey then
-        b:SetBackdropColor(b._scR * 0.35, b._scG * 0.35, b._scB * 0.35, 0.95)
-        b:SetBackdropBorderColor(b._scR, b._scG, b._scB, 1.0)
-      else
-        b:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
-        b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
-      end
-    end
+    local playerTurns = s.affixTurns or {}
+    local petTurns = s.pet and s.pet.affixTurns or {}
+    setButtonEnabled(nextTurn, next(playerTurns) ~= nil or next(petTurns) ~= nil)
   end
 
   if isPet then
     UI.petAffixButtons = buttons
+    UI.petAffixNextTurnButton = nextTurn
     UI.refreshPetAffixButtons = refresh
   else
     UI.affixButtons = buttons
+    UI.affixNextTurnButton = nextTurn
     UI.refreshAffixButtons = refresh
   end
 end

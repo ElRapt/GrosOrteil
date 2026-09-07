@@ -29,11 +29,19 @@ local function runPercentageTests()
   check("percentage validation accepts boundaries", function()
     eq(Feature.NormalizePercent(1), 1)
     eq(Feature.NormalizePercent(100), 100)
+    eq(Feature.NormalizePercent(-1), -1)
+    eq(Feature.NormalizePercent(-100), -100)
+    eq(Feature.NormalizePercent("+15"), 15)
+    eq(Feature.NormalizePercent("-15"), -15)
   end)
 
   check("percentage validation rejects out-of-range values", function()
     eq(Feature.NormalizePercent(0), nil)
     eq(Feature.NormalizePercent(101), nil)
+    eq(Feature.NormalizePercent(-101), nil)
+    eq(Feature.NormalizePercent(0 / 0), nil)
+    eq(Feature.NormalizePercent(math.huge), nil)
+    eq(Feature.NormalizePercent(-math.huge), nil)
     eq(Feature.NormalizePercent("abc"), nil)
   end)
 
@@ -62,6 +70,22 @@ local function runPercentageTests()
     eq(called, false)
   end)
 
+  check("negative character percentage damages and stops at zero", function()
+    local setHp, setMax
+    Core.state = { hp = 100, maxHp = 200, history = {} }
+    Core.SetHP = function(hp, maxHp) setHp, setMax = hp, maxHp end
+    eq(Core.PercentageHeal("-15"), true)
+    eq(setHp, 70)
+    eq(setMax, 200)
+    eq(Core.state.history[1].kind, "PERCENT_DAMAGE")
+    eq(Core.state.history[1].applied, 30)
+
+    Core.state.hp = 10
+    eq(Core.PercentageHeal(-15), true)
+    eq(setHp, 0)
+    eq(Core.state.history[1].applied, 10)
+  end)
+
   check("pet percentage heals from pet max HP", function()
     local setHp, setMax
     Core.state = {
@@ -72,6 +96,20 @@ local function runPercentageTests()
     eq(Core.PetPercentageHeal(50), true)
     eq(setHp, 60)
     eq(setMax, 100)
+  end)
+
+  check("negative pet percentage uses pet max HP", function()
+    local setHp, setMax
+    Core.state = {
+      history = {},
+      pet = { enabled = true, hp = 50, maxHp = 100 },
+    }
+    Core.SetPetHP = function(hp, maxHp) setHp, setMax = hp, maxHp end
+    eq(Core.PetPercentageHeal(-15), true)
+    eq(setHp, 35)
+    eq(setMax, 100)
+    eq(Core.state.history[1].kind, "PERCENT_DAMAGE")
+    eq(Core.state.history[1].subject, "PET")
   end)
 
   Core.state = originalState

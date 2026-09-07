@@ -2419,16 +2419,6 @@ T.describe("Shadow Priest insanity tier attack bonus", function()
     T.assertEq(Core.state.insanityAtkApplied, 0)
   end)
 
-  T.it("Beledar Nuit's +2 insanity can push into a tier and grant the bonus", function()
-    reset()
-    Core.SetClassKey("SHADOWPRIEST")
-    Core.SetAttaque(20, 20)
-    Core.SetResIndex(2, 10, 25)
-    Core.ToggleAffix("BELEDAR_NUIT")   -- -10 att, then insanity 10->12: +10 att
-    T.assertEq(Core.state.res2, 12)
-    T.assertEq(Core.state.attaqueMelee, 20)   -- 20 - 10 (affix) + 10 (tier 2)
-    T.assertEq(Core.state.insanityAtkApplied, 10)
-  end)
 end)
 
 T.describe("Discipline Priest insanity (ported from Shadow)", function()
@@ -2474,127 +2464,15 @@ T.describe("Discipline Priest insanity (ported from Shadow)", function()
     T.assertEq(Core.state.insanityAtkApplied, 0)
   end)
 
-  T.it("Beledar Nuit grants +2 Insanity and can push into a tier", function()
-    reset()
-    Core.SetClassKey("DISCPRIEST")
-    Core.SetAttaque(20, 20)
-    Core.SetResIndex(2, 10, 25)
-    -- Nuit is a BONUS for disc: +10 att (affix), then insanity 10->12 crosses
-    -- tier 2 for another +10 att.
-    Core.ToggleAffix("BELEDAR_NUIT")
-    T.assertEq(Core.state.res2, 12)
-    T.assertEq(Core.state.attaqueMelee, 40)   -- 20 + 10 (affix) + 10 (tier 2)
-    T.assertEq(Core.state.attaqueDistance, 40)
-    T.assertEq(Core.state.insanityAtkApplied, 10)
-  end)
 
-  T.it("Beledar Nuit is a bonus for DISCPRIEST (both Beledar states help it)", function()
-    reset()
-    Core.SetClassKey("DISCPRIEST")
-    Core.SetAttaque(10, 10)
-    Core.SetDodge(10)
-    Core.SetArmor(3, 0)
-    Core.ToggleAffix("BELEDAR_NUIT")   -- bonus: +10/+10/+2
-    T.assertEq(Core.state.attaqueMelee, 20)
-    T.assertEq(Core.state.attaqueDistance, 20)
-    T.assertEq(Core.state.dodge, 20)
-    T.assertEq(Core.state.armor, 5)
-    Core.ToggleAffix("BELEDAR_NUIT")   -- clean toggle-off (insanity gain stays)
-    T.assertEq(Core.state.attaqueMelee, 10)
-    T.assertEq(Core.state.dodge, 10)
-    T.assertEq(Core.state.armor, 3)
-  end)
 end)
 
 T.describe("Core.ToggleAffix — zone affixes", function()
-  T.it("Beledar Jour buffs attack/dodge/armor and toggles off cleanly", function()
-    reset()
-    Core.SetClassKey("MAGE")
-    Core.SetAttaque(10, 8)
-    Core.SetDodge(6)
-    Core.SetArmor(3, 0)
-    Core.ToggleAffix("BELEDAR_JOUR")
-    T.assertTrue(Core.state.affixes.BELEDAR_JOUR)
-    T.assertEq(Core.state.attaqueMelee, 15)
-    T.assertEq(Core.state.attaqueDistance, 13)
-    T.assertEq(Core.state.dodge, 11)
-    T.assertEq(Core.state.armor, 4)
-    Core.ToggleAffix("BELEDAR_JOUR")
-    T.assertNil(Core.state.affixes.BELEDAR_JOUR)
-    T.assertEq(Core.state.attaqueMelee, 10)
-    T.assertEq(Core.state.attaqueDistance, 8)
-    T.assertEq(Core.state.dodge, 6)
-    T.assertEq(Core.state.armor, 3)
-  end)
 
-  T.it("Beledar Jour is a malus for WARLOCK and SHADOWPRIEST", function()
-    reset()
-    Core.SetClassKey("WARLOCK")
-    Core.SetAttaque(10, 10)
-    Core.SetDodge(10)
-    Core.SetArmor(3, 0)
-    Core.ToggleAffix("BELEDAR_JOUR")
-    T.assertEq(Core.state.attaqueMelee, 5)
-    T.assertEq(Core.state.dodge, 5)
-    T.assertEq(Core.state.armor, 2)
-    Core.ToggleAffix("BELEDAR_JOUR")
-    T.assertEq(Core.state.attaqueMelee, 10)
-    T.assertEq(Core.state.armor, 3)
-  end)
 
-  T.it("Beledar Jour stays a bonus for DISCPRIEST (Light healer, not void)", function()
-    reset()
-    Core.SetClassKey("DISCPRIEST")
-    Core.SetAttaque(10, 10)
-    Core.SetDodge(10)
-    Core.SetArmor(3, 0)
-    Core.ToggleAffix("BELEDAR_JOUR")   -- bonus: +5/+5/+1
-    T.assertEq(Core.state.attaqueMelee, 15)
-    T.assertEq(Core.state.dodge, 15)
-    T.assertEq(Core.state.armor, 4)
-  end)
 
-  T.it("malus clamps at 0 but deactivation restores the original value", function()
-    reset()
-    Core.SetClassKey("MAGE")
-    Core.SetAttaque(4, 4)
-    Core.SetDodge(3)
-    Core.SetArmor(1, 0)
-    Core.ToggleAffix("BELEDAR_NUIT")   -- -10/-10/-2, clamped at 0
-    T.assertEq(Core.state.attaqueMelee, 0)
-    T.assertEq(Core.state.dodge, 0)
-    T.assertEq(Core.state.armor, 0)
-    Core.ToggleAffix("BELEDAR_NUIT")
-    T.assertEq(Core.state.attaqueMelee, 4)
-    T.assertEq(Core.state.dodge, 3)
-    T.assertEq(Core.state.armor, 1)
-  end)
 
-  T.it("Beledar Jour and Nuit are mutually exclusive", function()
-    reset()
-    Core.SetClassKey("MAGE")
-    Core.SetAttaque(20, 20)
-    Core.SetDodge(20)
-    Core.SetArmor(5, 0)
-    Core.ToggleAffix("BELEDAR_JOUR")
-    Core.ToggleAffix("BELEDAR_NUIT")
-    T.assertNil(Core.state.affixes.BELEDAR_JOUR)
-    T.assertTrue(Core.state.affixes.BELEDAR_NUIT)
-    -- Jour (+5) fully rolled back before Nuit (-10) applied.
-    T.assertEq(Core.state.attaqueMelee, 10)
-    T.assertEq(Core.state.dodge, 10)
-    T.assertEq(Core.state.armor, 3)
-  end)
 
-  T.it("Beledar Nuit grants +2 Insanity to SHADOWPRIEST on activation only", function()
-    reset()
-    Core.SetClassKey("SHADOWPRIEST")
-    Core.SetResIndex(2, 5, 25)
-    Core.ToggleAffix("BELEDAR_NUIT")
-    T.assertEq(Core.state.res2, 7)
-    Core.ToggleAffix("BELEDAR_NUIT")   -- off: insanity stays
-    T.assertEq(Core.state.res2, 7)
-  end)
 
   T.it("Cambuse PV grants +20 max HP and +20 HP, removed on toggle off", function()
     reset()
@@ -2617,24 +2495,6 @@ T.describe("Core.ToggleAffix — zone affixes", function()
     T.assertEq(Core.state.dodge, 8)
   end)
 
-  T.it("class change while Beledar Jour is active flips the sign in place", function()
-    reset()
-    Core.SetClassKey("MAGE")
-    Core.SetAttaque(10, 10)
-    Core.SetDodge(10)
-    Core.SetArmor(3, 0)
-    Core.ToggleAffix("BELEDAR_JOUR")     -- +5/+5/+1
-    T.assertEq(Core.state.attaqueMelee, 15)
-    Core.SetClassKey("SHADOWPRIEST")     -- now a malus: -5/-5/-1
-    T.assertEq(Core.state.attaqueMelee, 5)
-    T.assertEq(Core.state.dodge, 5)
-    T.assertEq(Core.state.armor, 2)
-    Core.SetClassKey("MAGE")             -- back to a bonus
-    T.assertEq(Core.state.attaqueMelee, 15)
-    Core.ToggleAffix("BELEDAR_JOUR")
-    T.assertEq(Core.state.attaqueMelee, 10)
-    T.assertEq(Core.state.armor, 3)
-  end)
 
   T.it("undo/redo restores affix flags and applied deltas together", function()
     reset()
@@ -2721,56 +2581,9 @@ T.describe("Core.TogglePetAffix — zone affixes on the familiar", function()
     T.assertEq(Core.state.pet.hp, 30)
   end)
 
-  T.it("Beledar Jour follows the owner's class (malus for WARLOCK pets)", function()
-    petSetup()
-    Core.SetClassKey("WARLOCK")
-    Core.TogglePetAffix("BELEDAR_JOUR")
-    T.assertEq(Core.state.pet.attaqueMelee, 5)
-    T.assertEq(Core.state.pet.dodge, 1)
-    T.assertEq(Core.state.pet.armor, 2)
-    -- Owner switches class: pet bonus flips in place too.
-    Core.SetClassKey("MAGE")
-    T.assertEq(Core.state.pet.attaqueMelee, 15)
-    T.assertEq(Core.state.pet.dodge, 11)
-    T.assertEq(Core.state.pet.armor, 4)
-    Core.TogglePetAffix("BELEDAR_JOUR")
-    T.assertEq(Core.state.pet.attaqueMelee, 10)
-    T.assertEq(Core.state.pet.armor, 3)
-  end)
 
-  T.it("pet Jour and Nuit are mutually exclusive; player toggles stay independent", function()
-    petSetup()
-    Core.SetClassKey("MAGE")
-    Core.ToggleAffix("BELEDAR_JOUR")       -- player side
-    Core.TogglePetAffix("BELEDAR_JOUR")
-    Core.TogglePetAffix("BELEDAR_NUIT")    -- replaces the pet's Jour
-    T.assertNil(Core.state.pet.affixes.BELEDAR_JOUR)
-    T.assertTrue(Core.state.pet.affixes.BELEDAR_NUIT)
-    -- Pet: Jour rolled back, then Nuit applied: att 10-10, dodge 6-10 (clamp), armor 3-2.
-    T.assertEq(Core.state.pet.attaqueMelee, 0)
-    T.assertEq(Core.state.pet.dodge, 0)
-    T.assertEq(Core.state.pet.armor, 1)
-    -- The pet's exclusivity never touches the player's toggles.
-    T.assertTrue(Core.state.affixes.BELEDAR_JOUR)
-    T.assertNil(Core.state.affixes.BELEDAR_NUIT)
-  end)
 
-  T.it("player Nuit does not displace the pet's Jour (per-sheet exclusivity)", function()
-    petSetup()
-    Core.SetClassKey("MAGE")
-    Core.TogglePetAffix("BELEDAR_JOUR")
-    Core.ToggleAffix("BELEDAR_NUIT")
-    T.assertTrue(Core.state.pet.affixes.BELEDAR_JOUR)
-    T.assertTrue(Core.state.affixes.BELEDAR_NUIT)
-  end)
 
-  T.it("Beledar Nuit on the pet grants no insanity to a SHADOWPRIEST owner", function()
-    petSetup()
-    Core.SetClassKey("SHADOWPRIEST")
-    Core.SetResIndex(2, 5, 25)
-    Core.TogglePetAffix("BELEDAR_NUIT")
-    T.assertEq(Core.state.res2, 5)
-  end)
 
   T.it("is a no-op while the pet is disabled", function()
     reset()
@@ -2796,121 +2609,248 @@ T.describe("Core.TogglePetAffix — zone affixes on the familiar", function()
   end)
 end)
 
-T.describe("Core.ToggleSpecialCase — Vide / Gangremagie", function()
-  local function setup()
-    reset()
-    Core.SetClassKey("MAGE")
-    Core.SetAttaque(20, 20)
-    Core.SetDodge(10)
-    Core.SetArmor(5, 0)
+-- Beledar and special cases were removed intentionally. Their former behavior
+-- regressions are replaced with migration and compatibility guarantees.
+T.describe("Retired affix migration", function()
+  local function legacy(holder, key, deltas)
+    holder.affixes[key] = true
+    holder.affixApplied[key] = deltas
+    for field, delta in pairs(deltas) do holder[field] = holder[field] + delta end
   end
 
-  T.it("Vide flips an active Beledar Jour to a malus, in place", function()
-    setup()
-    Core.ToggleAffix("BELEDAR_JOUR")        -- +5/+5/+1
-    T.assertEq(Core.state.attaqueMelee, 25)
-    Core.ToggleSpecialCase("VIDE")          -- Jour recomputed: -5/-5/-1
-    T.assertEq(Core.state.specialCase, "VIDE")
-    T.assertEq(Core.state.attaqueMelee, 15)
-    T.assertEq(Core.state.dodge, 5)
-    T.assertEq(Core.state.armor, 4)
-    Core.ToggleSpecialCase("VIDE")          -- off: back to a bonus
-    T.assertNil(Core.state.specialCase)
-    T.assertEq(Core.state.attaqueMelee, 25)
-    T.assertEq(Core.state.dodge, 15)
-    T.assertEq(Core.state.armor, 6)
+  for _, spec in ipairs({
+    {"MAGE", "BELEDAR_JOUR", 5, 5, 1},
+    {"WARLOCK", "BELEDAR_JOUR", -5, -5, -1},
+    {"SHADOWPRIEST", "BELEDAR_JOUR", -5, -5, -1},
+    {"DISCPRIEST", "BELEDAR_JOUR", 5, 5, 1},
+    {"MAGE", "BELEDAR_NUIT", -10, -10, -2},
+    {"DISCPRIEST", "BELEDAR_NUIT", 10, 10, 2},
+  }) do
+    local class, key, attack, dodge, armor = (table.unpack or unpack)(spec)
+    T.it("reverses saved " .. key .. " deltas for " .. class .. " on both sheets exactly once", function()
+      reset(); Core.SetClassKey(class)
+      Core.SetAttaque(20,22); Core.SetDodge(14); Core.SetArmor(5,0)
+      Core.SetPetEnabled(true); Core.SetPetAttaque(12,13); Core.SetPetDodge(11); Core.SetPetArmor(3,0)
+      Core.ToggleAffix("CAMBUSE_ATTAQUE"); Core.TogglePetAffix("CAMBUSE_PV")
+      for _,holder in ipairs({Core.state,Core.state.pet}) do
+        legacy(holder,key,{attaqueMelee=attack,attaqueDistance=attack,dodge=dodge,armor=armor})
+        holder.specialCase="VIDE"
+      end
+      ns.Core_Init()
+      T.assertEq(Core.state.attaqueMelee,30); T.assertEq(Core.state.attaqueDistance,32)
+      T.assertEq(Core.state.dodge,19); T.assertEq(Core.state.armor,5)
+      T.assertEq(Core.state.pet.attaqueMelee,12); T.assertEq(Core.state.pet.attaqueDistance,13)
+      T.assertEq(Core.state.pet.dodge,11); T.assertEq(Core.state.pet.armor,3)
+      T.assertTrue(Core.state.affixes.CAMBUSE_ATTAQUE); T.assertTrue(Core.state.pet.affixes.CAMBUSE_PV)
+      for _,holder in ipairs({Core.state,Core.state.pet}) do
+        T.assertNil(holder.affixes[key]); T.assertNil(holder.affixApplied[key]); T.assertNil(holder.specialCase)
+      end
+      ns.Core_Init()
+      T.assertEq(Core.state.attaqueMelee,30); T.assertEq(Core.state.pet.attaqueMelee,12)
+      Core.ToggleAffix("CAMBUSE_ATTAQUE"); Core.TogglePetAffix("CAMBUSE_PV")
+      T.assertEq(Core.state.attaqueMelee,20); T.assertEq(Core.state.pet.maxHp,20)
+    end)
+  end
+
+  T.it("restores only the recorded portion of maluses clamped at zero", function()
+    reset(); Core.SetAttaque(4,2); Core.SetDodge(3); Core.SetArmor(1,0)
+    legacy(Core.state,"BELEDAR_NUIT",{attaqueMelee=-4,attaqueDistance=-2,dodge=-3,armor=-1})
+    ns.Core_Init()
+    T.assertEq(Core.state.attaqueMelee,4); T.assertEq(Core.state.attaqueDistance,2)
+    T.assertEq(Core.state.dodge,3); T.assertEq(Core.state.armor,1)
   end)
 
-  T.it("Vide turns Beledar Nuit into a bonus", function()
-    setup()
-    Core.ToggleSpecialCase("VIDE")
-    Core.ToggleAffix("BELEDAR_NUIT")        -- +10/+10/+2 under Vide
-    T.assertEq(Core.state.attaqueMelee, 30)
-    T.assertEq(Core.state.dodge, 20)
-    T.assertEq(Core.state.armor, 7)
-    Core.ToggleAffix("BELEDAR_NUIT")
-    T.assertEq(Core.state.attaqueMelee, 20)
+  T.it("removes both retired flags and special cases without guessing missing deltas", function()
+    reset(); Core.SetAttaque(20,20)
+    Core.state.affixes.BELEDAR_JOUR=true; Core.state.affixes.BELEDAR_NUIT=true
+    Core.state.specialCase="GANGREMAGIE"; Core.state.pet.specialCase="VIDE"
+    ns.Core_Init()
+    T.assertEq(Core.state.attaqueMelee,20)
+    T.assertNil(Core.state.affixes.BELEDAR_JOUR); T.assertNil(Core.state.affixes.BELEDAR_NUIT)
+    T.assertNil(Core.state.specialCase); T.assertNil(Core.state.pet.specialCase)
   end)
 
-  T.it("Gangremagie flips Jour but leaves Nuit a malus", function()
-    setup()
-    Core.ToggleSpecialCase("GANGREMAGIE")
-    Core.ToggleAffix("BELEDAR_JOUR")
-    T.assertEq(Core.state.attaqueMelee, 15)   -- malus
-    Core.ToggleAffix("BELEDAR_JOUR")
-    Core.ToggleAffix("BELEDAR_NUIT")
-    T.assertEq(Core.state.attaqueMelee, 10)   -- still a malus
-    T.assertEq(Core.state.armor, 3)
+  for _,class in ipairs({"SHADOWPRIEST","DISCPRIEST"}) do
+    T.it("preserves previously earned insanity when migrating "..class, function()
+      reset(); Core.SetClassKey(class); Core.SetAttaque(20,20); Core.SetResIndex(2,12,25)
+      local delta=class=="DISCPRIEST" and 10 or -10
+      legacy(Core.state,"BELEDAR_NUIT",{attaqueMelee=delta,attaqueDistance=delta})
+      ns.Core_Init()
+      T.assertEq(Core.state.res2,12); T.assertEq(Core.state.insanityAtkApplied,10)
+      T.assertEq(Core.state.attaqueMelee,30); T.assertEq(Core.state.attaqueDistance,30)
+      Core.ToggleAffix("BELEDAR_NUIT"); Core.TogglePetAffix("BELEDAR_NUIT")
+      T.assertEq(Core.state.res2,12); T.assertEq(Core.state.attaqueMelee,30)
+    end)
+  end
+
+  T.it("ignores malformed legacy delta records without mutating unrelated fields", function()
+    reset(); Core.SetAttaque(20,20); Core.SetArmor(4,0)
+    Core.state.affixes.BELEDAR_JOUR=true
+    Core.state.affixApplied.BELEDAR_JOUR={attaqueMelee=0/0,armor=math.huge,hp=-math.huge,res=100}
+    Core.state.pet.affixApplied.BELEDAR_NUIT=true
+    local hp,res=Core.state.hp,Core.state.res
+    ns.Core_Init()
+    T.assertEq(Core.state.attaqueMelee,20); T.assertEq(Core.state.armor,4)
+    T.assertEq(Core.state.hp,hp); T.assertEq(Core.state.res,res)
+    T.assertNil(Core.state.affixApplied.BELEDAR_JOUR); T.assertNil(Core.state.pet.affixApplied.BELEDAR_NUIT)
   end)
 
-  T.it("special cases are mutually exclusive; switching recomputes active Beledar", function()
-    setup()
-    Core.ToggleSpecialCase("VIDE")
-    Core.ToggleAffix("BELEDAR_NUIT")          -- bonus under Vide: att 30
-    T.assertEq(Core.state.attaqueMelee, 30)
-    Core.ToggleSpecialCase("GANGREMAGIE")     -- replaces Vide: Nuit back to malus
-    T.assertEq(Core.state.specialCase, "GANGREMAGIE")
-    T.assertEq(Core.state.attaqueMelee, 10)
-    T.assertEq(Core.state.armor, 3)
-  end)
-
-  T.it("unknown key is a safe no-op", function()
-    setup()
-    Core.ToggleSpecialCase("NOPE")
-    T.assertNil(Core.state.specialCase)
-  end)
-
-  T.it("undo/redo restores the special case together with the stats", function()
-    setup()
-    Core.ToggleAffix("BELEDAR_JOUR")
-    Core.BreakUndoCoalesce()
-    Core.ToggleSpecialCase("VIDE")
-    T.assertEq(Core.state.attaqueMelee, 15)
-    Core.BreakUndoCoalesce()
-    Core.Undo()
-    T.assertNil(Core.state.specialCase)
-    T.assertEq(Core.state.attaqueMelee, 25)
-    Core.Redo()
-    T.assertEq(Core.state.specialCase, "VIDE")
-    T.assertEq(Core.state.attaqueMelee, 15)
+  T.it("obsolete toggles never change stats, resources, undo or revisions", function()
+    for _,class in ipairs({"MAGE","WARLOCK","SHADOWPRIEST","DISCPRIEST"}) do
+      reset(); Core.SetClassKey(class); Core.SetPetEnabled(true)
+      Core.SetAttaque(20,22); Core.SetPetAttaque(12,14); Core.SetResIndex(2,10,25)
+      local revision, resource=Core.state.rev, Core.state.res2
+      for _,key in ipairs({"BELEDAR_JOUR","BELEDAR_NUIT","NOPE"}) do
+        Core.ToggleAffix(key); Core.TogglePetAffix(key)
+        T.assertFalse(Core.IsAffixActive(key))
+        T.assertNil(Core.state.affixes[key]); T.assertNil(Core.state.pet.affixes[key])
+      end
+      for _,key in ipairs({"VIDE","GANGREMAGIE","NOPE"}) do
+        Core.ToggleSpecialCase(key); Core.TogglePetSpecialCase(key)
+      end
+      T.assertEq(Core.state.rev,revision); T.assertEq(Core.state.res2,resource)
+      T.assertEq(Core.state.attaqueMelee,20); T.assertEq(Core.state.pet.attaqueMelee,12)
+      T.assertNil(Core.state.specialCase); T.assertNil(Core.state.pet.specialCase)
+    end
   end)
 end)
 
-T.describe("Core.TogglePetSpecialCase", function()
-  local function petSetup()
-    reset()
-    Core.SetClassKey("MAGE")
-    Core.SetPetEnabled(true)
-    Core.SetPetHP(30, 50)
-    Core.SetPetAttaque(10, 8)
-    Core.SetPetDodge(6)
-    Core.SetPetArmor(3, 0)
+T.describe("Three-turn elixirs", function()
+  local function setup()
+    reset(); Core.SetAttaque(10,12); Core.SetArmor(3,2); Core.SetDodge(4)
+    Core.SetPetEnabled(true); Core.SetPetAttaque(5,7); Core.SetPetArmor(2,1)
   end
 
-  T.it("pet special case flips the pet's Beledar without touching the player", function()
-    petSetup()
-    Core.SetAttaque(20, 20)
-    Core.ToggleAffix("BELEDAR_JOUR")          -- player Jour: +5
-    Core.TogglePetAffix("BELEDAR_JOUR")       -- pet Jour: +5
-    Core.TogglePetSpecialCase("VIDE")         -- only the pet's Jour flips
-    T.assertEq(Core.state.pet.specialCase, "VIDE")
-    T.assertNil(Core.state.specialCase)
-    T.assertEq(Core.state.pet.attaqueMelee, 5)
-    T.assertEq(Core.state.attaqueMelee, 25)   -- player untouched
+  T.it("power boosts both attack rolls by 30 for exactly three turns", function()
+    setup(); Core.ToggleAffix("ELIXIR_PUISSANCE")
+    T.assertEq(Core.state.attaqueMelee,40); T.assertEq(Core.state.attaqueDistance,42)
+    T.assertEq(Core.state.dodge,4); T.assertEq(Core.state.armor,3)
+    for turns=3,1,-1 do
+      T.assertTrue(Core.IsAffixActive("ELIXIR_PUISSANCE"))
+      T.assertEq(Core.state.affixTurns.ELIXIR_PUISSANCE,turns)
+      T.assertEq(Core.state.attaqueMelee,40); Core.NextTurn()
+    end
+    T.assertFalse(Core.IsAffixActive("ELIXIR_PUISSANCE"))
+    T.assertNil(Core.state.affixApplied.ELIXIR_PUISSANCE); T.assertNil(Core.state.affixTurns.ELIXIR_PUISSANCE)
+    T.assertEq(Core.state.attaqueMelee,10); T.assertEq(Core.state.attaqueDistance,12)
   end)
 
-  T.it("pet Nuit becomes a bonus under pet Vide", function()
-    petSetup()
-    Core.TogglePetSpecialCase("VIDE")
-    Core.TogglePetAffix("BELEDAR_NUIT")
-    T.assertEq(Core.state.pet.attaqueMelee, 20)
-    T.assertEq(Core.state.pet.dodge, 16)
-    T.assertEq(Core.state.pet.armor, 5)
+  T.it("resistance grants 6 normal armor without changing other defenses", function()
+    setup(); Core.ToggleAffix("ELIXIR_RESISTANCE")
+    T.assertEq(Core.state.armor,9); T.assertEq(Core.state.trueArmor,2)
+    T.assertEq(Core.state.tempArmor,0); T.assertEq(Core.state.dodge,4)
+    Core.NextTurn(); Core.NextTurn(); Core.NextTurn()
+    T.assertEq(Core.state.armor,3); T.assertNil(Core.state.affixes.ELIXIR_RESISTANCE)
   end)
 
-  T.it("is a no-op while the pet is disabled", function()
-    reset()
-    Core.TogglePetSpecialCase("VIDE")
-    T.assertNil(Core.state.pet.specialCase)
+  T.it("both potions stack with Cambuse and expire independently", function()
+    setup(); Core.ToggleAffix("CAMBUSE_ATTAQUE"); Core.ToggleAffix("CAMBUSE_PV")
+    Core.ToggleAffix("ELIXIR_PUISSANCE"); Core.NextTurn(); Core.ToggleAffix("ELIXIR_RESISTANCE")
+    Core.NextTurn(); Core.NextTurn()
+    T.assertEq(Core.state.attaqueMelee,20); T.assertEq(Core.state.armor,9)
+    T.assertEq(Core.state.affixTurns.ELIXIR_RESISTANCE,1)
+    Core.NextTurn()
+    T.assertEq(Core.state.armor,3); T.assertEq(Core.state.maxHp,70)
+    T.assertTrue(Core.state.affixes.CAMBUSE_ATTAQUE); T.assertTrue(Core.state.affixes.CAMBUSE_PV)
+  end)
+
+  T.it("one turn advances both sheets, including a disabled familiar", function()
+    setup(); Core.ToggleAffix("ELIXIR_RESISTANCE")
+    Core.TogglePetAffix("ELIXIR_PUISSANCE"); Core.TogglePetAffix("ELIXIR_RESISTANCE")
+    Core.SetPetEnabled(false)
+    Core.NextTurn(); Core.NextTurn()
+    T.assertEq(Core.state.affixTurns.ELIXIR_RESISTANCE,1)
+    T.assertEq(Core.state.pet.affixTurns.ELIXIR_PUISSANCE,1)
+    Core.NextTurn(); Core.SetPetEnabled(true)
+    T.assertEq(Core.state.armor,3); T.assertEq(Core.state.pet.armor,2)
+    T.assertEq(Core.state.pet.attaqueMelee,5); T.assertEq(Core.state.pet.attaqueDistance,7)
+  end)
+
+  T.it("manual removal restores stats and a new activation starts at three", function()
+    setup(); Core.ToggleAffix("ELIXIR_PUISSANCE"); Core.NextTurn()
+    Core.ToggleAffix("ELIXIR_PUISSANCE")
+    T.assertEq(Core.state.attaqueMelee,10); T.assertNil(Core.state.affixTurns.ELIXIR_PUISSANCE)
+    Core.ToggleAffix("ELIXIR_PUISSANCE")
+    T.assertEq(Core.state.attaqueMelee,40); T.assertEq(Core.state.affixTurns.ELIXIR_PUISSANCE,3)
+  end)
+
+  T.it("loading preserves remaining turns without applying bonuses twice", function()
+    setup(); Core.ToggleAffix("ELIXIR_PUISSANCE"); Core.TogglePetAffix("ELIXIR_RESISTANCE")
+    Core.NextTurn(); ns.Core_Init()
+    T.assertEq(Core.state.attaqueMelee,40); T.assertEq(Core.state.pet.armor,8)
+    T.assertEq(Core.state.affixTurns.ELIXIR_PUISSANCE,2)
+    T.assertEq(Core.state.pet.affixTurns.ELIXIR_RESISTANCE,2)
+    Core.NextTurn(); Core.NextTurn()
+    T.assertEq(Core.state.attaqueMelee,10); T.assertEq(Core.state.pet.armor,2)
+  end)
+
+  T.it("rejects corrupt saved durations and reverses their bonuses", function()
+    for _,value in ipairs({0,-1,4,math.huge,0/0,"3",false}) do
+      setup(); Core.ToggleAffix("ELIXIR_PUISSANCE"); Core.TogglePetAffix("ELIXIR_RESISTANCE")
+      Core.state.affixTurns.ELIXIR_PUISSANCE=value; Core.state.pet.affixTurns.ELIXIR_RESISTANCE=value
+      ns.Core_Init()
+      T.assertEq(Core.state.attaqueMelee,10); T.assertEq(Core.state.pet.armor,2)
+      T.assertNil(Core.state.affixes.ELIXIR_PUISSANCE); T.assertNil(Core.state.pet.affixes.ELIXIR_RESISTANCE)
+    end
+  end)
+
+  T.it("undo and redo restore counters, deltas and both sheets at expiration", function()
+    setup(); Core.ToggleAffix("ELIXIR_PUISSANCE"); Core.TogglePetAffix("ELIXIR_RESISTANCE")
+    Core.NextTurn(); Core.NextTurn(); Core.BreakUndoCoalesce(); Core.NextTurn()
+    T.assertEq(Core.state.attaqueMelee,10); T.assertEq(Core.state.pet.armor,2)
+    Core.Undo()
+    T.assertEq(Core.state.affixTurns.ELIXIR_PUISSANCE,1); T.assertEq(Core.state.pet.affixTurns.ELIXIR_RESISTANCE,1)
+    T.assertEq(Core.state.attaqueMelee,40); T.assertEq(Core.state.pet.armor,8)
+    Core.Redo()
+    T.assertNil(Core.state.affixes.ELIXIR_PUISSANCE); T.assertNil(Core.state.pet.affixes.ELIXIR_RESISTANCE)
+    T.assertEq(Core.state.attaqueMelee,10); T.assertEq(Core.state.pet.armor,2)
+    Core.Undo(); Core.TogglePetAffix("ELIXIR_RESISTANCE")
+    T.assertEq(Core.state.pet.armor,2)
+  end)
+
+  T.it("class changes keep active potions and acquired insanity bonuses separate", function()
+    setup(); Core.ToggleAffix("ELIXIR_PUISSANCE")
+    Core.SetClassKey("SHADOWPRIEST"); Core.SetResIndex(2,12,25)
+    T.assertEq(Core.state.attaqueMelee,50)
+    Core.NextTurn(); Core.NextTurn(); Core.NextTurn()
+    T.assertEq(Core.state.attaqueMelee,20)
+    Core.SetClassKey("MAGE"); T.assertEq(Core.state.attaqueMelee,10)
+  end)
+
+  T.it("resistance expiry never reappears after leaving a fire posture", function()
+    for _,activateFirst in ipairs({true,false}) do
+      setup(); Core.SetClassKey("SHAMAN"); Core.SetResIndex(4,3,3)
+      if activateFirst then Core.ToggleAffix("ELIXIR_RESISTANCE") end
+      Core.SetShamanPosture("FEU")
+      if not activateFirst then Core.ToggleAffix("ELIXIR_RESISTANCE") end
+      Core.NextTurn(); Core.NextTurn(); Core.NextTurn()
+      Core.SetShamanPosture(nil)
+      T.assertEq(Core.state.armor,3)
+    end
+  end)
+
+  T.it("leaving fire with an active potion preserves its eventual removal", function()
+    setup(); Core.SetClassKey("SHAMAN"); Core.SetResIndex(4,3,3)
+    Core.SetShamanPosture("FEU"); Core.ToggleAffix("ELIXIR_RESISTANCE")
+    Core.SetClassKey("MAGE")
+    T.assertEq(Core.state.armor,9)
+    Core.NextTurn(); Core.NextTurn(); Core.NextTurn(); T.assertEq(Core.state.armor,3)
+  end)
+
+  T.it("clamped bonuses remove only their actual contribution", function()
+    setup(); Core.SetAttaque(1e9-10,1e9); Core.SetArmor(1e9-2,0)
+    Core.ToggleAffix("ELIXIR_PUISSANCE"); Core.ToggleAffix("ELIXIR_RESISTANCE")
+    T.assertEq(Core.state.attaqueMelee,1e9); T.assertEq(Core.state.armor,1e9)
+    Core.NextTurn(); Core.NextTurn(); Core.NextTurn()
+    T.assertEq(Core.state.attaqueMelee,1e9-10); T.assertEq(Core.state.attaqueDistance,1e9)
+    T.assertEq(Core.state.armor,1e9-2)
+  end)
+
+  T.it("a turn with no elixirs is a no-op and disabled pets cannot take potions", function()
+    setup(); Core.SetPetEnabled(false)
+    local revision=Core.state.rev
+    Core.NextTurn(); Core.TogglePetAffix("ELIXIR_PUISSANCE"); Core.TogglePetAffix("ELIXIR_RESISTANCE")
+    T.assertEq(Core.state.rev,revision); T.assertEq(Core.state.pet.attaqueMelee,5)
+    T.assertEq(Core.state.pet.armor,2)
   end)
 end)

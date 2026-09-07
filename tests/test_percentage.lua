@@ -1,0 +1,167 @@
+---@diagnostic disable: undefined-global
+local T = _G.T
+local ns = _G.NS
+local Core = ns.Core
+local Percentage = ns.PercentageHeal
+local History = ns.History
+
+local function reset()
+  Core.ResetToDefaults()
+  Core.SetHP(100, 200)
+  Core.SetPetEnabled(true)
+  Core.SetPetHP(50, 100)
+  Core.BreakUndoCoalesce()
+end
+
+T.describe("Signed percentage actions", function()
+  T.it("accepts both signs and preserves fractional percentages", function()
+    for _, value in ipairs({ -100, -15, -1, 1, 15, 100, -12.5, 12.5 }) do
+      T.assertEq(Percentage.NormalizePercent(value), value)
+    end
+    T.assertEq(Percentage.NormalizePercent("+15"), 15)
+    T.assertEq(Percentage.NormalizePercent("-15"), -15)
+  end)
+
+  T.it("rejects invalid percentages without HP, history or revision changes", function()
+    reset()
+    local invalid = { 0, 0.5, -0.5, 101, -101, 1e20, -1e20, math.huge, -math.huge, 0 / 0, "", "abc", "--15", "+-15", {}, true }
+    local hp, petHp, historyCount, rev = Core.state.hp, Core.state.pet.hp, #Core.state.history, Core.state.rev
+    for _, value in ipairs(invalid) do
+      T.assertNil(Percentage.NormalizePercent(value))
+      T.assertFalse(Core.PercentageHeal(value))
+      T.assertFalse(Core.PetPercentageHeal(value))
+    end
+    T.assertFalse(Core.PercentageHeal(nil))
+    T.assertFalse(Core.PetPercentageHeal(nil))
+    T.assertEq(Core.state.hp, hp)
+    T.assertEq(Core.state.pet.hp, petHp)
+    T.assertEq(#Core.state.history, historyCount)
+    T.assertEq(Core.state.rev, rev)
+  end)
+
+  T.it("heals from maximum HP for unsigned and explicitly positive input", function()
+    reset()
+    T.assertTrue(Core.PercentageHeal("15"))
+    T.assertEq(Core.state.hp, 130)
+    T.assertTrue(Core.PercentageHeal("+15"))
+    T.assertEq(Core.state.hp, 160)
+    T.assertEq(Core.state.history[1].kind, "PERCENT_HEAL")
+    T.assertEq(Core.state.history[1].applied, 30)
+  end)
+
+  T.it("damages player HP directly and preserves armor and shields", function()
+    reset()
+    Core.SetArmor(100, 100)
+    Core.SetTempArmor(100)
+    Core.SetMagicShield(100, 100, 100)
+    T.assertTrue(Core.PercentageHeal("-15"))
+    T.assertEq(Core.state.hp, 70)
+    T.assertEq(Core.state.maxHp, 200)
+    T.assertEq(Core.state.armor, 100)
+    T.assertEq(Core.state.trueArmor, 100)
+    T.assertEq(Core.state.tempArmor, 100)
+    T.assertEq(Core.state.magicShield.hp, 100)
+    T.assertEq(Core.state.history[1].kind, "PERCENT_DAMAGE")
+    T.assertEq(Core.state.history[1].percent, -15)
+    T.assertEq(Core.state.history[1].applied, 30)
+  end)
+
+  T.it("clamps player changes at zero and max HP and records actual amounts", function()
+    reset()
+    T.assertTrue(Core.PercentageHeal(-100))
+    T.assertEq(Core.state.hp, 0)
+    T.assertEq(Core.state.history[1].applied, 100)
+    T.assertTrue(Core.state.wounds.hit10)
+    T.assertTrue(Core.PercentageHeal(100))
+    T.assertEq(Core.state.hp, 200)
+    T.assertEq(Core.state.history[1].applied, 200)
+    T.assertFalse(Core.state.wounds.hit10)
+    T.assertTrue(Core.PercentageHeal(15))
+    T.assertEq(Core.state.hp, 200)
+    T.assertEq(Core.state.history[1].applied, 0)
+  end)
+
+  T.it("applies both signs to the pet independently and respects pet HP bounds", function()
+    reset()
+    Core.SetPetArmor(100, 100)
+    Core.SetPetTempArmor(100)
+    Core.SetPetMagicShield(100, 100, 100)
+    T.assertTrue(Core.PetPercentageHeal("-15"))
+    T.assertEq(Core.state.pet.hp, 35)
+    T.assertEq(Core.state.pet.armor, 100)
+    T.assertEq(Core.state.pet.trueArmor, 100)
+    T.assertEq(Core.state.pet.tempArmor, 100)
+    T.assertEq(Core.state.pet.magicShield.hp, 100)
+    T.assertEq(Core.state.history[1].subject, "PET")
+    T.assertEq(Core.state.history[1].applied, 15)
+    T.assertTrue(Core.PetPercentageHeal("+15"))
+    T.assertEq(Core.state.pet.hp, 50)
+    T.assertTrue(Core.PetPercentageHeal(-100))
+    T.assertEq(Core.state.pet.hp, 0)
+    T.assertEq(Core.state.history[1].applied, 50)
+    T.assertTrue(Core.state.pet.wounds.hit10)
+    T.assertTrue(Core.PetPercentageHeal(100))
+    T.assertEq(Core.state.pet.hp, 100)
+    T.assertFalse(Core.state.pet.wounds.hit10)
+    T.assertEq(Core.state.hp, 100)
+  end)
+
+  T.it("does not modify a disabled pet", function()
+    reset()
+    Core.SetPetEnabled(false)
+    local historyCount = #Core.state.history
+    T.assertFalse(Core.PetPercentageHeal(-15))
+    T.assertFalse(Core.PetPercentageHeal(15))
+    T.assertEq(Core.state.pet.hp, 50)
+    T.assertEq(#Core.state.history, historyCount)
+  end)
+
+  T.it("rejects invalid HP states before adding history", function()
+    local invalid = { math.huge, -math.huge, 0 / 0, 1e20, -1, "abc" }
+    for _, field in ipairs({ "hp", "maxHp" }) do
+      for _, value in ipairs(invalid) do
+        reset()
+        Core.state[field] = value
+        Core.state.pet[field] = value
+        local historyCount, rev = #Core.state.history, Core.state.rev
+        T.assertFalse(Core.PercentageHeal(-15))
+        T.assertFalse(Core.PetPercentageHeal(15))
+        T.assertEq(#Core.state.history, historyCount)
+        T.assertEq(Core.state.rev, rev)
+      end
+    end
+    reset()
+  end)
+
+  T.it("undoes and redoes independent player and pet percentage changes", function()
+    reset()
+    T.assertTrue(Core.PercentageHeal(-15))
+    Core.BreakUndoCoalesce()
+    T.assertTrue(Core.PetPercentageHeal(15))
+    T.assertEq(Core.state.hp, 70)
+    T.assertEq(Core.state.pet.hp, 65)
+    Core.Undo()
+    T.assertEq(Core.state.pet.hp, 50)
+    T.assertEq(Core.state.hp, 70)
+    Core.Undo()
+    T.assertEq(Core.state.hp, 100)
+    Core.Redo()
+    T.assertEq(Core.state.hp, 70)
+    Core.Redo()
+    T.assertEq(Core.state.pet.hp, 65)
+  end)
+
+  T.it("formats signed damage history and retains existing healing history", function()
+    reset()
+    Core.PetPercentageHeal(-15)
+    local damage = History.FormatEntry(Core.state.history[1])
+    T.assertTrue(damage:find("[Familier] Dégâts en pourcentage", 1, true) ~= nil)
+    T.assertTrue(damage:find("Pourcentage -15%", 1, true) ~= nil)
+    T.assertTrue(damage:find("Résultat 15", 1, true) ~= nil)
+    Core.PercentageHeal(15)
+    local heal = History.FormatEntry(Core.state.history[1])
+    T.assertTrue(heal:find("Soin en pourcentage", 1, true) ~= nil)
+    T.assertTrue(heal:find("Plafond bypassé", 1, true) ~= nil)
+    T.assertTrue(History.FormatEntry({kind="DIVINE_HEAL",applied=10}):find("Soins divins", 1, true) ~= nil)
+  end)
+end)

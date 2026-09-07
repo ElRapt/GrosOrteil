@@ -22,4 +22,7 @@ jobs:
       - name: Logic regressions
         run: lua${{ matrix.lua }} tests/run.lua
       - name: UI and packaged regressions
-        run: lua${{ matrix.lua }} tests/run_ui.lua
+        run: |
+          lua${{ matrix.lua }} tests/run_ui.lua
+          lua${{ matrix.lua }} tests/run_ui.lua legacy
+          lua${{ matrix.lua }} tests/run_ui.lua invalid

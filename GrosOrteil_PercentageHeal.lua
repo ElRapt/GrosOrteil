@@ -1,5 +1,5 @@
 ---@diagnostic disable: undefined-global
--- Percentage-based bypass healing for the Fiche and pet action panels.
+-- Signed percentage-based HP changes for the Fiche and pet action panels.
 -- Loaded after the existing modules so it can extend Core/History and adapt
 -- the tab builders without duplicating their large UI implementations.
 local _, ns = ...
@@ -18,19 +18,31 @@ ns.PercentageHeal = PercentageHeal
 
 local function normalizePercent(value)
   local percent = tonumber(value)
-  if not percent or percent < 1 or percent > 100 then return nil end
+  if not percent or percent ~= percent or math.abs(percent) < 1 or math.abs(percent) > 100 then return nil end
   return percent
 end
 
 PercentageHeal.NormalizePercent = normalizePercent
 
+local function percentageHP(target, percent)
+  local maxHp = tonumber(target.maxHp)
+  local before = tonumber(target.hp)
+  -- Match the Core setters' supported HP range before recording history.
+  if not maxHp or maxHp ~= maxHp or maxHp < 1 or maxHp > 1e9
+      or not before or before ~= before or before < 0 or before > maxHp then
+    return nil
+  end
+  local after = math.max(0, math.min(maxHp, before + (maxHp * percent / 100)))
+  return before, after, maxHp
+end
+
 local function addPercentageHistory(state, percent, before, after, maxHp, subject)
   if not History or not History.Push then return end
   History.Push(state, {
-    kind = "PERCENT_HEAL",
+    kind = percent < 0 and "PERCENT_DAMAGE" or "PERCENT_HEAL",
     subject = subject,
     percent = percent,
-    applied = math.max(0, after - before),
+    applied = math.abs(after - before),
     hpBefore = before,
     hpAfter = after,
     maxHp = maxHp,
@@ -42,11 +54,8 @@ function Core.PercentageHeal(value)
   local state = Core.state
   if not state or not percent then return false end
 
-  local maxHp = tonumber(state.maxHp) or 0
-  if maxHp <= 0 then return false end
-
-  local before = tonumber(state.hp) or 0
-  local after = math.min(maxHp, before + (maxHp * percent / 100))
+  local before, after, maxHp = percentageHP(state, percent)
+  if not before then return false end
   addPercentageHistory(state, percent, before, after, maxHp)
   Core.SetHP(after, maxHp)
   return true
@@ -58,11 +67,8 @@ function Core.PetPercentageHeal(value)
   local pet = state and state.pet
   if not state or type(pet) ~= "table" or not pet.enabled or not percent then return false end
 
-  local maxHp = tonumber(pet.maxHp) or 0
-  if maxHp <= 0 then return false end
-
-  local before = tonumber(pet.hp) or 0
-  local after = math.min(maxHp, before + (maxHp * percent / 100))
+  local before, after, maxHp = percentageHP(pet, percent)
+  if not before then return false end
   addPercentageHistory(state, percent, before, after, maxHp, "PET")
   Core.SetPetHP(after, maxHp)
   return true
@@ -80,14 +86,17 @@ if History and History.FormatEntry then
   end
 
   function History.FormatEntry(entry)
-    if type(entry) == "table" and entry.kind == "PERCENT_HEAL" then
+    if type(entry) == "table" and (entry.kind == "PERCENT_HEAL" or entry.kind == "PERCENT_DAMAGE") then
       local subject = entry.subject == "PET" and "[Familier] " or ""
+      local damage = entry.kind == "PERCENT_DAMAGE"
       return string.format(
-        "%sSoin en pourcentage | Pourcentage %s%% | Résultat %d\n"
-          .. "Plafond bypassé | Max effectif %d\nAvant %d | Après %d",
+        "%s%s en pourcentage | Pourcentage %s%% | Résultat %d\n"
+          .. "%s | Max effectif %d\nAvant %d | Après %d",
         subject,
+        damage and "Dégâts" or "Soin",
         tostring(entry.percent or 0),
         fmtInt(entry.applied),
+        damage and "Armure et boucliers ignorés" or "Plafond bypassé",
         fmtInt(entry.maxHp),
         fmtInt(entry.hpBefore),
         fmtInt(entry.hpAfter)
@@ -100,7 +109,7 @@ end
 local function invalidPercentMessage()
   local printer = rawget(_G, "print")
   if printer then
-    printer("|cFF66CC66GrosOrteil|r Le pourcentage doit être compris entre 1 et 100.")
+    printer("|cFF66CC66GrosOrteil|r Saisissez un pourcentage de -100 à -1 (dégâts) ou de 1 à 100 (soins).")
   end
 end
 
@@ -114,8 +123,8 @@ local function setPercentageTooltip(button, pet)
     tooltip:AddLine("Pourcentage", 1, 0.82, 0.22)
     tooltip:AddLine(
       pet
-        and "Interprète Valeur comme un pourcentage (1 à 100) du maximum de PV du familier et le restaure en ignorant les plafonds de blessure."
-        or "Interprète Valeur comme un pourcentage (1 à 100) du maximum de PV et le restaure en ignorant les plafonds de blessure.",
+        and "Modifie les PV du familier selon un pourcentage de son maximum : 15 ou +15 soigne 15 %, -15 inflige 15 % de dégâts. Valeurs de -100 à -1 ou de 1 à 100. Les soins ignorent les plafonds de blessure ; les dégâts ignorent l'armure et les boucliers."
+        or "Modifie les PV selon un pourcentage du maximum : 15 ou +15 soigne 15 %, -15 inflige 15 % de dégâts. Valeurs de -100 à -1 ou de 1 à 100. Les soins ignorent les plafonds de blessure ; les dégâts ignorent l'armure et les boucliers.",
       1, 1, 1, true)
     tooltip:Show()
   end)
@@ -150,6 +159,9 @@ local function wrapPercentageBuilder(builderName, buttonWidth)
       local edit = originalMkEdit(...)
       if pendingValue then
         valueEdit = edit
+        -- WoW's numeric EditBox mode filters the leading '+' and '-' keys.
+        -- Keep signed input local to action values; Core validates each action.
+        if edit.SetNumeric then edit:SetNumeric(false) end
         pendingValue = false
       end
       return edit
