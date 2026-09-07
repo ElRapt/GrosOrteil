@@ -8,6 +8,78 @@ local function reset()
   Core.ResetToDefaults()
 end
 
+T.describe("Full mystical resource restoration", function()
+  T.it("restores every active resource in one history and undo step", function()
+    reset(); Core.SetClassKey("SHAMAN")
+    for i=1,4 do Core.SetResIndex(i, i, 20+i) end
+    Core.SetHP(10,100); Core.SetPetEnabled(true); Core.SetPetHP(5,20)
+    Core.SetPetAuthorityEnabled(true); Core.SetResIndex(5,1,5)
+    Core.BreakUndoCoalesce()
+    local before, history, rev = {}, #Core.state.history, Core.state.rev
+    for _,r in ipairs(ns.Shared.GetResProfile(Core.state)) do
+      if r.idx<=4 then local key=ns.Shared.GetKeysForIdx(r.idx); before[key]=Core.state[key] end
+    end
+    T.assertTrue(Core.RestoreResources())
+    for _,r in ipairs(ns.Shared.GetResProfile(Core.state)) do
+      if r.idx<=4 then
+        local key,maxKey=ns.Shared.GetKeysForIdx(r.idx)
+        T.assertEq(Core.state[key],Core.state[maxKey])
+      end
+    end
+    T.assertEq(Core.state.hp,10); T.assertEq(Core.state.pet.hp,5); T.assertEq(Core.state.auth,1)
+    T.assertEq(#Core.state.history,history+1)
+    T.assertEq(Core.state.history[1].kind,"RESTORE_RESOURCES")
+    T.assertEq(Core.state.rev,rev+1)
+    Core.Undo()
+    for key,value in pairs(before) do T.assertEq(Core.state[key],value) end
+    Core.Redo()
+    for _,r in ipairs(ns.Shared.GetResProfile(Core.state)) do
+      if r.idx<=4 then local key,maxKey=ns.Shared.GetKeysForIdx(r.idx); T.assertEq(Core.state[key],Core.state[maxKey]) end
+    end
+  end)
+  T.it("honors fixed class resource caps and leaves hidden resources alone", function()
+    for _,case in ipairs({{"MAGE",8},{"WARLOCK",60}}) do
+      reset(); Core.SetClassKey(case[1])
+      Core.SetResIndex(1,0,20); Core.SetResIndex(2,0,999)
+      Core.SetResIndex(3,3,30); Core.SetResIndex(4,4,40)
+      T.assertTrue(Core.RestoreResources())
+      T.assertEq(Core.state.res,20); T.assertEq(Core.state.res2,case[2])
+      T.assertEq(Core.state.res3,case[1]=="WARLOCK" and 30 or 3); T.assertEq(Core.state.res4,4)
+    end
+  end)
+  T.it("updates Insanity attack thresholds without reducing an above-cap resource", function()
+    reset(); Core.SetClassKey("SHADOWPRIEST"); Core.SetAttaque(20,30)
+    Core.SetResIndex(1,0,20); Core.SetResIndex(2,0,25)
+    Core.RestoreResources()
+    T.assertEq(Core.state.res2,25); T.assertEq(Core.state.attaqueDistance,45)
+    Core.SetResIndex(1,0,20); Core.SetResIndex(2,80,25)
+    Core.RestoreResources()
+    T.assertEq(Core.state.res2,80); T.assertEq(Core.state.attaqueDistance,45)
+  end)
+  T.it("does nothing when resources are full or the class has none", function()
+    reset(); Core.SetClassKey("WARRIOR")
+    local rev,count=Core.state.rev,#Core.state.history
+    T.assertFalse(Core.RestoreResources())
+    T.assertEq(Core.state.rev,rev); T.assertEq(#Core.state.history,count)
+    Core.SetClassKey("MAGE"); Core.RestoreResources()
+    rev,count=Core.state.rev,#Core.state.history
+    T.assertFalse(Core.RestoreResources())
+    T.assertEq(Core.state.rev,rev); T.assertEq(#Core.state.history,count)
+  end)
+  T.it("skips invalid saved resource values without creating enormous restoration gains", function()
+    for _,invalid in ipairs({0/0,math.huge,-math.huge,1e20,"bad"}) do
+      reset(); Core.SetClassKey("DRUID")
+      Core.state.res=0; Core.state.maxRes=invalid
+      local rev=Core.state.rev
+      T.assertFalse(Core.RestoreResources()); T.assertEq(Core.state.res,0)
+      T.assertEq(Core.state.rev,rev)
+      Core.state.res=invalid; Core.state.maxRes=20
+      T.assertFalse(Core.RestoreResources()); T.assertEq(Core.state.rev,rev)
+    end
+    reset()
+  end)
+end)
+
 T.describe("Core init", function()
   T.it("populates default state with valid HP/maxHp", function()
     reset()

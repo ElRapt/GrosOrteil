@@ -191,12 +191,16 @@ function M.makeFrame()
     __index = function(_, k)
       -- Accessors used widely return sensible defaults.
       if k == "GetWidth" or k == "GetHeight" then return function() return 100 end end
+      if k == "GetStringHeight" or k == "GetVerticalScroll" or k == "GetVerticalScrollRange" then
+        return function() return 0 end
+      end
       if k == "GetParent" then return function() return _G.UIParent end end
       if k == "IsShown" or k == "IsVisible" or k == "IsMouseOver" then return function() return false end end
       if k == "GetName" then return function() return nil end end
       if k == "GetObjectType" then return function() return "Frame" end end
       if k == "GetText" then return function() return "" end end
       if k == "GetNumber" then return function() return 0 end end
+      if k == "SetNumeric" then return function(self, value) self._numeric = value end end
       if k == "GetCenter" then return function() return 0, 0 end end
       if k == "GetLeft" or k == "GetRight" or k == "GetTop" or k == "GetBottom" then return function() return 0 end end
       if k == "CreateTexture" or k == "CreateFontString" or k == "CreateLine" then

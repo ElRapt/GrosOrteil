@@ -135,6 +135,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if ns.Heal_Init then
       ns.Heal_Init()
     end
+    if ns.Distance then ns.Distance.Init() end
     initMinimapIcon()
 
     f:UnregisterEvent("ADDON_LOADED")
@@ -148,6 +149,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
       print(G .. "GrosOrteil|r — commandes :")
       print(G .. "/go|r " .. D .. "— affiche/masque la fenêtre principale|r")
       print(G .. "/go raid|r " .. D .. "— panel de groupe (fiches + compteur)|r")
+      print(G .. "/go distance|r " .. D .. "— calculateur de distance (cible, point mémorisé, repère carte)|r")
       print(G .. "/go pet [on|off|name <NOM>]|r " .. D .. "— familier|r")
       print(G .. "/go class <CLASSE>|r " .. D .. "— change la classe de la fiche|r")
       print(G .. "/go clearhistory|r " .. D .. "— vide le journal des évènements|r")
@@ -203,6 +205,8 @@ f:SetScript("OnEvent", function(_, event, arg1)
         end
       elseif cmd == "raid" then
         if ns.RaidPanel then ns.RaidPanel.Toggle() end
+      elseif cmd == "distance" then
+        if ns.Distance then ns.Distance.Toggle() end
       elseif cmd == "minimap" then
         local sub = (rest or ""):match("^(%S*)"):lower()
         if sub == "hide" then

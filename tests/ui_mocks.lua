@@ -106,10 +106,32 @@ function methods:Disable() self._enabled=false end
 function methods:IsEnabled() return self._enabled end
 function methods:SetText(text)
   text=tostring(text or "")
-  if text ~= self._text then self._text=text; self:RunScript("OnTextChanged",false) end
+  if text ~= self._text then
+    self._text=text; self._cursor=#text; self._selection=nil
+    self:RunScript("OnTextChanged",false)
+  end
 end
 function methods:GetText() return self._text or "" end
 function methods:GetNumber() return tonumber(self:GetText()) or 0 end
+function methods:SetCursorPosition(position)
+  self._cursor=math.max(0,math.min(#self:GetText(),position))
+  self._selection=nil
+end
+function methods:GetCursorPosition() return self._cursor or 0 end
+function methods:HighlightText(first,last)
+  self._callHighlightText={first,last}
+  first,last=first or 0,last or -1
+  if last<0 then last=#self:GetText() end
+  self._selection={math.max(0,first),math.min(#self:GetText(),last)}
+end
+function methods:Insert(text)
+  local first,last=self:GetCursorPosition(),self:GetCursorPosition()
+  if self._selection then first,last=self._selection[1],self._selection[2] end
+  first,last=math.min(first,last),math.max(first,last)
+  self._text=self:GetText():sub(1,first)..text..self:GetText():sub(last+1)
+  self._cursor=first+#text; self._selection=nil
+  self:RunScript("OnTextChanged",true)
+end
 function methods:SetFocus()
   if M.focus == self then return end
   if M.focus then M.focus:ClearFocus() end
@@ -205,7 +227,7 @@ for _,kind in ipairs({"Normal","Pushed","Highlight","Disabled","StatusBar"}) do
   methods["Get"..kind.."Texture"]=function(self) return self["_"..kind.."Texture"] end
 end
 -- Explicit visual/interaction methods outside this harness's simulation scope.
-for _,name in ipairs({"SetJustifyH","SetJustifyV","SetShadowColor","SetShadowOffset","SetFontObject","SetAutoFocus","SetNumeric","SetMultiLine","SetMaxLetters","SetMaxLines","SetWordWrap","SetNonSpaceWrap","HighlightText","SetBlendMode","SetGradient","SetRotation","SetDesaturated","SetTexCoord","SetStatusBarColor","SetClampedToScreen","SetClipsChildren","SetMovable","EnableMouse","EnableMouseWheel","EnableKeyboard","SetToplevel","SetFrameStrata","SetMotionScriptsWhileDisabled","RegisterForDrag","RegisterForClicks","Raise","AddLine","AddMessage","SetOwner","ClearLines","SetUnit"}) do
+for _,name in ipairs({"SetJustifyH","SetJustifyV","SetShadowColor","SetShadowOffset","SetFontObject","SetAutoFocus","SetNumeric","SetMultiLine","SetMaxLetters","SetMaxLines","SetWordWrap","SetNonSpaceWrap","SetHitRectInsets","SetPropagateMouseClicks","SetBlendMode","SetGradient","SetRotation","SetDesaturated","SetTexCoord","SetStatusBarColor","SetClampedToScreen","SetClipsChildren","SetMovable","EnableMouse","EnableMouseWheel","EnableKeyboard","SetToplevel","SetFrameStrata","SetMotionScriptsWhileDisabled","RegisterForDrag","RegisterForClicks","Raise","AddLine","AddMessage","SetOwner","ClearLines","SetUnit"}) do
   methods[name]=function(self,...) self["_call"..name]={...} end
 end
 function methods:StartMoving() guard(self,"StartMoving"); self._moving=true end

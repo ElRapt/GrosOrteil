@@ -493,6 +493,29 @@ local function applyHeaderAccent(classKey, isPet)
   popupFrame.headerAccent:SetVertexColor(r, g, b, 0.90)
 end
 
+local function layoutRangedPopup()
+  local f = popupFrame
+  if not f or not f.rangedSource then return end
+  local offset = f.rangedExpanded and 66 or 0
+  f.rangedPanel:SetShown(f.rangedExpanded and true or false)
+  f.attaqueIcon:SetTexture(f.rangedExpanded
+    and "Interface\\Buttons\\UI-MinusButton-UP" or "Interface\\Buttons\\UI-PlusButton-UP")
+  for i, def in ipairs({ { "courte", "Courte (5–25 m)" },
+      { "moyenne", "Moyenne (25–40 m)" }, { "longue", "Longue (> 40 m)" } }) do
+    local value = ns.Core.GetRangedAttack(f.rangedSource, def[1])
+    f.rangedLines[i]:SetText(string.format("%s : %d", def[2], roundNumber(value)))
+  end
+  f.hpRow.holder:ClearAllPoints()
+  f.hpRow.holder:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -114 - offset)
+  f.chanceHolder:ClearAllPoints()
+  f.chanceHolder:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -152 - offset)
+  for i, row in ipairs(f.resRows) do
+    row.holder:ClearAllPoints()
+    row.holder:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -174 - (i - 1) * 34 - offset)
+  end
+  f:SetHeight((f.rangedBaseHeight or 188) + offset)
+end
+
 local function createPopup()
   if popupFrame then return end
 
@@ -573,6 +596,35 @@ local function createPopup()
   popupFrame.attaqueText:SetPoint("LEFT", popupFrame.attaqueIcon, "RIGHT", 4, 0)
   popupFrame.attaqueText:SetJustifyH("LEFT")
   popupFrame.attaqueText:Hide()
+
+  -- The attack row itself opens the three range values, with no extra row
+  -- while folded. Only the content below it moves when expanded.
+  popupFrame.rangedToggle = CreateFrame("Button", nil, popupFrame)
+  popupFrame.rangedToggle:SetSize(150, 20)
+  popupFrame.rangedToggle:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 16, -89)
+  popupFrame.rangedToggle:SetScript("OnClick", function()
+    popupFrame.rangedExpanded = not popupFrame.rangedExpanded
+    layoutRangedPopup()
+  end)
+  popupFrame.rangedToggle:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("Attaque à distance par portée")
+    GameTooltip:AddLine("Cliquez pour afficher ou replier les portées courte, moyenne et longue.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  popupFrame.rangedToggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  popupFrame.rangedPanel = CreateFrame("Frame", nil, popupFrame)
+  popupFrame.rangedPanel:SetSize(304, 62)
+  popupFrame.rangedPanel:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 36, -114)
+  popupFrame.rangedPanel:Hide()
+  popupFrame.rangedLines = {}
+  for i = 1, 3 do
+    local line = popupFrame.rangedPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    line:SetPoint("TOPLEFT", popupFrame.rangedPanel, "TOPLEFT", 0, -(i - 1) * 20)
+    line:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
+    popupFrame.rangedLines[i] = line
+  end
 
   -- Perception (right side of attaque row)
   popupFrame.perceptionIcon = popupFrame:CreateTexture(nil, "ARTWORK")
@@ -803,6 +855,9 @@ local function showForState(targetName, state, petOnly)
     popupFrame.fadeOut:Stop()
   end
   local wasShown = popupFrame:IsShown()
+  if not wasShown or currentShownSender ~= targetName or currentShownIsPet ~= (petOnly and true or false) then
+    popupFrame.rangedExpanded = false
+  end
   currentShownSender = targetName
 
   -- Resolve petOnly: if the pet unit is disabled, suppress the popup entirely.
@@ -891,7 +946,9 @@ local function showForState(targetName, state, petOnly)
 
     local dynamicHeight = 162
     if dynamicHeight < 180 then dynamicHeight = 180 end
-    popupFrame:SetHeight(dynamicHeight)
+    popupFrame.rangedSource = pet
+    popupFrame.rangedBaseHeight = dynamicHeight
+    layoutRangedPopup()
     popupFrame:Show()
     if not wasShown and popupFrame.fadeIn then popupFrame.fadeIn:Play() end
     return
@@ -1109,7 +1166,9 @@ local function showForState(targetName, state, petOnly)
   if popupFrame.petMagicShieldText then popupFrame.petMagicShieldText:Hide() end
 
   if dynamicHeight < 188 then dynamicHeight = 188 end
-  popupFrame:SetHeight(dynamicHeight)
+  popupFrame.rangedSource = state
+  popupFrame.rangedBaseHeight = dynamicHeight
+  layoutRangedPopup()
 
   popupFrame:Show()
   if not wasShown and popupFrame.fadeIn then popupFrame.fadeIn:Play() end

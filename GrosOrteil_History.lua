@@ -303,6 +303,13 @@ function History.FormatEntry(e)
 				"Après " .. colorize(fmtInt(e.resAfter), COLORS.RESULT),
 			}),
 		}, "\n")
+	elseif e.kind == "RESTORE_RESOURCES" then
+		local lines = { prefix("Restauration de toutes les ressources mystiques", COLORS.HEAL) }
+		for _, resource in ipairs(e.resources or {}) do
+			lines[#lines + 1] = tostring(resource.label or "Ressource") .. " : "
+				.. fmtInt(resource.before) .. " → " .. fmtInt(resource.after)
+		end
+		return table.concat(lines, "\n")
 	elseif e.kind == "STABILISE" then
 		if e.on then
 			return prefix("État : STABILISÉ", COLORS.HEAL)

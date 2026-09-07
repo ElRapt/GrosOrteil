@@ -5,6 +5,42 @@
 -- into the ctx or directly into the ns.UI (UI) table.
 local _, ns = ...
 
+local function buildRangedEditor(ctx, parent, isPet)
+  local panel = CreateFrame("Frame", nil, parent)
+  panel:SetSize(380, 84)
+  panel:Hide()
+  panel.inputs = {}
+  for i, def in ipairs({
+    { "courte", "Courte (5–25 m)" }, { "moyenne", "Moyenne (25–40 m)" },
+    { "longue", "Longue (> 40 m)" },
+  }) do
+    local range, label = def[1], def[2]
+    local edit
+    ctx.mkLabel(panel, label, 0, -2 - (i - 1) * 28)
+    edit = ctx.mkEdit(panel, 90, 22, 176, -(i - 1) * 28, function()
+      local value = ctx.getNumber(edit)
+      if value ~= nil or edit:GetText():match("^%s*$") then
+        ctx.Core.SetRangedAttack(range, value, isPet)
+      end
+    end)
+    panel.inputs[range] = edit
+    local reset = ctx.mkButton(panel, "Auto", 64, 22, 276, -(i - 1) * 28, function()
+      ctx.Core.SetRangedAttack(range, nil, isPet)
+    end)
+    if ctx.addTip then
+      ctx.addTip(reset, "Hériter de Distance", "Utilise le jet Distance général et ses bonus temporaires.")
+    end
+  end
+  return panel
+end
+
+local function updateRangedEditor(ctx, panel, state)
+  if not panel then return end
+  for range, edit in pairs(panel.inputs) do
+    ctx.setNumber(edit, ctx.Core.GetRangedAttack(state, range))
+  end
+end
+
 -- ── Tab 1 (Fiche) ───────────────────────────────────────────────────────────
 -- ctx fields used: page (pageHP), C, TEX, Core, mkLabel, mkLabelCenter, mkEdit,
 --   mkButton, mkRowAnchor, getNumber, setNumber, CONTENT_W, BLOCK_W,
@@ -116,6 +152,9 @@ function ns.UI_BuildFicheTab(ctx)
   UI.lowerBlock:SetSize(BLOCK_W, 1)
   UI.lowerBlock:SetPoint("TOPLEFT", cA, "TOPLEFT", 0, -104)
   UI.ficheParamChild = paramChild   -- needed by the onChange callback (different scope)
+  UI.ficheAfterRanged = CreateFrame("Frame", nil, UI.lowerBlock)
+  UI.ficheAfterRanged:SetSize(BLOCK_W, 1)
+  UI.ficheAfterRanged:SetPoint("TOPLEFT", UI.lowerBlock, "TOPLEFT", 0, 0)
 
   -- Resource rows (merged Tab 2)
   UI.resRow      = UI.resRow      or {}
@@ -141,9 +180,9 @@ function ns.UI_BuildFicheTab(ctx)
   end
 
   local function mkResRow(idx, y)
-    local row = CreateFrame("Frame", nil, UI.lowerBlock)
+    local row = CreateFrame("Frame", nil, UI.ficheAfterRanged)
     row:SetSize(354, 24)
-    row:SetPoint("TOPLEFT", UI.lowerBlock, "TOPLEFT", 43, y + 178)
+    row:SetPoint("TOPLEFT", UI.ficheAfterRanged, "TOPLEFT", 43, y + 178)
     row.resIdx = idx
     UI.resRow[idx] = row
     row:Hide()
@@ -164,7 +203,7 @@ function ns.UI_BuildFicheTab(ctx)
   end
 
   mkResRow(1, -836); mkResRow(2, -864); mkResRow(3, -892); mkResRow(4, -920); mkResRow(5, -948)
-  UI.noResHint = mkLabelCenter(UI.lowerBlock, "Aucune ressource pour cette classe.", 0, -684)
+  UI.noResHint = mkLabelCenter(UI.ficheAfterRanged, "Aucune ressource pour cette classe.", 0, -684)
   UI.noResHint:Hide()
 
   -- Main Fiche content
@@ -236,19 +275,20 @@ function ns.UI_BuildFicheTab(ctx)
     -- All elements from here down are children of UI.lowerBlock.
     -- _LO converts cA-absolute Y values to lowerBlock-relative coordinates.
     local _LO = 178
-    local lbl      = function(t,x,y)     mkLabel(UI.lowerBlock, t, x, y+LBL_Y+_LO) end
-    local edt      = function(w,x,y,fn)  return mkEdit(UI.lowerBlock, w, INPUT_H, x, y+_LO, fn) end
-    local btn      = function(t,w,x,y,f) return mkButton(UI.lowerBlock, t, w, BTN_H, x, y+_LO, f) end
-    local smallBtn = function(t,w,x,y,f) return mkButton(UI.lowerBlock, t, w, INPUT_H, x, y+_LO, f) end
+    local contentParent = UI.lowerBlock
+    local lbl      = function(t,x,y)     mkLabel(contentParent, t, x, y+LBL_Y+_LO) end
+    local edt      = function(w,x,y,fn)  return mkEdit(contentParent, w, INPUT_H, x, y+_LO, fn) end
+    local btn      = function(t,w,x,y,f) return mkButton(contentParent, t, w, BTN_H, x, y+_LO, f) end
+    local smallBtn = function(t,w,x,y,f) return mkButton(contentParent, t, w, INPUT_H, x, y+_LO, f) end
     local mkSectionHeader = function(text, y)
-      ns.Theme.SectionHeader(UI.lowerBlock, text, y + _LO, BLOCK_W)
+      ns.Theme.SectionHeader(contentParent, text, y + _LO, BLOCK_W)
     end
     local mkSep = function(y)
       local ay = y + _LO
-      local sep = UI.lowerBlock:CreateTexture(nil, "ARTWORK")
+      local sep = contentParent:CreateTexture(nil, "ARTWORK")
       sep:SetTexture(TEX.FLAT)
-      sep:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  16, ay)
-      sep:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", -16, ay)
+      sep:SetPoint("TOPLEFT",  contentParent, "TOPLEFT",  16, ay)
+      sep:SetPoint("TOPRIGHT", contentParent, "TOPRIGHT", -16, ay)
       sep:SetHeight(1)
       sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.16)
     end
@@ -271,6 +311,18 @@ function ns.UI_BuildFicheTab(ctx)
     attaqueDistanceEB = edt(110, 284, -320, applyAllAttaque)
     lbl("Perception", 0, -356)
     perceptionEB = edt(110, 66, -354, applyAllPerception)
+    UI.rangedPanel = buildRangedEditor(ctx, UI.lowerBlock, false)
+    UI.rangedPanel:SetPoint("TOPLEFT", UI.lowerBlock, "TOPLEFT", 0, -382 + _LO)
+    UI.rangedToggle = smallBtn("+ Portées", 204, 190, -354, function()
+      local expanded = not UI.rangedPanel:IsShown()
+      UI.rangedPanel:SetShown(expanded)
+      UI.rangedToggle:SetText(expanded and "− Portées" or "+ Portées")
+      UI.ficheRangedHeight = expanded and 84 or 0
+      UI.ficheAfterRanged:ClearAllPoints()
+      UI.ficheAfterRanged:SetPoint("TOPLEFT", UI.lowerBlock, "TOPLEFT", 0, -UI.ficheRangedHeight)
+      paramChild:SetHeight((paramChild._rangedBaseHeight or 1078) + UI.ficheRangedHeight)
+    end)
+    contentParent = UI.ficheAfterRanged
     mkSep(-390)
 
     -- Actions
@@ -324,7 +376,7 @@ function ns.UI_BuildFicheTab(ctx)
       if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
     end)
     UI.manaShieldToggleBtn = mnsToggleBtn
-    mnsArmorLabel = mkLabel(UI.lowerBlock, "Armure", 246, -756 + LBL_Y + _LO)
+    mnsArmorLabel = mkLabel(contentParent, "Armure", 246, -756 + LBL_Y + _LO)
     UI.manaShieldArmorLabel = mnsArmorLabel
     mnsArmorEB = edt(100, 284, -756, applyAllManaShield)
     UI.manaShieldArmorEB = mnsArmorEB
@@ -351,9 +403,9 @@ function ns.UI_BuildFicheTab(ctx)
           tip = "Posture de Feu",
           desc = "Armure réduite à 0\nDégâts reçus +10\n+4 points de feu\n\nRequiert : 3 points de feu" },
       }
-      local postureSection = UI.lowerBlock:CreateFontString(nil, "OVERLAY")
+      local postureSection = contentParent:CreateFontString(nil, "OVERLAY")
       postureSection:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
-      postureSection:SetPoint("TOP", UI.lowerBlock, "TOP", 0, -986 + _LO)
+      postureSection:SetPoint("TOP", contentParent, "TOP", 0, -986 + _LO)
       postureSection:SetWidth(BLOCK_W)
       postureSection:SetJustifyH("CENTER")
       postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
@@ -361,10 +413,10 @@ function ns.UI_BuildFicheTab(ctx)
       postureSection:SetText("Postures Élémentaires")
       UI.postureSectionLabel = postureSection
 
-      local postureSepLine = UI.lowerBlock:CreateTexture(nil, "ARTWORK")
+      local postureSepLine = contentParent:CreateTexture(nil, "ARTWORK")
       postureSepLine:SetTexture(TEX.FLAT)
-      postureSepLine:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  0, -1004 + _LO)
-      postureSepLine:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", 0, -1004 + _LO)
+      postureSepLine:SetPoint("TOPLEFT",  contentParent, "TOPLEFT",  0, -1004 + _LO)
+      postureSepLine:SetPoint("TOPRIGHT", contentParent, "TOPRIGHT", 0, -1004 + _LO)
       postureSepLine:SetHeight(1)
       postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
       UI.postureSepLine = postureSepLine
@@ -375,7 +427,7 @@ function ns.UI_BuildFicheTab(ctx)
       local startX = math.floor((BLOCK_W - totalW) / 2)
       for i, def in ipairs(POSTURE_DEFS) do
         local bx = startX + (i - 1) * (BTN_W + GAP)
-        local b = mkButton(UI.lowerBlock, def.label, BTN_W, BTN_H2, bx, -1014 + _LO)
+        local b = mkButton(contentParent, def.label, BTN_W, BTN_H2, bx, -1014 + _LO)
         b._postureKey = def.key
         b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
         local tipTitle, tipDesc = def.tip, def.desc
@@ -406,6 +458,7 @@ function ns.UI_BuildFicheTab(ctx)
     chanceCur = chanceCurEB, chanceMax = chanceMaxEB,
     perception = perceptionEB,
     regenParTour = regenParTourEB,
+    actionValue = actValEB,
   }
 end
 
@@ -903,6 +956,7 @@ function ns.UI_BuildPetFicheTab(ctx)
   local petPane = CreateFrame("Frame", nil, petSF)
   petPane:SetHeight(420)
   petSF:SetScrollChild(petPane)
+  local petContent = petPane
 
   local function syncPetPaneWidth()
     local w = petSF:GetWidth() or 0
@@ -918,21 +972,21 @@ function ns.UI_BuildPetFicheTab(ctx)
   end)
 
   local function mkPetHeader(text, y)
-    local lbl = petPane:CreateFontString(nil, "OVERLAY")
+    local lbl = petContent:CreateFontString(nil, "OVERLAY")
     lbl:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
-    lbl:SetPoint("TOPLEFT",  petPane, "TOPLEFT",  0, y)
-    lbl:SetPoint("TOPRIGHT", petPane, "TOPRIGHT", 0, y)
+    lbl:SetPoint("TOPLEFT",  petContent, "TOPLEFT",  0, y)
+    lbl:SetPoint("TOPRIGHT", petContent, "TOPRIGHT", 0, y)
     lbl:SetJustifyH("CENTER")
     lbl:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
     lbl:SetShadowOffset(1, -1); lbl:SetShadowColor(0, 0, 0, 0.60)
     lbl:SetText(text)
   end
   local function mkPetSep(y)
-    local sep = petPane:CreateTexture(nil, "ARTWORK")
+    local sep = petContent:CreateTexture(nil, "ARTWORK")
     sep:SetTexture(TEX.FLAT)
-    sep:SetPoint("LEFT",  petPane, "LEFT",  20, 0)
-    sep:SetPoint("RIGHT", petPane, "RIGHT", -20, 0)
-    sep:SetPoint("TOP",   petPane, "TOP",   0, y)
+    sep:SetPoint("LEFT",  petContent, "LEFT",  20, 0)
+    sep:SetPoint("RIGHT", petContent, "RIGHT", -20, 0)
+    sep:SetPoint("TOP",   petContent, "TOP",   0, y)
     sep:SetHeight(1)
     sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
   end
@@ -988,9 +1042,26 @@ function ns.UI_BuildPetFicheTab(ctx)
   mkLabel(aPetAtt, "Distance", 150, -2)
   petAttaqueDistanceEB = mkEdit(aPetAtt, 70, 20, 230, 0, applyAllPet)
 
+  UI.petRangedPanel = buildRangedEditor(ctx, aPetAtt, true)
+  UI.petRangedPanel:SetPoint("TOPLEFT", aPetAtt, "TOPLEFT", 0, -28)
+  petContent = CreateFrame("Frame", nil, petPane)
+  petContent:SetPoint("TOPLEFT", petPane, "TOPLEFT", 0, 0)
+  petContent:SetPoint("TOPRIGHT", petPane, "TOPRIGHT", 0, 0)
+  petContent:SetHeight(1)
+  UI.petRangedToggle = mkButton(aPetAtt, "+ Portées", 70, 20, 310, 0, function()
+    local expanded = not UI.petRangedPanel:IsShown()
+    UI.petRangedPanel:SetShown(expanded)
+    UI.petRangedToggle:SetText(expanded and "− Portées" or "+ Portées")
+    local offset = expanded and 84 or 0
+    petContent:ClearAllPoints()
+    petContent:SetPoint("TOPLEFT", petPane, "TOPLEFT", 0, -offset)
+    petContent:SetPoint("TOPRIGHT", petPane, "TOPRIGHT", 0, -offset)
+    petPane:SetHeight(508 + offset)
+  end)
+
   -- Bouclier magique (above Actions). 1x3 grid on PV row (cur | max | Réinit).
   mkPetSep(-242); mkPetHeader("Bouclier magique", -250)
-  local aPetMs1 = mkRowAnchor(petPane, PET_ROW_W, -268)
+  local aPetMs1 = mkRowAnchor(petContent, PET_ROW_W, -268)
   mkLabel(aPetMs1, "PV", 0, -2)
   petMsHpEB    = mkEdit(aPetMs1, 70, 20, 60,  0, applyAllPet)
   mkLabel(aPetMs1, "/", 138, -2)
@@ -998,16 +1069,16 @@ function ns.UI_BuildPetFicheTab(ctx)
   mkButton(aPetMs1, "Réinit.", 70, 20, 310, 0, function()
     if Core and Core.ResetPetMagicShield then Core.ResetPetMagicShield() end
   end)
-  local aPetMs2 = mkRowAnchor(petPane, PET_ROW_W, -296)
+  local aPetMs2 = mkRowAnchor(petContent, PET_ROW_W, -296)
   mkLabel(aPetMs2, "Armure", 0, -2)
   petMsArmorEB = mkEdit(aPetMs2, 70, 20, 60, 0, applyAllPet)
 
   -- Actions
   mkPetSep(-324); mkPetHeader("Actions", -332)
-  local aPetVal = mkRowAnchor(petPane, PET_ROW_W, -350)
+  local aPetVal = mkRowAnchor(petContent, PET_ROW_W, -350)
   mkLabel(aPetVal, "Valeur", 0, -2)
   petActionValEB = mkEdit(aPetVal, 80, 20, 60, 0)
-  local aPetBtns1 = mkRowAnchor(petPane, PET_ROW_W, -378)
+  local aPetBtns1 = mkRowAnchor(petContent, PET_ROW_W, -378)
   ---@diagnostic disable-next-line: unused-vararg
   local addTip = ctx.addTip or function(b, ...) return b end
   petDmgArmorBtn = addTip(mkButton(aPetBtns1, "Dégâts (armure)", 180, 22, 0,   0, function()
@@ -1020,7 +1091,7 @@ function ns.UI_BuildPetFicheTab(ctx)
   end), "Dégâts (bruts)",
     "Dégâts ignorant l'armure normale du familier — seuls l'esquive, le bouclier "
       .. "magique, l'armure invulnérable et temporaire s'appliquent.")
-  local aPetBtns2 = mkRowAnchor(petPane, PET_ROW_W, -406)
+  local aPetBtns2 = mkRowAnchor(petContent, PET_ROW_W, -406)
   petDmgDirectBtn = addTip(mkButton(aPetBtns2, "Dégâts directs", 180, 22, 0, 0, function()
     if Core and Core.PetDamageDirect then Core.PetDamageDirect(ctx.getNumber(petActionValEB) or 0) end
   end), "Dégâts directs",
@@ -1030,7 +1101,7 @@ function ns.UI_BuildPetFicheTab(ctx)
     if Core and Core.PetHeal then Core.PetHeal(ctx.getNumber(petActionValEB) or 0) end
   end), "Soins",
     "Rend la valeur en PV au familier, dans la limite du plafond de blessure.")
-  local aPetBtns3 = mkRowAnchor(petPane, PET_ROW_W, -434)
+  local aPetBtns3 = mkRowAnchor(petContent, PET_ROW_W, -434)
   petDivineBtn = addTip(mkButton(aPetBtns3, "Soins divins (75%)", 180, 22, 0, 0, function()
     if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
   end), "Soins divins",
@@ -1397,7 +1468,8 @@ function ns.UI_BuildOnChangeCallback(ctx)
         else
           depth = 682 + (ficheVisibleRows - 1) * 28  -- row-n bottom
         end
-        UI.ficheParamChild:SetHeight(lbYAbs + depth + 38)
+        UI.ficheParamChild._rangedBaseHeight = lbYAbs + depth + 38
+        UI.ficheParamChild:SetHeight(lbYAbs + depth + 38 + (UI.ficheRangedHeight or 0))
       end
     end
     ctx.setNumber(UI.inputs.armor,          s.armor)
@@ -1407,6 +1479,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
     ctx.setNumber(UI.inputs.block,          s.tempBlock)
     ctx.setNumber(UI.inputs.attaqueMelee,   s.attaqueMelee)
     ctx.setNumber(UI.inputs.attaqueDistance,s.attaqueDistance)
+    updateRangedEditor(ctx, UI.rangedPanel, s)
     ctx.setNumber(UI.inputs.chanceCur,      s.chance)
     ctx.setNumber(UI.inputs.chanceMax,      s.maxChance)
     ctx.setNumber(UI.inputs.perception,     s.perception)
@@ -1455,6 +1528,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
     ctx.setNumber(UI.inputs.petDodge,           p.dodge)
     ctx.setNumber(UI.inputs.petAttaqueMelee,    p.attaqueMelee)
     ctx.setNumber(UI.inputs.petAttaqueDistance, p.attaqueDistance)
+    updateRangedEditor(ctx, UI.petRangedPanel, p)
     ctx.setNumber(UI.inputs.petTempArmor,       p.tempArmor)
     local pms = type(p.magicShield) == "table" and p.magicShield or {}
     ctx.setNumber(UI.inputs.petMsHp,    pms.hp)

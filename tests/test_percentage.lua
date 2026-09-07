@@ -14,6 +14,25 @@ local function reset()
 end
 
 T.describe("Signed percentage actions", function()
+  T.it("emits the actual signed HP change for the correct sheet and omits zero changes", function()
+    reset()
+    local events={}
+    Core.SetCombatTextHandler(function(kind,amount,subject) events[#events+1]={kind,amount,subject} end)
+    Core.PercentageHeal(-15)
+    Core.PercentageHeal(100)
+    Core.PercentageHeal(15) -- already full
+    Core.PercentageHeal("invalid")
+    Core.PetPercentageHeal(-100)
+    Core.PetPercentageHeal(-15) -- already zero
+    Core.PetPercentageHeal(15)
+    Core.SetCombatTextHandler(nil)
+    T.assertEq(#events,4)
+    local expected={{"DAMAGE",30,"CHAR"},{"HEAL",130,"CHAR"},{"DAMAGE",50,"PET"},{"HEAL",15,"PET"}}
+    for i,event in ipairs(expected) do
+      for j,value in ipairs(event) do T.assertEq(events[i][j],value) end
+    end
+  end)
+
   T.it("accepts both signs and preserves fractional percentages", function()
     for _, value in ipairs({ -100, -15, -1, 1, 15, 100, -12.5, 12.5 }) do
       T.assertEq(Percentage.NormalizePercent(value), value)

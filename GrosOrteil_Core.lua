@@ -73,9 +73,10 @@ function Core.SetCombatTextHandler(fn)
   combatTextHandler = (type(fn) == "function") and fn or nil
 end
 
-local function emitCombatText(kind, amount)
-  if combatTextHandler then pcall(combatTextHandler, kind, amount) end
+local function emitCombatText(kind, amount, subject)
+  if combatTextHandler then pcall(combatTextHandler, kind, amount, subject) end
 end
+Core.EmitCombatText = emitCombatText
 
 -- Listener errors are non-fatal: notify() pcalls each callback so a single
 -- bad listener can't break the chain. Errors flow through geterrorhandler
@@ -153,11 +154,13 @@ local SNAPSHOT_SCALARS = {
   -- snapshotting them keeps an undone toggle consistent with its recorded
   -- applied deltas.
   "attaqueMelee", "attaqueDistance", "insanityAtkApplied",
+  "attaqueDistanceCourte", "attaqueDistanceMoyenne", "attaqueDistanceLongue",
 }
 local SNAPSHOT_PET_FIELDS = {
   "enabled", "name", "hp", "maxHp",
   "armor", "trueArmor", "dodge",
   "attaqueMelee", "attaqueDistance", "tempArmor",
+  "attaqueDistanceCourte", "attaqueDistanceMoyenne", "attaqueDistanceLongue",
   "authorityEnabled",
 }
 local SNAPSHOT_POSTURE_BASE = {
@@ -1696,6 +1699,58 @@ function Core.ToggleAffix(key)
   bump(); notify()
 end
 
+-- Optional per-range bases inherit Distance until edited. Keeping temporary
+-- bonuses outside these bases makes affix expiry and Insanity affect every
+-- range without duplicating their applied-delta bookkeeping.
+do
+  local fields = {
+    courte = "attaqueDistanceCourte", moyenne = "attaqueDistanceMoyenne",
+    longue = "attaqueDistanceLongue",
+  }
+  local function finiteNumber(value, minimum, maximum)
+    if type(value) ~= "number" or value ~= value
+        or value == math.huge or value == -math.huge then return nil end
+    return clampNumber(value, minimum, maximum)
+  end
+  local function temporaryBonus(s)
+    local bonus = finiteNumber(s.insanityAtkApplied, 0, 1e9) or 0
+    if type(s.affixes) == "table" then
+      for key, active in pairs(s.affixes) do
+        local deltas = active and affixDeltas(key)
+        if deltas then
+          -- A capped general attack must not truncate a bonus on a lower
+          -- custom range. Its effective value has its own independent cap.
+          bonus = bonus + (deltas.attaqueDistance or 0)
+        end
+      end
+    end
+    return bonus
+  end
+
+  function Core.GetRangedAttack(s, range)
+    s = type(s) == "table" and s or {}
+    local field = fields[range]
+    local base = field and finiteNumber(s[field], -1e9, 1e9)
+    if base then return math.min(1e9, math.max(0, base + temporaryBonus(s))) end
+    return finiteNumber(s.attaqueDistance, 0, 1e9) or 0
+  end
+
+  function Core.SetRangedAttack(range, value, isPet)
+    local s, field = Core.state, fields[range]
+    if not s or not field then return end
+    local target = isPet and ensurePet(s) or s
+    local base
+    if value ~= nil then
+      value = finiteNumber(value, 0, 1e9)
+      if value == nil then return end
+      base = value - temporaryBonus(target)
+    end
+    if target[field] == base then return end
+    target[field] = base
+    bump(); notify()
+  end
+end
+
 function Core.TogglePetAffix(key)
   local s = Core.state
   if not s then return end
@@ -1776,6 +1831,33 @@ function Core.DailyRegenHP()
   pushHistory({ kind = "DAILY_REGEN_HP",
                 gain = gain, hpBefore = hpBefore, hpAfter = s.hp, maxHp = baseMax })
   bump(); notify()
+end
+
+-- Full restoration is one mutation so all class resources share an undo step.
+function Core.RestoreResources()
+  local s = Core.state
+  if not s then return false end
+  local function validResource(value, minimum)
+    return type(value) == "number" and value == value and value >= minimum and value <= 1e9
+  end
+  local restored = {}
+  for _, resource in ipairs(ns.Shared.GetResProfile(s)) do
+    local idx = resource.idx
+    if idx >= 1 and idx <= 4 then
+      local key, maxKey = ns.Shared.GetKeysForIdx(idx)
+      local maximum = validResource(s[maxKey], 0) and s[maxKey]
+      local before = validResource(s[key], -1e9) and s[key]
+      if before and maximum and before < maximum then
+        s[key] = maximum
+        restored[#restored + 1] = { label = resource.label, before = before, after = maximum }
+      end
+    end
+  end
+  if #restored == 0 then return false end
+  updateInsanityAtkBonus(s)
+  pushHistory({ kind = "RESTORE_RESOURCES", resources = restored })
+  bump(); notify()
+  return true
 end
 
 -- Régénération quotidienne mystique : +20 % de la ressource principale (idx 1).

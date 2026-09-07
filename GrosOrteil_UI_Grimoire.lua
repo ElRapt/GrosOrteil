@@ -101,21 +101,51 @@ function ns.UI_BuildGrimoireTab(ctx)
       edit = CreateFrame("EditBox", nil, scroll)
       edit:SetMultiLine(true)
       edit:SetAutoFocus(false)
+      edit:SetFontObject("GameFontHighlight")
       edit:SetHeight(40)
       scroll:SetScrollChild(edit)
       edit._scroll = scroll
 
-      local function syncMultilineWidth()
+      -- A scroll child can extend well beyond its visible rectangle. Keep its
+      -- mouse hit area inside that rectangle so it cannot steal selections or
+      -- clicks from the other fields below the description.
+      local function syncHitRect()
+        local offset = scroll:GetVerticalScroll()
+        edit:SetHitRectInsets(0, 0, offset,
+          math.max(0, edit:GetHeight() - offset - scroll:GetHeight()))
+      end
+      local function setScroll(offset)
+        local range = math.max(0, edit:GetHeight() - scroll:GetHeight())
+        offset = math.max(0, math.min(range, offset))
+        if offset ~= scroll:GetVerticalScroll() then scroll:SetVerticalScroll(offset) end
+        syncHitRect()
+      end
+      local function syncMultilineSize()
         local width = scroll:GetWidth() or 0
         edit:SetWidth(math.max(40, width - 4))
-      end
-      wrap:SetScript("OnSizeChanged", syncMultilineWidth)
-      edit:SetScript("OnTextChanged", function(self)
-        local stringHeight = self.GetStringHeight and self:GetStringHeight() or 0
+        local stringHeight = edit.GetStringHeight and edit:GetStringHeight() or 0
         local visibleHeight = scroll:GetHeight() or 40
-        self:SetHeight(math.max(40, visibleHeight, stringHeight + 12))
+        edit:SetHeight(math.max(40, visibleHeight, stringHeight + 12))
+        setScroll(scroll:GetVerticalScroll())
+      end
+      scroll:SetScript("OnSizeChanged", syncMultilineSize)
+      scroll:HookScript("OnVerticalScroll", syncHitRect)
+      scroll:HookScript("OnScrollRangeChanged", syncHitRect)
+      edit:SetScript("OnTextChanged", syncMultilineSize)
+      edit:SetScript("OnCursorChanged", function(_, _, y, _, height)
+        local cursorTop = -y
+        local offset = scroll:GetVerticalScroll()
+        if cursorTop < offset then
+          setScroll(cursorTop)
+        elseif cursorTop + height > offset + scroll:GetHeight() then
+          setScroll(cursorTop + height - scroll:GetHeight())
+        end
       end)
-      syncMultilineWidth()
+      edit:EnableMouseWheel(true)
+      edit:SetScript("OnMouseWheel", function(_, delta)
+        setScroll(scroll:GetVerticalScroll() - delta * 36)
+      end)
+      syncMultilineSize()
     else
       edit = CreateFrame("EditBox", nil, wrap)
       edit:SetPoint("TOPLEFT", 6, -4)
@@ -124,6 +154,10 @@ function ns.UI_BuildGrimoireTab(ctx)
       edit:SetAutoFocus(false)
     end
 
+    -- Leave cursor placement, drag selection and keyboard editing to the native
+    -- EditBox. Neither focus nor refresh should select or rewrite its contents.
+    edit:EnableMouse(true)
+    if edit.SetPropagateMouseClicks then edit:SetPropagateMouseClicks(false) end
     edit:SetFontObject("GameFontHighlight")
     edit:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
     edit:SetJustifyH("LEFT")
@@ -634,11 +668,12 @@ function ns.UI_BuildGrimoireTab(ctx)
   damageHealingLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -341)
   damageHealingLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
   damageHealingLabel:SetText("Dégâts / Soins (informatif)")
-  local damageHealingEdit = mkEdit(formChild, 104, 24, 0, 0)
-  damageHealingEdit._wrap:ClearAllPoints()
+  local damageHealingEdit = makeTextEdit(formChild, false)
+  damageHealingEdit._wrap:SetSize(104, 24)
   damageHealingEdit._wrap:SetPoint("TOPLEFT", formChild, "TOPLEFT", 190, -335)
   damageHealingEdit:SetNumeric(false)
   damageHealingEdit:SetMaxLetters(19)
+  damageHealingEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
   local damageHealingHint = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   damageHealingHint:SetPoint("LEFT", damageHealingEdit._wrap, "RIGHT", 8, 0)
   damageHealingHint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
@@ -684,35 +719,28 @@ function ns.UI_BuildGrimoireTab(ctx)
         costSelect._fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
       end
       amountEdit._wrap:Show(); amountLabel:Show()
-      if not amountEdit:HasFocus() then amountEdit:SetText(tostring(draft.cost.amount or 1)) end
     else
       costSelect:SetText("Aucun")
       if costSelect._fs then costSelect._fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1) end
-      amountEdit._wrap:Hide(); amountLabel:Hide(); amountEdit:SetText("")
+      amountEdit._wrap:Hide(); amountLabel:Hide()
     end
     if draft.usesPerMission then
       usesMode:SetText("Limité")
       usesEdit._wrap:Show()
-      if not usesEdit:HasFocus() then usesEdit:SetText(tostring(draft.usesPerMission)) end
     else
       usesMode:SetText("Illimité")
-      usesEdit._wrap:Hide(); usesEdit:SetText("")
-    end
-    if not damageHealingEdit:HasFocus() then
-      local damageHealingInput = draft.damageHealing and tostring(draft.damageHealing) or ""
-      if draft.damageHealing and draft.damageHealingMax then
-        damageHealingInput = damageHealingInput .. "-" .. tostring(draft.damageHealingMax)
-      end
-      damageHealingEdit:SetText(damageHealingInput)
+      usesEdit._wrap:Hide()
     end
   end
 
   local function selectCost(resource)
     if not resource then
       draft.cost = nil
+      amountEdit:SetText("")
     else
       local amount = tonumber(amountEdit:GetText()) or (draft.cost and draft.cost.amount) or 1
       draft.cost = { classKey = Core.state.classKey, resourceIdx = resource.idx, amount = amount }
+      amountEdit:SetText(tostring(amount))
     end
     errorText:SetText("")
     refreshEditorSelectors()
@@ -746,8 +774,13 @@ function ns.UI_BuildGrimoireTab(ctx)
 
   usesMode:SetScript("OnClick", function()
     if not draft then return end
-    if draft.usesPerMission then draft.usesPerMission = nil
-    else draft.usesPerMission = tonumber(usesEdit:GetText()) or 1 end
+    if draft.usesPerMission then
+      draft.usesPerMission = nil
+      usesEdit:SetText("")
+    else
+      draft.usesPerMission = tonumber(usesEdit:GetText()) or 1
+      usesEdit:SetText(tostring(draft.usesPerMission))
+    end
     errorText:SetText("")
     refreshEditorSelectors()
   end)
@@ -799,6 +832,21 @@ function ns.UI_BuildGrimoireTab(ctx)
     end
     titleEdit:SetText(draft.title or "")
     descEdit:SetText(draft.description or "")
+    -- Populate draft fields once. A later character update or selector change
+    -- must preserve every unsaved edit, including a temporarily empty value.
+    amountEdit:SetText(draft.cost and tostring(draft.cost.amount or 1) or "")
+    usesEdit:SetText(draft.usesPerMission and tostring(draft.usesPerMission) or "")
+    local damageHealingInput = draft.damageHealing and tostring(draft.damageHealing) or ""
+    if draft.damageHealing and draft.damageHealingMax then
+      damageHealingInput = damageHealingInput .. "-" .. tostring(draft.damageHealingMax)
+    end
+    damageHealingEdit:SetText(damageHealingInput)
+    for _, edit in ipairs({ titleEdit, descEdit, damageHealingEdit }) do
+      edit:HighlightText(0, 0)
+      edit:SetCursorPosition(0)
+    end
+    descEdit._scroll:SetVerticalScroll(0)
+    formScroll:SetVerticalScroll(0)
     errorText:SetText("")
     refreshEditorSelectors()
     listView:Hide()
@@ -883,6 +931,10 @@ function ns.UI_BuildGrimoireTab(ctx)
   end
 
   UI.grimoireRows = cards
+  UI.grimoireTitleEdit = titleEdit
+  UI.grimoireDescriptionEdit = descEdit
+  UI.grimoireCostAmountEdit = amountEdit
+  UI.grimoireUsesEdit = usesEdit
   UI.grimoireDamageHealingEdit = damageHealingEdit
   UI.refreshGrimoire = refresh
   UI.openGrimoireEditor = openEditor

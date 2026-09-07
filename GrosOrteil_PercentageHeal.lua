@@ -58,6 +58,9 @@ function Core.PercentageHeal(value)
   if not before then return false end
   addPercentageHistory(state, percent, before, after, maxHp)
   Core.SetHP(after, maxHp)
+  if after ~= before and Core.EmitCombatText then
+    Core.EmitCombatText(percent < 0 and "DAMAGE" or "HEAL", math.abs(after - before), "CHAR")
+  end
   return true
 end
 
@@ -71,6 +74,9 @@ function Core.PetPercentageHeal(value)
   if not before then return false end
   addPercentageHistory(state, percent, before, after, maxHp, "PET")
   Core.SetPetHP(after, maxHp)
+  if after ~= before and Core.EmitCombatText then
+    Core.EmitCombatText(percent < 0 and "DAMAGE" or "HEAL", math.abs(after - before), "PET")
+  end
   return true
 end
 

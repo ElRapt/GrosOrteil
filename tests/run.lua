@@ -38,6 +38,8 @@ local TESTS = {
   "test_meter_sync",
   "test_heal",
   "test_percentage",
+  "test_distance",
+  "test_ranged_profiles",
   "test_e2e",         -- big cross-feature scenario tests
   "test_invariants",  -- runs last: deliberately abuses Core, leaves messy state
 }

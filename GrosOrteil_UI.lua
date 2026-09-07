@@ -356,9 +356,11 @@ function ns.UI_Init()
   local MIN_W, MIN_H     = 760, 460
   local MAX_W, MAX_H     = 1500, 1000
   -- Fixed navigation and a flexible content surface below the header.
-  local BODY_X      = 16
-  local BODY_TOP    = 62
-  local BODY_BOTTOM = 38
+  local legacy = Theme.GetName() == "legacy"
+  local BODY_X      = legacy and 26 or 16
+  local BODY_TOP    = legacy and 76 or 62
+  local FOOTER_Y    = legacy and 28 or 8
+  local BODY_BOTTOM = FOOTER_Y + 30
   local applyContentHostLayout  -- forward declaration; defined below
   local activeSectionRef        -- forward declaration; assigned below with initial value
 
@@ -404,15 +406,14 @@ function ns.UI_Init()
   frame:SetClampedToScreen(true)
   frame:SetMovable(true)
   frame:EnableMouse(true)
-  frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-  frame:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-    local point, _, relativePoint, x, y = self:GetPoint(1)
+  local function stopWindowDrag()
+    frame:StopMovingOrSizing()
+    local point, _, relativePoint, x, y = frame:GetPoint(1)
     if point then
       db.ui.point, db.ui.relativePoint, db.ui.x, db.ui.y = point, relativePoint, x or 0, y or 0
     end
-  end)
+  end
+  frame:HookScript("OnHide", stopWindowDrag)
 
   -- Slate shell and restrained gold corner accents.
   Shared.ApplyBoardSkin(frame)
@@ -421,6 +422,16 @@ function ns.UI_Init()
   -- Header plaque pinned over the top rail (holds title + close button).
   local plaque = Shared.MakePlaque(frame, 42)
   UI.plaque = plaque
+  if legacy then
+    plaque:ClearAllPoints()
+    plaque:SetPoint("TOPLEFT", frame, "TOPLEFT", BODY_X, -20)
+    plaque:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -BODY_X, -20)
+  end
+  -- Only the title bar moves the window; text fields retain native drag selection.
+  plaque:EnableMouse(true)
+  plaque:RegisterForDrag("LeftButton")
+  plaque:SetScript("OnDragStart", function() frame:StartMoving() end)
+  plaque:SetScript("OnDragStop", stopWindowDrag)
 
   -- Gentle fade-in whenever the window opens; fade-out when closed.
   local fadeIn = Shared.MakeFadeIn(frame, 0.18)
@@ -436,14 +447,15 @@ function ns.UI_Init()
   -- Title: gold text on the plaque.
   local title = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   UI.title = title
-  title:SetPoint("LEFT", plaque, "LEFT", 38, -5)
+  title:SetPoint("LEFT", plaque, "LEFT", legacy and 50 or 38, legacy and -7 or -5)
   title:SetWordWrap(false)
   local brand = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  brand:SetPoint("TOPLEFT", 38, -1)
+  brand:SetPoint("TOPLEFT", legacy and 50 or 38, legacy and -7 or -1)
   brand:SetText("G R O S O R T E I L")
   brand:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
   local crest = plaque:CreateTexture(nil, "ARTWORK")
-  crest:SetSize(26, 26); crest:SetPoint("LEFT", 2, 0)
+  crest:SetSize(26, 26); crest:SetPoint("LEFT", legacy and 14 or 2, 0)
+  UI.crest = crest
   crest:SetTexture("Interface/Icons/INV_Misc_Herb_Goldclover")
   crest:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   title:SetJustifyH("LEFT")
@@ -461,7 +473,7 @@ function ns.UI_Init()
   end
 
   local close = CreateFrame("Button", nil, plaque, "UIPanelCloseButton")
-  close:SetPoint("RIGHT", plaque, "RIGHT", -2, 0)
+  close:SetPoint("RIGHT", plaque, "RIGHT", legacy and -8 or -2, 0)
   close:SetSize(26, 26)
   Theme.StyleClose(close)
   close:SetScript("OnClick", function()
@@ -475,7 +487,7 @@ function ns.UI_Init()
   plaqueSub:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
   plaqueSub:SetWidth(140)
   plaqueSub:SetWordWrap(false)
-  title:SetPoint("RIGHT", plaqueSub, "LEFT", -12, -5)
+  title:SetPoint("RIGHT", plaqueSub, "LEFT", -12, legacy and -7 or -5)
   plaqueSub:SetText("")
   UI.plaqueSub = plaqueSub
 
@@ -662,7 +674,18 @@ function ns.UI_Init()
       function()
         if activeSectionRef.v == 2 then Core.PetRestoreHP() else Core.RestoreHP() end
       end)
-    iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -14, 4)
+    iconRestore:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -BODY_X, FOOTER_Y + 2)
+    UI.iconRestoreHP = iconRestore
+
+    local iconRestoreRes = mkActionIcon(frame,
+      "Interface/Icons/Spell_Magic_ManaGain",
+      "Restaurer toutes les ressources mystiques",
+      "Remet au maximum toutes les ressources mystiques de la classe. Les points d'autorité et les ressources déjà au-dessus du maximum sont conservés.",
+      function()
+        if activeSectionRef.v ~= 2 then Core.RestoreResources() end
+      end)
+    iconRestoreRes:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
+    UI.iconRestoreResources = iconRestoreRes
 
     local iconRegenHP = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_rejuvenation_empowered",
@@ -671,7 +694,8 @@ function ns.UI_Init()
       function()
         if activeSectionRef.v == 2 then Core.PetDailyRegenHP() else Core.DailyRegenHP() end
       end)
-    iconRegenHP:SetPoint("RIGHT", iconRestore, "LEFT", -ICON_GAP, 0)
+    iconRegenHP:SetPoint("RIGHT", iconRestoreRes, "LEFT", -ICON_GAP, 0)
+    UI.iconRegenHP = iconRegenHP
 
     local iconRegenRes = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_starfall_empowered",
@@ -885,7 +909,8 @@ function ns.UI_Init()
 
   -- Floating combat text above the HP bar (dégâts, soins, esquive, blocage)
   local showCombatText = Shared.AttachFloatingText(hpBar)
-  Core.SetCombatTextHandler(function(kind, amount)
+  Core.SetCombatTextHandler(function(kind, amount, subject)
+    if subject and ((subject == "PET") ~= (activeSectionRef.v == 2)) then return end
     if kind == "DAMAGE" then
       showCombatText("-" .. Shared.Round(amount or 0), 1.00, 0.25, 0.25)
     elseif kind == "HEAL" then
@@ -1493,6 +1518,11 @@ function ns.UI_Init()
     if UI.iconRegenRes then
       if sect == 2 then UI.iconRegenRes:Hide() else UI.iconRegenRes:Show() end
     end
+    if UI.iconRestoreResources then
+      UI.iconRestoreResources:SetShown(sect ~= 2)
+      UI.iconRegenHP:ClearAllPoints()
+      UI.iconRegenHP:SetPoint("RIGHT", sect == 2 and UI.iconRestoreHP or UI.iconRestoreResources, "LEFT", -ICON_GAP, 0)
+    end
     -- Rég./tour is a character-only stat, so hide its icon in the pet section.
     if UI.iconRegenParTour then
       if sect == 2 then UI.iconRegenParTour:Hide() else UI.iconRegenParTour:Show() end
@@ -1599,14 +1629,28 @@ function ns.UI_Init()
 
   local themeButton = mkButton(frame, "", 138, 22, 0, 0)
   themeButton:ClearAllPoints()
-  themeButton:SetPoint("BOTTOMLEFT", 16, 8)
+  themeButton:SetPoint("BOTTOMLEFT", BODY_X, FOOTER_Y)
   local applyThemeButton = mkButton(frame, "Appliquer (/reload)", 146, 22, 0, 0)
   applyThemeButton:ClearAllPoints()
   applyThemeButton:SetPoint("LEFT", themeButton, "RIGHT", 8, 0)
+  local distanceButton = mkButton(frame, "Distances", 92, 22, 0, 0, function()
+    if ns.Distance then ns.Distance.Toggle() end
+  end)
+  distanceButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("Calculateur de distance", C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
+    GameTooltip:AddLine("Mesure vers une cible, un point mémorisé ou un repère sur la carte. Également disponible avec /go distance.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  distanceButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  UI.distanceButton = distanceButton
   local function refreshTheme()
     themeButton:SetText("Thème : " .. (Theme.GetSelectedName() == "legacy" and "Legacy" or "Slate"))
     applyThemeButton:SetShown(Theme.RequiresReload())
     setButtonEnabled(applyThemeButton, not InCombatLockdown())
+    distanceButton:ClearAllPoints()
+    distanceButton:SetPoint("LEFT", Theme.RequiresReload() and applyThemeButton or themeButton, "RIGHT", 8, 0)
   end
   themeButton:SetScript("OnClick", function()
     Theme.SetName(Theme.GetSelectedName() == "slate" and "legacy" or "slate")

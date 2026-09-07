@@ -45,6 +45,7 @@ local LIBS = {
 local SOURCES = {
   "GrosOrteil_Shared.lua",
   "GrosOrteil_Theme.lua",
+  "GrosOrteil_Distance.lua",
   "GrosOrteil_History.lua",
   "GrosOrteil_Core.lua",
   "GrosOrteil_Grimoire.lua",

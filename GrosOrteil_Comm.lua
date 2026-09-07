@@ -105,8 +105,20 @@ local function packWounds(w)
   }
 end
 
+local function packRangedAttacks(src, out)
+  for range, field in pairs({ courte = "attaqueDistanceCourte",
+      moyenne = "attaqueDistanceMoyenne", longue = "attaqueDistanceLongue" }) do
+    if ns.Core and ns.Core.GetRangedAttack then
+      out[field] = ns.Core.GetRangedAttack(src, range)
+    else
+      out[field] = tonumber(src[field]) or tonumber(src.attaqueDistance) or 0
+    end
+  end
+end
+
 local function buildPayload(src, petSrc, classKey)
   local out = copyNumeric(src, NUMERIC_FIELDS)
+  packRangedAttacks(src, out)
   out.wounds   = packWounds(src.wounds)
   out.stabilise = src.stabilise and true or false
   out.classKey = classKey
@@ -137,6 +149,7 @@ local function buildPayload(src, petSrc, classKey)
   }
 
   local pet = copyNumeric(petSrc, PET_NUMERIC_FIELDS)
+  packRangedAttacks(petSrc, pet)
   pet.enabled          = not not petSrc.enabled
   pet.authorityEnabled = not not petSrc.authorityEnabled
   pet.name             = type(petSrc.name) == "string" and petSrc.name or "Familier"

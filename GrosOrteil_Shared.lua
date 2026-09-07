@@ -155,8 +155,8 @@ end
 
 ---------------------------------------------------------------------------
 -- Classes that use the Insanité (res2) mechanic: a bar that may exceed its
--- max, feeds a base-attack bonus at tiers 11 (+10) / 18 (+15), and gains +2
--- from a resource change. Shadow and Discipline priests share it.
+-- max and feeds a base-attack bonus at tiers 11 (+10) / 18 (+15).
+-- Shadow and Discipline priests share it.
 ---------------------------------------------------------------------------
 local INSANITY_CLASSES = { SHADOWPRIEST = true, DISCPRIEST = true }
 function Shared.HasInsanity(classKey)
@@ -452,6 +452,9 @@ function Shared.AttachFloatingText(anchor)
   host:SetFrameLevel((anchor:GetFrameLevel() or 0) + 10)
 
   local pool = {}
+  host:HookScript("OnHide", function()
+    for _, entry in ipairs(pool) do entry.anim:Stop(); entry.fs:Hide() end
+  end)
 
   local function acquire()
     for i = 1, #pool do
@@ -482,6 +485,7 @@ function Shared.AttachFloatingText(anchor)
   end
 
   return function(text, r, g, b)
+    if not anchor:IsVisible() then return end
     local e = acquire()
     e.anim:Stop()
     e.fs:SetText(text)
