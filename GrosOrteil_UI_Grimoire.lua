@@ -6,6 +6,7 @@ local _, ns = ...
 function ns.UI_BuildGrimoireTab(ctx)
   local UI = ns.UI
   local page = ctx.page
+  local Theme = ns.Theme
   local C = ctx.C
   local TEX = ctx.TEX
   local Core = ctx.Core
@@ -148,11 +149,16 @@ function ns.UI_BuildGrimoireTab(ctx)
     dialog:SetClampedToScreen(true)
     dialog:EnableMouse(true)
     dialog:SetBackdrop({
-      bgFile = TEX.BG_DARK, edgeFile = TEX.FLAT, edgeSize = 2,
+      bgFile = TEX.FLAT, edgeFile = TEX.FLAT, edgeSize = 2,
       insets = { left = 3, right = 3, top = 3, bottom = 3 },
     })
     dialog:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.98)
     dialog:SetBackdropBorderColor(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.85)
+
+    Theme.ApplyBoardSkin(dialog)
+    Theme.ApplyBoardRails(dialog)
+    local fade = Theme.MakeFadeIn(dialog)
+    dialog:HookScript("OnShow", function() fade:Play() end)
 
     local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", dialog, "TOP", 0, -12)
@@ -224,11 +230,16 @@ function ns.UI_BuildGrimoireTab(ctx)
     dialog:SetClampedToScreen(true)
     dialog:EnableMouse(true)
     dialog:SetBackdrop({
-      bgFile = TEX.BG_DARK, edgeFile = TEX.FLAT, edgeSize = 2,
+      bgFile = TEX.FLAT, edgeFile = TEX.FLAT, edgeSize = 2,
       insets = { left = 3, right = 3, top = 3, bottom = 3 },
     })
     dialog:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.98)
     dialog:SetBackdropBorderColor(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.85)
+
+    Theme.ApplyBoardSkin(dialog)
+    Theme.ApplyBoardRails(dialog)
+    local fade = Theme.MakeFadeIn(dialog)
+    dialog:HookScript("OnShow", function() fade:Play() end)
 
     local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", dialog, "TOP", 0, -11)
@@ -391,23 +402,24 @@ function ns.UI_BuildGrimoireTab(ctx)
   listView:SetAllPoints(page)
 
   local header = listView:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  header:SetPoint("TOP", listView, "TOP", 0, -4)
+  header:SetPoint("TOPLEFT", listView, "TOPLEFT", 12, -8)
   header:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
   header:SetText("Grimoire")
 
   local addBtn = mkButton(listView, "Ajouter une technique", 168, 24, 0, 0)
   addBtn:ClearAllPoints()
-  addBtn:SetPoint("TOP", header, "BOTTOM", 0, -6)
+  addBtn:SetPoint("TOPRIGHT", listView, "TOPRIGHT", -12, -4)
+  Theme.StyleButton(addBtn, "primary")
 
   local hint = listView:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  hint:SetPoint("TOPLEFT", listView, "TOPLEFT", 12, -62)
-  hint:SetPoint("TOPRIGHT", listView, "TOPRIGHT", -12, -62)
-  hint:SetJustifyH("CENTER")
+  hint:SetPoint("TOPLEFT", listView, "TOPLEFT", 12, -38)
+  hint:SetPoint("TOPRIGHT", listView, "TOPRIGHT", -12, -38)
+  hint:SetJustifyH("LEFT")
   hint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
   hint:SetText("Les coûts, dégâts / soins et utilisations sont purement informatifs ; rien n’est appliqué automatiquement.")
 
   local listScroll = CreateFrame("ScrollFrame", nil, listView, "UIPanelScrollFrameTemplate")
-  listScroll:SetPoint("TOPLEFT", listView, "TOPLEFT", 4, -88)
+  listScroll:SetPoint("TOPLEFT", listView, "TOPLEFT", 4, -70)
   listScroll:SetPoint("BOTTOMRIGHT", listView, "BOTTOMRIGHT", -22, 2)
   local listChild = CreateFrame("Frame", nil, listScroll)
   listChild:SetHeight(1)
@@ -441,6 +453,10 @@ function ns.UI_BuildGrimoireTab(ctx)
     })
     card:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.72)
     card:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.45)
+    Theme.ApplyNoteSkin(card)
+    local accent = card:CreateTexture(nil, "ARTWORK")
+    accent:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.8)
+    accent:SetPoint("TOPLEFT", 1, -1); accent:SetPoint("BOTTOMLEFT", 1, 1); accent:SetWidth(2)
     if card.SetClipsChildren then card:SetClipsChildren(true) end
 
     local iconBg = CreateFrame("Frame", nil, card, "BackdropTemplate")
@@ -491,7 +507,8 @@ function ns.UI_BuildGrimoireTab(ctx)
     editBtn:ClearAllPoints(); editBtn:SetPoint("TOP", copyBtn, "BOTTOM", 0, -4)
     local deleteBtn = mkButton(actionCol, "Supprimer", 68, 20, 0, 0)
     deleteBtn:ClearAllPoints(); deleteBtn:SetPoint("TOP", editBtn, "BOTTOM", 0, -4)
-    if deleteBtn._fs then deleteBtn._fs:SetTextColor(1.0, 0.55, 0.42, 1) end
+    Theme.StyleButton(copyBtn, "primary")
+    Theme.StyleButton(deleteBtn, "danger")
 
     local upBtn = mkButton(actionCol, "Haut", 32, 20, 0, 0)
     upBtn:ClearAllPoints(); upBtn:SetPoint("BOTTOMLEFT", actionCol, "BOTTOMLEFT", 0, 0)
@@ -836,6 +853,7 @@ function ns.UI_BuildGrimoireTab(ctx)
 
   local function refresh(state)
     local techniques = Grimoire.GetTechniques(state)
+    header:SetText("Grimoire · " .. #techniques)
     emptyText:SetShown(#techniques == 0)
     for i = 1, #techniques do
       local technique = techniques[i]

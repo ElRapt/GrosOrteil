@@ -91,8 +91,8 @@ if MeterSync and MeterSync.Store and MeterSync.Get then
     local key = identityKey(sender)
     if key then
       exactMeterTotals[key] = {
-        dmg = math.max(0, math.floor(tonumber(dmg) or 0)),
-        heal = math.max(0, math.floor(tonumber(heal) or 0)),
+        dmg = MeterSync.SanitizeTotal(dmg),
+        heal = MeterSync.SanitizeTotal(heal),
       }
     end
     return originalStore(sender, dmg, heal)

@@ -177,6 +177,7 @@ function M.install()
   _G.MAX_PARTY_MEMBERS = 4
   _G.UISpecialFrames = {}
   _G.GetCVar = function() return "" end
+  _G.CreateColor = function(r, g, b, a) return {r = r, g = g, b = b, a = a or 1} end
   _G.print = print
 end
 

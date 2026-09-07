@@ -189,21 +189,7 @@ function ns.UI_BuildFicheTab(ctx)
     paramChild:SetScript("OnSizeChanged", centerContent)
 
     local function mkSectionHeader(text, y)
-      local lbl = cA:CreateFontString(nil, "OVERLAY")
-      lbl:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
-      lbl:SetPoint("TOP", cA, "TOP", 0, y)
-      lbl:SetWidth(BLOCK_W)
-      lbl:SetJustifyH("CENTER")
-      lbl:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
-      lbl:SetShadowOffset(1, -1)
-      lbl:SetShadowColor(0, 0, 0, 0.60)
-      lbl:SetText(text)
-      local ul = cA:CreateTexture(nil, "ARTWORK")
-      ul:SetTexture(TEX.FLAT)
-      ul:SetPoint("TOPLEFT",  cA, "TOPLEFT",  0, y - 18)
-      ul:SetPoint("TOPRIGHT", cA, "TOPRIGHT", 0, y - 18)
-      ul:SetHeight(1)
-      ul:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+      ns.Theme.SectionHeader(cA, text, y, BLOCK_W)
     end
     local function mkSep(y)
       local sep = paramChild:CreateTexture(nil, "ARTWORK")
@@ -255,22 +241,7 @@ function ns.UI_BuildFicheTab(ctx)
     local btn      = function(t,w,x,y,f) return mkButton(UI.lowerBlock, t, w, BTN_H, x, y+_LO, f) end
     local smallBtn = function(t,w,x,y,f) return mkButton(UI.lowerBlock, t, w, INPUT_H, x, y+_LO, f) end
     local mkSectionHeader = function(text, y)
-      local ay = y + _LO
-      local fstr = UI.lowerBlock:CreateFontString(nil, "OVERLAY")
-      fstr:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
-      fstr:SetPoint("TOP", UI.lowerBlock, "TOP", 0, ay)
-      fstr:SetWidth(BLOCK_W)
-      fstr:SetJustifyH("CENTER")
-      fstr:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
-      fstr:SetShadowOffset(1, -1)
-      fstr:SetShadowColor(0, 0, 0, 0.60)
-      fstr:SetText(text)
-      local ul = UI.lowerBlock:CreateTexture(nil, "ARTWORK")
-      ul:SetTexture(TEX.FLAT)
-      ul:SetPoint("TOPLEFT",  UI.lowerBlock, "TOPLEFT",  0, ay - 18)
-      ul:SetPoint("TOPRIGHT", UI.lowerBlock, "TOPRIGHT", 0, ay - 18)
-      ul:SetHeight(1)
-      ul:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+      ns.Theme.SectionHeader(UI.lowerBlock, text, y + _LO, BLOCK_W)
     end
     local mkSep = function(y)
       local ay = y + _LO
@@ -754,6 +725,7 @@ function ns.UI_BuildClassesTab(ctx)
       GameTooltip:Hide()
     end)
 
+    ns.Theme.AddHover(b)
     UI.classButtons[idx] = b
     return b
   end

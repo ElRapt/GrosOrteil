@@ -5,6 +5,8 @@ local Popup = {}
 ns.TargetPopup = Popup
 
 local Shared = ns.Shared
+local Theme = ns.Theme
+local C = Theme.Colors
 
 local _G = _G
 local type = type
@@ -497,6 +499,7 @@ local function createPopup()
   popupFrame = CreateFrame("Frame", "GrosOrteilTargetPopup", UIParent, "BackdropTemplate")
   popupFrame:SetSize(340, 236)
   popupFrame:SetFrameStrata("DIALOG")
+  popupFrame:SetClampedToScreen(true)
   popupFrame:SetMovable(true)
   popupFrame:EnableMouse(true)
   popupFrame:RegisterForDrag("LeftButton")
@@ -510,7 +513,7 @@ local function createPopup()
   -- Header plaque band with a gold underline and a class-colored accent.
   popupFrame.header = popupFrame:CreateTexture(nil, "BORDER")
   popupFrame.header:SetTexture("Interface\\Buttons\\WHITE8x8")
-  popupFrame.header:SetVertexColor(0.10, 0.075, 0.05, 0.92)
+  popupFrame.header:SetVertexColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], 0.92)
   popupFrame.header:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 10, -10)
   popupFrame.header:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -10, -10)
   popupFrame.header:SetHeight(46)
@@ -757,6 +760,7 @@ local function createPopup()
     Shared.MakeHpThresholdMarkers(popupFrame.hpRow.bar)
 
   popupFrame.closeButton = CreateFrame("Button", nil, popupFrame, "UIPanelCloseButton")
+  Theme.StyleClose(popupFrame.closeButton)
   popupFrame.closeButton:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -3, -2)
   popupFrame.closeButton:SetScript("OnClick", hidePopup)
 

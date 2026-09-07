@@ -46,9 +46,12 @@ end
 
 local function sanitize(v)
   v = tonumber(v) or 0
-  if v < 0 then return 0 end
-  return math.floor(v + 0.5)
+  if v ~= v or v == math.huge or v < 0 then return 0 end
+  -- Safe integer ceiling for WoW's double-based Lua numbers and %d formatting.
+  if v > 9007199254740991 then v = 9007199254740991 end
+  return math.min(9007199254740991, math.floor(v + 0.5))
 end
+MeterSync.SanitizeTotal = sanitize
 
 local function readLocalTotals()
   local state = Core and Core.state
@@ -118,8 +121,9 @@ function MeterSync.OnAddonMessage(msg, sender)
     return true
   end
 
-  local dmg, heal = type(msg) == "string"
-    and msg:match("^" .. MeterSync.STATE_CMD .. ":(%d+):(%d+)$")
+  if type(msg) ~= "string" then return false end
+  -- Boolean expressions collapse multiple returns in Lua; match directly.
+  local dmg, heal = msg:match("^" .. MeterSync.STATE_CMD .. ":(%d+):(%d+)$")
   if dmg and heal then
     MeterSync.Store(sender, dmg, heal)
     -- State-arrival callbacks drive RaidPanel relayouts. Reuse that path when

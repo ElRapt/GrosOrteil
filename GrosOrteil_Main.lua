@@ -88,7 +88,7 @@ local function initMinimapIcon()
           if ns.RaidPanel then ns.RaidPanel.Toggle() end
         else
           local shown = ns.UI and ns.UI.frame and ns.UI.frame:IsShown()
-          ns.UI_Show(not shown)
+          ns.UI_Show(not shown, true)
         end
       end,
       OnTooltipShow = function(tt)

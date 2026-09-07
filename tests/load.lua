@@ -44,6 +44,7 @@ local LIBS = {
 -- we never fire.
 local SOURCES = {
   "GrosOrteil_Shared.lua",
+  "GrosOrteil_Theme.lua",
   "GrosOrteil_History.lua",
   "GrosOrteil_Core.lua",
   "GrosOrteil_Grimoire.lua",
@@ -57,7 +58,7 @@ local SOURCES = {
   "GrosOrteil_RaidPanel.lua",
 }
 
-function M.load()
+function M.load(fullUI)
   local ns = {}
   -- Stand in for ns.GetDB so Core_Init has a savedvars target.
   rawset(_G, "GrosOrteilDB", {})
@@ -73,13 +74,23 @@ function M.load()
     loadAs(p, "GrosOrteil", ns)
   end
 
-  for _, rel in ipairs(SOURCES) do
+  local sources = SOURCES
+  if fullUI then
+    sources = {}
+    for line in io.lines(pathJoin(M.ROOT, "GrosOrteil.toc")) do
+      local file = line:match("^(GrosOrteil[^%s]+%.lua)%s*$")
+      if file then sources[#sources + 1] = file end
+    end
+  end
+  for _, rel in ipairs(sources) do
     local p = pathJoin(M.ROOT, rel)
     loadAs(p, "GrosOrteil", ns)
   end
 
-  if type(ns.Core_Init) == "function" then ns.Core_Init() end
-  if type(ns.Comm_Init) == "function" then ns.Comm_Init() end
+  if not fullUI then
+    if type(ns.Core_Init) == "function" then ns.Core_Init() end
+    if type(ns.Comm_Init) == "function" then ns.Comm_Init() end
+  end
   return ns
 end
 

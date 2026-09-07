@@ -4,6 +4,8 @@ local _, ns = ...
 local RaidPanel = {}
 ns.RaidPanel = RaidPanel
 
+local Theme = ns.Theme
+local C = Theme.Colors
 local Shared    = ns.Shared
 local RaidMeter = ns.RaidMeter  -- loaded just before this file (see .toc)
 
@@ -20,26 +22,26 @@ local UIParent    = rawget(_G, "UIParent")
 
 -- ── Layout constants ──────────────────────────────────────────────────────────
 
-local PANEL_W      = 360
-local PANEL_H      = 580
+local PANEL_W      = 380
+local PANEL_H      = 620
 local EDGE         = 4      -- gold tooltip-border inset around the board
-local WOOD         = 20     -- wooden rail thickness (bulletin-board frame)
-local PAD          = 8      -- gap between the rails and the cards
-local PLAQUE_H     = 30     -- header plaque height
-local FOOTER_H     = 14
+local WOOD         = 0      -- compact shell; no external wooden artwork
+local PAD          = 14      -- gap between the rails and the cards
+local PLAQUE_H     = 38     -- header plaque height
+local FOOTER_H     = 28
 local CONTENT_X    = EDGE + WOOD + PAD
 local SCROLL_W     = PANEL_W - CONTENT_X * 2
-local CARD_PAD     = 10
+local CARD_PAD     = 12
 local ACCENT_W     = 3      -- class-colored stripe on the left card edge
 local ICON_SIZE    = 16
 local BAR_W        = SCROLL_W - CARD_PAD * 2
-local ROW_H        = 15
-local ROW_GAP      = 3
-local NAME_H       = 16
+local ROW_H        = 17
+local ROW_GAP      = 4
+local NAME_H       = 20
 local STATUS_H     = 16
-local SECTION_GAP  = 7
-local CARD_TOP_PAD = 6
-local CARD_BOT_PAD = 7
+local SECTION_GAP  = 10
+local CARD_TOP_PAD = 10
+local CARD_BOT_PAD = 10
 local MAX_RES_BARS = 5
 
 -- Pet sub-cards: smaller, indented under the owner card, and never draggable
@@ -53,39 +55,28 @@ local PET_COLOR      = { 0.95, 0.62, 0.18 }   -- warm orange, same as the popup 
 local PET_DEAD_COLOR = { 0.50, 0.32, 0.10 }
 
 -- View switcher (Groupe / Compteur) and the meter view.
-local VIEWTAB_H   = 22
+local VIEWTAB_H   = 26
 local METERBAR_H  = 24
-local METER_ROW_H = 24
+local METER_ROW_H = 30
 local SCROLL_TOP_GROUP = EDGE + 6 + PLAQUE_H + 4 + VIEWTAB_H + PAD
 local SCROLL_TOP_METER = SCROLL_TOP_GROUP + METERBAR_H + 4
 local SCROLL_BOT       = EDGE + WOOD + 3 + FOOTER_H + 4
 
-local HP_COLOR        = { 0.85, 0.16, 0.18 }
+local HP_COLOR        = C.RED_HP
 local HP_DEAD_COLOR   = { 0.45, 0.08, 0.09 }
 local PLACEHOLDER_COL = { 0.30, 0.30, 0.32 }
-local NAME_DEFAULT    = { 0.95, 0.82, 0.30 }
-local CREAMY_BROWN    = { 0.48, 0.39, 0.32 }   -- TRP3's backdrop border color
-local GOLD            = { 1.00, 0.675, 0.125 }
-local CARD_BG         = { 0.085, 0.065, 0.045 }
+local NAME_DEFAULT    = C.TEXT_BRIGHT
+local CREAMY_BROWN    = C.GOLD_MUTED
+local GOLD            = C.GOLD
+local CARD_BG         = C.BROWN_DARK
 local BORDER_AGONIE   = { 0.78, 0.16, 0.13 }
 local BORDER_STAB     = { 0.28, 0.68, 0.30 }
 
 -- HP threshold markers (50% / 25% / 10%) — same definitions everywhere.
 local HP_MARKER_DEFS = Shared.HP_MARKER_DEFS
 
--- Cards are styled as tooltip "notes" pinned on the parchment board.
-local BACKDROP_CARD = {
-  bgFile   = "Interface\\Buttons\\WHITE8x8",
-  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-  edgeSize = 12,
-  insets   = { left = 3, right = 3, top = 3, bottom = 3 },
-}
-local BACKDROP_PLAQUE = {
-  bgFile   = "Interface\\Buttons\\WHITE8x8",
-  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-  edgeSize = 12,
-  insets   = { left = 3, right = 3, top = 3, bottom = 3 },
-}
+local BACKDROP_CARD = Theme.Backdrop
+local BACKDROP_PLAQUE = Theme.Backdrop
 
 -- ── Pure data extraction (testable offline, no WoW frames) ─────────────────────
 
@@ -434,6 +425,8 @@ local frame, scrollFrame, content, headerFs, countFs, fadeIn, fadeOut, hintFs, s
 local sectionPool    = {}
 local petPool        = {}
 local currentMembers = nil
+local pendingVisibility, pendingView
+local lifecycleFrame
 local pendingRelayout = false  -- a relayout was requested while in combat
 local currentSort, sortStateLoaded
 
@@ -489,12 +482,9 @@ end
 updateSortButton = function()
   if not sortButton then return end
   ensureSortState()
-  if sortButton._icon then
-    if currentSort then
-      sortButton._icon:SetVertexColor(1.00, 0.84, 0.30, 1)
-    else
-      sortButton._icon:SetVertexColor(0.62, 0.53, 0.42, 1)
-    end
+  if sortButton._text then
+    local rgb = currentSort and C.GOLD_LIGHT or C.TEXT_DIM
+    sortButton._text:SetTextColor(rgb[1], rgb[2], rgb[3], 1)
   end
 end
 
@@ -760,13 +750,7 @@ local function buildSection()
   statusFs:Hide()
   sec.statusFs = statusFs
   -- Soft pulse for the "EN AGONIE" state.
-  if statusFs.CreateAnimationGroup then
-    local pulse = statusFs:CreateAnimationGroup()
-    pulse:SetLooping("BOUNCE")
-    local a = pulse:CreateAnimation("Alpha")
-    a:SetFromAlpha(1); a:SetToAlpha(0.35); a:SetDuration(0.7)
-    sec.statusPulse = pulse
-  end
+  sec.statusPulse = Shared.MakePulse(statusFs)
 
   return sec
 end
@@ -1083,11 +1067,10 @@ local function ensureFrame()
   frame:EnableMouse(true)
   frame:SetToplevel(true)
   frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", function(f) f:StartMoving() end)
+  frame:SetScript("OnDragStart", function(f) if not inCombat() then f:StartMoving() end end)
   frame:SetScript("OnDragStop",  function(f) f:StopMovingOrSizing() end)
 
-  -- Bulletin-board skin shared with the main window and the radar:
-  -- parchment + creamy tooltip border + wooden rails + header plaque.
+  -- Shared slate shell and fine gold accents.
   Shared.ApplyBoardSkin(frame)
   Shared.ApplyBoardRails(frame)
 
@@ -1102,21 +1085,24 @@ local function ensureFrame()
   headerFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   headerFs:SetPoint("LEFT",  plaque, "LEFT",  10, 0)
   headerFs:SetJustifyH("LEFT")
-  headerFs:SetTextColor(1.00, 0.84, 0.30, 1)
+  headerFs:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
   headerFs:SetShadowColor(0, 0, 0, 0.8)
   headerFs:SetShadowOffset(1, -1)
   headerFs:SetText("Ressources du Groupe")
 
   local closeBtn = CreateFrame("Button", nil, plaque, "UIPanelCloseButton")
-  closeBtn:SetSize(24, 24)
+  closeBtn:SetSize(26, 26)
+  Theme.StyleClose(closeBtn)
   closeBtn:SetPoint("RIGHT", plaque, "RIGHT", -2, 0)
   closeBtn:SetScript("OnClick", function() RaidPanel.Hide() end)
 
   countFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   countFs:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
   countFs:SetJustifyH("RIGHT")
-  countFs:SetTextColor(0.78, 0.66, 0.46, 1)
+  countFs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
   countFs:SetText("")
+  headerFs:SetPoint("RIGHT", countFs, "LEFT", -8, 0)
+  headerFs:SetWordWrap(false)
 
   -- View switcher pinned under the plaque: Groupe (cards) / Compteur (meter).
   local tabW = math.floor((SCROLL_W - 6) / 2)
@@ -1133,7 +1119,7 @@ local function ensureFrame()
     b._text = fs
     b._view = view
     b:SetScript("OnClick", function()
-      if applyView and currentView ~= view then applyView(view) end
+      if applyView and (currentView ~= view or pendingView) then applyView(view) end
     end)
     b:SetScript("OnEnter", function(self)
       if currentView ~= view then self._text:SetTextColor(1.0, 0.90, 0.50, 1) end
@@ -1141,6 +1127,7 @@ local function ensureFrame()
     b:SetScript("OnLeave", function()
       if styleViewTabs then styleViewTabs() end
     end)
+    Theme.AddHover(b)
     viewTabs[#viewTabs + 1] = b
   end
   makeViewTab("Groupe",   "group", 0)
@@ -1191,6 +1178,7 @@ local function ensureFrame()
       local tip = rawget(_G, "GameTooltip")
       if tip then tip:Hide() end
     end)
+    Theme.AddHover(b)
     modeBtns[#modeBtns + 1] = b
   end
   makeModeBtn("Dégâts", "damage", 0)
@@ -1224,7 +1212,7 @@ local function ensureFrame()
   meterTotalFs = meterBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   meterTotalFs:SetPoint("RIGHT", resetBtn, "LEFT", -8, 0)
   meterTotalFs:SetJustifyH("RIGHT")
-  meterTotalFs:SetTextColor(1.00, 0.84, 0.30, 1)
+  meterTotalFs:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
   meterTotalFs:SetShadowColor(0, 0, 0, 0.8)
   meterTotalFs:SetShadowOffset(1, -1)
   meterTotalFs:SetText("")
@@ -1232,19 +1220,19 @@ local function ensureFrame()
   -- Ordinary addon-owned sort control, kept left of the 16x16 resize grip.
   -- It never inherits a secure template and only changes presentation state.
   sortButton = CreateFrame("Button", nil, frame, "BackdropTemplate")
-  sortButton:SetSize(28, 18)
-  sortButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -24, 24)
+  sortButton:SetSize(48, 24)
+  sortButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -24, 10)
   sortButton:SetFrameLevel((frame:GetFrameLevel() or 0) + 10)
   if sortButton.SetBackdrop then
     sortButton:SetBackdrop(BACKDROP_PLAQUE)
-    sortButton:SetBackdropColor(0.10, 0.075, 0.05, 0.95)
+    sortButton:SetBackdropColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], 0.95)
     sortButton:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 0.90)
   end
-  local sortIcon = sortButton:CreateTexture(nil, "ARTWORK")
-  sortIcon:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
-  sortIcon:SetSize(15, 15)
-  sortIcon:SetPoint("CENTER", sortButton, "CENTER", 0, 0)
-  sortButton._icon = sortIcon
+  local sortLabel = sortButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  sortLabel:SetPoint("CENTER", 0, 0)
+  sortLabel:SetText("Tri")
+  sortButton._text = sortLabel
+  Theme.StyleButton(sortButton)
   sortButton:SetHighlightTexture("Interface\\Buttons\\UI-Listbox-Highlight2")
   sortButton:SetScript("OnClick", function(self) openSortMenu(self) end)
   sortButton:SetScript("OnEnter", function(self)
@@ -1270,10 +1258,11 @@ local function ensureFrame()
   -- Footer hint just above the bottom rail (text set per view/drag state).
   hintFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   hintFs:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", CONTENT_X, EDGE + WOOD + 3)
-  hintFs:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -56, EDGE + WOOD + 3)
+  hintFs:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -80, EDGE + WOOD + 3)
   hintFs:SetHeight(FOOTER_H)
+  hintFs:SetWordWrap(true)
   hintFs:SetJustifyH("LEFT")
-  hintFs:SetTextColor(0.42, 0.34, 0.25, 1)
+  hintFs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
   hintFs:SetText("Clic g. : cibler  —  Clic d. : actions  —  Glisser : réordonner")
 
   scrollFrame = CreateFrame("ScrollFrame", "GrosOrteilRaidPanelScroll", frame)
@@ -1298,7 +1287,7 @@ local function ensureFrame()
 
   meterEmptyFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   meterEmptyFs:SetPoint("CENTER", scrollFrame, "CENTER", 0, 20)
-  meterEmptyFs:SetTextColor(0.55, 0.46, 0.36, 1)
+  meterEmptyFs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
   meterEmptyFs:Hide()
 
   -- Slim scroll indicator in the gap between the cards and the right rail.
@@ -1340,7 +1329,10 @@ local function ensureFrame()
 
   -- Gentle fade-in when the panel opens, fade-out when it closes.
   fadeIn  = Shared.MakeFadeIn(frame, 0.18)
-  fadeOut = Shared.MakeFadeOut(frame, 0.15)
+  fadeOut = Shared.MakeFadeOut(frame, 0.12, function()
+    if inCombat() then pendingVisibility = false; return false end
+    return true
+  end)
 
   -- Resize grip (drag = rescale, right-click = default), persisted per
   -- character. Vetoed in combat: rescaling would move the secure card
@@ -1365,6 +1357,9 @@ local function ensureFrame()
   -- Secure section buttons can't be moved/shown/re-attributed in combat, so a
   -- relayout requested during combat is deferred until combat ends. Roster
   -- changes re-pull the member list so joins/leaves show without reopening.
+  frame:HookScript("OnHide", function()
+    if dragging then stopCardDrag(dragging) end
+  end)
   frame:RegisterEvent("PLAYER_REGEN_ENABLED")
   frame:RegisterEvent("GROUP_ROSTER_UPDATE")
   frame:SetScript("OnEvent", function(_, event)
@@ -1500,15 +1495,15 @@ styleViewTabs = function()
   for _, b in ipairs(viewTabs) do
     local active = (b._view == currentView)
     if b.SetBackdropColor then
-      b:SetBackdropColor(0.10, 0.075, 0.05, active and 0.97 or 0.55)
+      b:SetBackdropColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], active and 0.97 or 0.55)
       if active then
         b:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
       else
         b:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
       end
     end
-    if active then b._text:SetTextColor(1.00, 0.84, 0.30, 1)
-    else           b._text:SetTextColor(0.62, 0.53, 0.42, 1) end
+    if active then b._text:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+    else           b._text:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1) end
   end
 end
 
@@ -1516,15 +1511,15 @@ styleModeBtns = function()
   for _, b in ipairs(modeBtns) do
     local active = (b._mode == meterMode)
     if b.SetBackdropColor then
-      b:SetBackdropColor(0.10, 0.075, 0.05, active and 0.97 or 0.45)
+      b:SetBackdropColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], active and 0.97 or 0.45)
       if active then
         b:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
       else
         b:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
       end
     end
-    if active then b._text:SetTextColor(1.00, 0.84, 0.30, 1)
-    else           b._text:SetTextColor(0.62, 0.53, 0.42, 1) end
+    if active then b._text:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+    else           b._text:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1) end
   end
 end
 
@@ -1542,6 +1537,7 @@ applyFooterHint = function()
 end
 
 applyView = function(view)
+  if inCombat() then pendingView = view; return end
   currentView = (view == "meter") and "meter" or "group"
   local isMeter = (currentView == "meter")
   if setScrollGeometry then
@@ -1670,6 +1666,8 @@ Refresh = function()
 end
 
 function RaidPanel.Show()
+  if inCombat() then pendingVisibility = true; return end
+  pendingVisibility = nil
   ensureFrame()
   if fadeOut then fadeOut:Stop() end  -- cancel a pending close fade
   Refresh()
@@ -1680,6 +1678,8 @@ function RaidPanel.Show()
 end
 
 function RaidPanel.Hide()
+  if inCombat() then pendingVisibility = false; return end
+  pendingVisibility = nil
   if not frame then return end
   if fadeOut and frame:IsShown() and not fadeOut:IsPlaying() then
     fadeOut:Play()
@@ -1689,6 +1689,12 @@ function RaidPanel.Hide()
 end
 
 function RaidPanel.Toggle()
+  if inCombat() then
+    local shown = pendingVisibility
+    if shown == nil then shown = frame and frame:IsShown() or false end
+    pendingVisibility = not shown
+    return
+  end
   -- A panel mid-fade-out counts as hidden, so toggling reopens it.
   if frame and frame:IsShown() and not (fadeOut and fadeOut:IsPlaying()) then
     RaidPanel.Hide()
@@ -1698,6 +1704,48 @@ function RaidPanel.Toggle()
 end
 
 function RaidPanel.Init()
+  if lifecycleFrame then return end
+  lifecycleFrame = CreateFrame("Frame")
+  lifecycleFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+  lifecycleFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+  lifecycleFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+      -- Escape uses an insecure Hide call; temporarily remove only our own
+      -- registration while the window has protected targeting descendants.
+      local specials = rawget(_G, "UISpecialFrames")
+      if type(specials) == "table" then
+        for i = #specials, 1, -1 do
+          if specials[i] == "GrosOrteilRaidPanel" then table.remove(specials, i) end
+        end
+      end
+      if frame then
+        frame:StopMovingOrSizing()
+        if fadeIn then fadeIn:Stop() end
+        if fadeOut and fadeOut:IsPlaying() then
+          pendingVisibility = false
+          fadeOut:Stop()
+        end
+        if dragging then stopCardDrag(dragging) end
+      end
+      return
+    end
+    if frame then
+      local specials = rawget(_G, "UISpecialFrames")
+      if type(specials) == "table" then
+        local found = false
+        for _, name in ipairs(specials) do if name == "GrosOrteilRaidPanel" then found = true end end
+        if not found then specials[#specials + 1] = "GrosOrteilRaidPanel" end
+      end
+    end
+    if pendingView then
+      local view = pendingView; pendingView = nil
+      if frame then applyView(view) end
+    end
+    if pendingVisibility ~= nil then
+      local show = pendingVisibility; pendingVisibility = nil
+      if show then RaidPanel.Show() else RaidPanel.Hide() end
+    end
+  end)
   if not ns.TargetPopup or not ns.TargetPopup.OnStateArrived then return end
   ns.TargetPopup.OnStateArrived(function(sender, _)
     if not frame or not frame:IsShown() then return end

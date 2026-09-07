@@ -28,70 +28,12 @@ local hideMarkers          = Shared.HideMarkers
 local positionMarkers      = Shared.PositionMarkers
 local roundPct             = Shared.RoundPct
 
--- ═══════════════════════════════════════════════════════════════════════════
--- Design System : GrosOrteil Premium Theme
--- Warm amber/gold palette inspired by TRP3's rich WoW-authentic aesthetic.
--- ═══════════════════════════════════════════════════════════════════════════
-local C = {
-  -- Gold family
-  GOLD          = { 1.00, 0.675, 0.125 },
-  GOLD_BRIGHT   = { 1.00, 0.82,  0.22  },
-  GOLD_LIGHT    = { 1.00, 0.90,  0.55  },
-  GOLD_DIM      = { 0.85, 0.70,  0.40  },
-  GOLD_MUTED    = { 0.55, 0.42,  0.18  },
-  -- Brown family
-  BROWN_DEEP    = { 0.08, 0.05,  0.02  },
-  BROWN_DARK    = { 0.14, 0.09,  0.04  },
-  BROWN_MED     = { 0.24, 0.17,  0.08  },
-  BROWN_WARM    = { 0.32, 0.24,  0.12  },
-  -- Cream / parchment
-  CREAM         = { 0.92, 0.86,  0.74  },
-  CREAM_DIM     = { 0.78, 0.72,  0.58  },
-  -- Text hierarchy
-  TEXT_TITLE    = { 1.00, 0.84,  0.30  },
-  TEXT_BRIGHT   = { 1.00, 0.95,  0.80  },
-  TEXT_NORMAL   = { 0.90, 0.84,  0.68  },
-  TEXT_LABEL    = { 0.82, 0.74,  0.55  },
-  TEXT_DIM      = { 0.60, 0.52,  0.36  },
-  TEXT_DISABLED = { 0.40, 0.34,  0.22  },
-  -- Functional
-  RED_HP        = { 0.80, 0.15,  0.15  },
-  BG_PANEL      = { 0.06, 0.04,  0.02  },
-}
-
-local TEX = {
-  FLAT        = "Interface/Buttons/WHITE8x8",
-  STATUSBAR   = "Interface/TargetingFrame/UI-StatusBar",
-  BG_STONE    = "Interface/DialogFrame/UI-DialogBox-Background",
-  BG_DARK     = "Interface/DialogFrame/UI-DialogBox-Background-Dark",
-  BORDER_GOLD = "Interface/DialogFrame/UI-DialogBox-Gold-Border",
-  TOOLTIP_BG  = "Interface/Tooltips/UI-Tooltip-Background",
-  TOOLTIP_BD  = "Interface/Tooltips/UI-Tooltip-Border",
-}
-
--- Reusable backdrop definitions.
-local BACKDROP_BUTTON = {
-  bgFile   = TEX.TOOLTIP_BG,
-  edgeFile = TEX.FLAT,
-  edgeSize = 2,
-  insets   = { left = 2, right = 2, top = 2, bottom = 2 },
-}
-local BACKDROP_EDITBOX = {
-  bgFile   = TEX.TOOLTIP_BG,
-  edgeFile = TEX.FLAT,
-  edgeSize = 1,
-  insets   = { left = 1, right = 1, top = 1, bottom = 1 },
-}
-local BACKDROP_SIDEBAR = {
-  bgFile   = TEX.BG_DARK,
-  edgeFile = TEX.FLAT,
-  tile = true, tileSize = 32, edgeSize = 1,
-  insets   = { left = 0, right = 0, top = 0, bottom = 0 },
-}
-local BACKDROP_TAB = {
-  edgeFile = TEX.FLAT,
-  edgeSize = 1,
-}
+-- Presentation shared by the main window, raid panel, grimoire and popups.
+local Theme = ns.Theme
+local C, TEX = Theme.Colors, Theme.Textures
+local BACKDROP_BUTTON = Theme.Backdrop
+local BACKDROP_SIDEBAR = Theme.Backdrop
+local BACKDROP_TAB = { edgeFile = TEX.FLAT, edgeSize = 1 }
 
 local function applyResTextColor(txt)
   if not txt or not txt.SetTextColor then return end
@@ -174,6 +116,11 @@ end
 
 local function updateWindowTitle()
   if not UI or not UI.title or not UI.title.SetText then return end
+  if UI.TAB_IDS and UI.activeTab and UI.activeTab >= UI.TAB_IDS.PET_MAIN then
+    local pet = Core and Core.state and Core.state.pet
+    UI.title:SetText(pet and pet.enabled and pet.name or "Familier")
+    return
+  end
   local profileName = getTRP3ProfileName()
   if profileName then
     UI.title:SetText(profileName)
@@ -249,12 +196,10 @@ local function mkEdit(parent, w, h, x, y, onEnter)
   end)
   eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
   eb:SetScript("OnEnterPressed", function(self)
-    self:ClearFocus()
-    if onEnter then onEnter() end
+    self:ClearFocus()  -- OnEditFocusLost commits exactly once.
   end)
 
   eb._wrap = wrap
-  eb.SetSize_orig = eb.SetSize
   return eb
 end
 
@@ -296,6 +241,7 @@ local function mkButton(parent, text, w, h, x, y, onClick)
   local origDisable = b.Disable
   function b:Disable()
     origDisable(self)
+    if self._goHover then self._goHover:Hide() end
     fs:SetTextColor(C.TEXT_DISABLED[1], C.TEXT_DISABLED[2], C.TEXT_DISABLED[3], 1)
     self:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.65)
     self:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.35)
@@ -306,9 +252,11 @@ local function mkButton(parent, text, w, h, x, y, onClick)
     fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
     self:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
     self:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
+    Theme.StyleButton(self, self._goRole)
   end
 
   if onClick then b:SetScript("OnClick", function() onClick() end) end
+  Theme.StyleButton(b)
   return b
 end
 
@@ -335,12 +283,13 @@ end
 local function skinBar(bar, r, g, b)
   bar:SetStatusBarTexture(TEX.STATUSBAR)
   bar:SetStatusBarColor(r, g, b, 1)
+  Theme.WatchBar(bar)
 
   -- Dark background with subtle warm tint.
   local barBg = bar:CreateTexture(nil, "BACKGROUND")
   barBg:SetAllPoints(bar)
   barBg:SetTexture(TEX.FLAT)
-  barBg:SetColorTexture(0.04, 0.03, 0.01, 0.92)
+  barBg:SetColorTexture(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 1)
   bar._bg = barBg
 
   -- Top-half sheen for depth / glass effect.
@@ -364,7 +313,7 @@ local function skinBar(bar, r, g, b)
   spark:SetTexture("Interface/CastingBar/UI-CastingBar-Spark")
   spark:SetBlendMode("ADD")
   spark:SetSize(12, bar:GetHeight() + 6)
-  spark:SetAlpha(0.55)
+  spark:SetAlpha(0.22)
   spark:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", 0, 0)
   bar._spark = spark
 
@@ -378,6 +327,7 @@ local function skinBar(bar, r, g, b)
 end
 
 function ns.UI_Init()
+  if UI.frame then return end
   local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
   db.ui = db.ui or { point = "CENTER", x = 0, y = 0, shown = true }
 
@@ -402,25 +352,26 @@ function ns.UI_Init()
     end
   end
 
-  local FRAME_W, FRAME_H = 880, 460
-  local MIN_W, MIN_H     = 680, 380
+  local FRAME_W, FRAME_H = 940, 580
+  local MIN_W, MIN_H     = 760, 460
   local MAX_W, MAX_H     = 1500, 1000
-  -- Board geometry: content sits inside the wooden rails, below the plaque.
-  local BODY_X      = 32   -- EDGE(4) + WOOD(20) + 8
-  local BODY_TOP    = 48   -- EDGE(4) + 6 + plaque(30) + 8
-  local BODY_BOTTOM = 30   -- EDGE(4) + WOOD(20) + 6
+  -- Fixed navigation and a flexible content surface below the header.
+  local BODY_X      = 16
+  local BODY_TOP    = 62
+  local BODY_BOTTOM = 38
   local applyContentHostLayout  -- forward declaration; defined below
   local activeSectionRef        -- forward declaration; assigned below with initial value
 
   -- Left sidebar navigation (vertical tabs) + right content area.
-  local SIDEBAR_W = 160
+  local SIDEBAR_W = 176
   local GUTTER = 12
   local CONTENT_W = FRAME_W - (BODY_X * 2) - SIDEBAR_W - GUTTER
 
   local frame = CreateFrame("Frame", "GrosOrteilFrame", UIParent, "BackdropTemplate")
   UI.frame = frame
   -- Clamp saved sizes from older versions that allowed a smaller minimum.
-  frame:SetSize(math.max(MIN_W, db.ui.w or FRAME_W), math.max(MIN_H, db.ui.h or FRAME_H))
+  frame:SetSize(math.max(MIN_W, math.min(MAX_W, tonumber(db.ui.w) or FRAME_W)),
+    math.max(MIN_H, math.min(MAX_H, tonumber(db.ui.h) or FRAME_H)))
 
   -- QoL: allow ESC to close the window.
   -- WoW closes frames listed in UISpecialFrames when pressing Escape.
@@ -457,18 +408,18 @@ function ns.UI_Init()
   frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
   frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
-    local point, _, _, x, y = self:GetPoint(1)
+    local point, _, relativePoint, x, y = self:GetPoint(1)
     if point then
-      db.ui.point, db.ui.x, db.ui.y = point, x or 0, y or 0
+      db.ui.point, db.ui.relativePoint, db.ui.x, db.ui.y = point, relativePoint, x or 0, y or 0
     end
   end)
 
-  -- Bulletin-board skin: parchment + creamy tooltip border + wooden rails.
+  -- Slate shell and restrained gold corner accents.
   Shared.ApplyBoardSkin(frame)
   Shared.ApplyBoardRails(frame)
 
   -- Header plaque pinned over the top rail (holds title + close button).
-  local plaque = Shared.MakePlaque(frame, 30)
+  local plaque = Shared.MakePlaque(frame, 42)
   UI.plaque = plaque
 
   -- Gentle fade-in whenever the window opens; fade-out when closed.
@@ -479,13 +430,22 @@ function ns.UI_Init()
   local fadeOut = Shared.MakeFadeOut(frame, 0.15)
   UI.fadeOut = fadeOut
 
-  frame:SetPoint(db.ui.point, UIParent, db.ui.point, db.ui.x, db.ui.y)
+  frame:SetPoint(db.ui.point, UIParent, db.ui.relativePoint or db.ui.point, db.ui.x, db.ui.y)
   if db.ui.shown then frame:Show() else frame:Hide() end
 
   -- Title: gold text on the plaque.
   local title = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   UI.title = title
-  title:SetPoint("LEFT", plaque, "LEFT", 10, 0)
+  title:SetPoint("LEFT", plaque, "LEFT", 38, -5)
+  title:SetWordWrap(false)
+  local brand = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  brand:SetPoint("TOPLEFT", 38, -1)
+  brand:SetText("G R O S O R T E I L")
+  brand:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  local crest = plaque:CreateTexture(nil, "ARTWORK")
+  crest:SetSize(26, 26); crest:SetPoint("LEFT", 2, 0)
+  crest:SetTexture("Interface/Icons/INV_Misc_Herb_Goldclover")
+  crest:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   title:SetJustifyH("LEFT")
   title:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
   title:SetShadowOffset(1, -1)
@@ -502,20 +462,20 @@ function ns.UI_Init()
 
   local close = CreateFrame("Button", nil, plaque, "UIPanelCloseButton")
   close:SetPoint("RIGHT", plaque, "RIGHT", -2, 0)
-  close:SetSize(24, 24)
+  close:SetSize(26, 26)
+  Theme.StyleClose(close)
   close:SetScript("OnClick", function()
-    if fadeOut and frame:IsShown() and not fadeOut:IsPlaying() then
-      fadeOut:Play()
-    else
-      frame:Hide()
-    end
+    ns.UI_Show(false, true)
   end)
 
   -- Plaque subtitle: current class (or "Familier"), right-aligned by the close button.
   local plaqueSub = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   plaqueSub:SetPoint("RIGHT", close, "LEFT", -6, 0)
   plaqueSub:SetJustifyH("RIGHT")
-  plaqueSub:SetTextColor(0.72, 0.62, 0.50, 1)
+  plaqueSub:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+  plaqueSub:SetWidth(140)
+  plaqueSub:SetWordWrap(false)
+  title:SetPoint("RIGHT", plaqueSub, "LEFT", -12, -5)
   plaqueSub:SetText("")
   UI.plaqueSub = plaqueSub
 
@@ -578,7 +538,7 @@ function ns.UI_Init()
       local top  = frame:GetTop()
       frame:ClearAllPoints()
       frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
-      db.ui.point, db.ui.x, db.ui.y = "TOPLEFT", left, top
+      db.ui.point, db.ui.relativePoint, db.ui.x, db.ui.y = "TOPLEFT", "BOTTOMLEFT", left, top
 
       resizing = true
       resizeOriginX, resizeOriginY = GetCursorPosition()
@@ -589,17 +549,22 @@ function ns.UI_Init()
     end
   end)
 
+  local function stopResize()
+    if not resizing then return end
+    grip:SetScript("OnUpdate", nil)
+    resizing = false
+    sizeLabel:Hide()
+    local w = math.floor(math.max(MIN_W, math.min(MAX_W, frame:GetWidth())))
+    local h = math.floor(math.max(MIN_H, math.min(MAX_H, frame:GetHeight())))
+    frame:SetSize(w, h)
+    db.ui.w, db.ui.h = w, h
+    if UI.resAnchor then applyContentHostLayout(UI.resAnchor, 0) end
+    if UI.syncHistoryWidth then UI.syncHistoryWidth() end
+  end
+  grip:SetScript("OnHide", stopResize)
   grip:SetScript("OnMouseUp", function(_, button)
-    if button == "LeftButton" and resizing then
-      grip:SetScript("OnUpdate", nil)
-      resizing = false
-      sizeLabel:Hide()
-      local w = math.floor(math.max(MIN_W, math.min(MAX_W, frame:GetWidth())))
-      local h = math.floor(math.max(MIN_H, math.min(MAX_H, frame:GetHeight())))
-      frame:SetSize(w, h)
-      db.ui.w, db.ui.h = w, h
-      if UI.resAnchor then applyContentHostLayout(UI.resAnchor, 0) end
-      if UI.syncHistoryWidth then UI.syncHistoryWidth() end
+    if button == "LeftButton" then
+      stopResize()
     elseif button == "RightButton" then
       frame:SetSize(FRAME_W, FRAME_H)
       db.ui.w, db.ui.h = FRAME_W, FRAME_H
@@ -618,6 +583,10 @@ function ns.UI_Init()
   frame:SetScript("OnKeyUp", propagate)
   frame:SetScript("OnChar",  propagate)
   frame:SetScript("OnKeyDown", function(self, key)
+    if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then
+      self:SetPropagateKeyboardInput(true)
+      return
+    end
     if IsControlKeyDown() and (key == "z" or key == "Z") and self:IsMouseOver() then
       self:SetPropagateKeyboardInput(false)
       if Core and Core.Undo then
@@ -693,7 +662,7 @@ function ns.UI_Init()
       function()
         if activeSectionRef.v == 2 then Core.PetRestoreHP() else Core.RestoreHP() end
       end)
-    iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -50, 34)
+    iconRestore:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -14, 4)
 
     local iconRegenHP = mkActionIcon(frame,
       "Interface/Icons/inv12_spell_nature_rejuvenation_empowered",
@@ -769,8 +738,7 @@ function ns.UI_Init()
   UI.updateSidebarEmblem(nil, false)
 
   -- ── Content area ──────────────────────────────────────────────────────
-  -- A second note card; the parchment gutter between the two cards is what
-  -- gives the "frames puzzled onto one board" look.
+  -- A separate content surface keeps the navigation visually distinct.
   local content = CreateFrame("Frame", nil, body, "BackdropTemplate")
   content:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", GUTTER, 0)
   content:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
@@ -884,7 +852,7 @@ function ns.UI_Init()
   -- ── HP Bar ─────────────────────────────────────────────────────────────
   local hpBar = CreateFrame("StatusBar", nil, content)
   UI.hpBar = hpBar
-  hpBar:SetHeight(24)
+  hpBar:SetHeight(28)
   hpBar:SetPoint("TOPLEFT", content, "TOPLEFT", 3, -3)
   hpBar:SetPoint("RIGHT", content, "RIGHT", -3, 0)
   hpBar:SetMinMaxValues(0, 1)
@@ -892,7 +860,7 @@ function ns.UI_Init()
   skinBar(hpBar, C.RED_HP[1], C.RED_HP[2], C.RED_HP[3])
 
   local hpText = hpBar:CreateFontString(nil, "OVERLAY")
-  hpText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+  hpText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
   UI.hpText = hpText
   hpText:SetPoint("CENTER")
   hpText:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
@@ -1235,6 +1203,7 @@ function ns.UI_Init()
       end
       return
     end
+    local changed = UI.activeTab ~= active
     UI.activeTab = active
 
     for i = 1, #UI.pages do
@@ -1290,6 +1259,10 @@ function ns.UI_Init()
       end
     end
 
+    if changed and UI.pages[active] then
+      Theme.MakeFadeIn(UI.pages[active], 0.14):Play()
+    end
+
     if active == TAB_IDS.PLAYER_HISTORY and UI.syncHistoryWidth then
       UI.syncHistoryWidth()
     end
@@ -1314,9 +1287,14 @@ function ns.UI_Init()
     "Affixes",          -- 11 familiar affixes
   }
 
-  local NAV_PAD = 5
-  local NAV_GAP = 1
-  local NAV_BTN_H = 30
+  local TAB_ICONS = {
+    "INV_Misc_Book_09", "INV_Misc_Rune_01", "INV_Chest_Plate01", "Ability_DualWield",
+    "Spell_Shadow_UnholyFrenzy", "INV_Misc_GroupLooking", "INV_Misc_Book_11", "INV_Misc_Note_01",
+    "Ability_Hunter_BeastTaming", "INV_Misc_Note_01", "Spell_Shadow_UnholyFrenzy",
+  }
+  local NAV_PAD = 8
+  local NAV_GAP = 4
+  local NAV_BTN_H = 34
 
   -- Short descriptions shown when hovering the sidebar tabs.
   local TAB_TIPS = {
@@ -1380,7 +1358,13 @@ function ns.UI_Init()
     sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.12)
 
     local fs = tab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    fs:SetPoint("LEFT",  tab, "LEFT",  14, 0)
+    local icon = tab:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(18, 18)
+    icon:SetPoint("LEFT", 12, 0)
+    icon:SetTexture("Interface/Icons/" .. TAB_ICONS[idx])
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    tab._icon = icon
+    fs:SetPoint("LEFT",  tab, "LEFT",  38, 0)
     fs:SetPoint("RIGHT", tab, "RIGHT", -8, 0)
     fs:SetJustifyH("LEFT")
     fs:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
@@ -1410,6 +1394,7 @@ function ns.UI_Init()
       tab:SetPoint("TOPLEFT", UI.tabs[idx - 1], "BOTTOMLEFT", 0, -NAV_GAP)
     end
 
+    Theme.AddHover(tab)
     UI.tabs[idx] = tab
     return tab
   end
@@ -1612,6 +1597,19 @@ function ns.UI_Init()
 
   refreshPopupToggleBtn()
 
+  local motionButton = mkButton(frame, "", 138, 22, 0, 0)
+  motionButton:ClearAllPoints()
+  motionButton:SetPoint("BOTTOMLEFT", 16, 8)
+  local function refreshMotion()
+    motionButton:SetText(Theme.MotionEnabled() and "Animations : oui" or "Animations : non")
+  end
+  motionButton:SetScript("OnClick", function()
+    Theme.SetReducedMotion(Theme.MotionEnabled())
+    refreshMotion()
+  end)
+  refreshMotion()
+  UI.motionButton = motionButton
+
   -- Reset-to-defaults button: text button centred in the sidebar.
   local resetBtn = mkButton(sidebar, "Réinitialiser", SIDEBAR_W - (NAV_PAD * 2), 24, 0, 0, function()
     if StaticPopup_Show then StaticPopup_Show("GROSORTEIL_RESET_DEFAULTS") end
@@ -1631,6 +1629,7 @@ function ns.UI_Init()
     GameTooltip:Show()
   end)
   resetBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  Theme.StyleButton(resetBtn, "danger")
   UI.resetBtn = resetBtn
 
   -- Decorative separator above section switcher.
@@ -1809,7 +1808,7 @@ function ns.UI_Init()
   end)
 end
 
-function ns.UI_Show(show)
+function ns.UI_Show(show, animate)
   local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
   db.ui = db.ui or {}
   db.ui.shown = not not show
@@ -1818,8 +1817,9 @@ function ns.UI_Show(show)
     if UI.fadeOut then UI.fadeOut:Stop() end
     UI.frame:Show()
   else
-    -- Fade out instead of vanishing (minimap-button and slash closes land here).
-    if UI.fadeOut and UI.frame:IsShown() and not UI.fadeOut:IsPlaying() then
+    -- The public API and slash commands settle visibility synchronously.
+    -- Pointer controls explicitly opt into the short closing transition.
+    if animate and UI.fadeOut and UI.frame:IsShown() and not UI.fadeOut:IsPlaying() then
       UI.fadeOut:Play()
     else
       UI.frame:Hide()
@@ -1830,7 +1830,7 @@ end
 function ns.UI_ResetPosition()
   local db = (ns.GetDB and ns.GetDB()) or rawget(_G, "GrosOrteilDBPC") or rawget(_G, "GrosOrteilDB") or {}
   db.ui = db.ui or {}
-  db.ui.point, db.ui.x, db.ui.y = "CENTER", 0, 0
+  db.ui.point, db.ui.relativePoint, db.ui.x, db.ui.y = "CENTER", "CENTER", 0, 0
   UI.frame:ClearAllPoints()
   UI.frame:SetPoint("CENTER")
 end
