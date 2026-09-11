@@ -415,7 +415,7 @@ function Shared.MakeBarFrame(parent, w, h)
 
   local bar = CreateFrame("StatusBar", nil, barFrame)
   bar:SetAllPoints(barFrame)
-  bar:SetStatusBarTexture(ns.Theme.Textures.STATUSBAR)
+  ns.Theme.StyleBar(bar)
   ns.Theme.WatchBar(bar)
   bar:SetMinMaxValues(0, 100)
   bar:SetValue(0)

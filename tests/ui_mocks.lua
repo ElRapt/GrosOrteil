@@ -8,6 +8,15 @@ local factors = {TOPLEFT={0,1}, TOP={.5,1}, TOPRIGHT={1,1}, LEFT={0,.5}, CENTER=
 local function guard(self, operation)
   if M.combat and self._protected then error("Protected mutation in combat: " .. operation, 3) end
 end
+local function textHeight(self, width)
+  local inset = self._callSetTextInsets or {0, 0, 0, 0}
+  local size, lines = self._fontSize or 12, 0
+  width = math.max(1, width - inset[1] - inset[2])
+  for line in (self:GetText() .. "\n"):gmatch("(.-)\n") do
+    lines = lines + math.max(1, math.ceil(#line * size * .5 / width))
+  end
+  return lines * size + inset[3] + inset[4]
+end
 function methods:RunScript(name, ...)
   if self._scripts[name] then self._scripts[name](self, ...) end
   for _, hook in ipairs(self._hooks[name] or {}) do hook(self, ...) end
@@ -26,7 +35,9 @@ function methods:GetRect(seen)
   seen[self] = true
   if self._scrollOwner and #self._points == 0 then
     local l,b,w,h = self._scrollOwner:GetRect(seen)
-    seen[self] = {l, b+h-(self._h or 0)+self._scrollOwner:GetVerticalScroll(), self._w or w, self._h or 0}
+    local width = self._w or w
+    local height = self._h or (self._multiline and textHeight(self, width)) or 0
+    seen[self] = {l, b+h-height+self._scrollOwner:GetVerticalScroll(), width, height}
     return unpack(seen[self])
   end
   local axes = {{}, {}}
@@ -141,7 +152,11 @@ function methods:ClearFocus()
   if M.focus == self then M.focus=nil; self:RunScript("OnEditFocusLost") end
 end
 function methods:HasFocus() return M.focus == self end
-function methods:GetStringHeight() return math.max(1,math.ceil(#self:GetText()*6/math.max(1,self:GetWidth())))*12 end
+function methods:SetMultiLine(value) self._multiline=value end
+function methods:GetStringHeight()
+  assert(self._kind == "FontString", "GetStringHeight belongs to FontString, not EditBox")
+  return textHeight(self, self:GetWidth())
+end
 function methods:GetFrameLevel() return self._level or (self._parent and self._parent:GetFrameLevel()+1) or 0 end
 function methods:SetFrameLevel(n) self._level=n end
 function methods:GetScale() return self._scale or 1 end
@@ -165,9 +180,19 @@ function methods:GetTexture() return self._texture end
 function methods:SetAtlas(a) self._atlas=a; return true end
 function methods:GetAtlas() return self._atlas end
 function methods:SetColorTexture(...) self._color={...} end
-function methods:SetVertexColor(...) self._color={...} end
+function methods:SetVertexColor(...) self._vertexColor={...} end
 function methods:SetTextColor(...) self._textColor={...} end
-function methods:SetBackdrop(b) self._backdrop=b end
+function methods:SetBackdrop(b)
+  guard(self,"SetBackdrop")
+  if b and self._backdropInfo == b then return end
+  if b and not b.bgFile and not b.edgeFile then b = nil end
+  self._backdropInfo = b
+  self._backdrop = nil
+  if b then
+    self._backdrop = {}
+    for key, value in pairs(b) do self._backdrop[key] = value end
+  end
+end
 function methods:SetBackdropColor(...) self._backdropColor={...} end
 function methods:SetBackdropBorderColor(...) self._borderColor={...} end
 function methods:SetFont(path,size,flags) self._fontSize=size; self._font=path end
@@ -227,7 +252,7 @@ for _,kind in ipairs({"Normal","Pushed","Highlight","Disabled","StatusBar"}) do
   methods["Get"..kind.."Texture"]=function(self) return self["_"..kind.."Texture"] end
 end
 -- Explicit visual/interaction methods outside this harness's simulation scope.
-for _,name in ipairs({"SetJustifyH","SetJustifyV","SetShadowColor","SetShadowOffset","SetFontObject","SetAutoFocus","SetNumeric","SetMultiLine","SetMaxLetters","SetMaxLines","SetWordWrap","SetNonSpaceWrap","SetHitRectInsets","SetPropagateMouseClicks","SetBlendMode","SetGradient","SetRotation","SetDesaturated","SetTexCoord","SetStatusBarColor","SetClampedToScreen","SetClipsChildren","SetMovable","EnableMouse","EnableMouseWheel","EnableKeyboard","SetToplevel","SetFrameStrata","SetMotionScriptsWhileDisabled","RegisterForDrag","RegisterForClicks","Raise","AddLine","AddMessage","SetOwner","ClearLines","SetUnit"}) do
+for _,name in ipairs({"SetJustifyH","SetJustifyV","SetShadowColor","SetShadowOffset","SetFontObject","SetAutoFocus","SetNumeric","SetBlinkSpeed","SetTextInsets","SetMaxLetters","SetMaxLines","SetWordWrap","SetNonSpaceWrap","SetHitRectInsets","SetPropagateMouseClicks","SetBlendMode","SetGradient","SetRotation","SetDesaturated","SetTexCoord","SetStatusBarColor","SetClampedToScreen","SetClipsChildren","SetMovable","EnableMouse","EnableMouseWheel","EnableKeyboard","SetToplevel","SetFrameStrata","SetMotionScriptsWhileDisabled","RegisterForDrag","RegisterForClicks","Raise","AddLine","AddMessage","SetOwner","ClearLines","SetUnit"}) do
   methods[name]=function(self,...) self["_call"..name]={...} end
 end
 function methods:StartMoving() guard(self,"StartMoving"); self._moving=true end
@@ -253,6 +278,37 @@ function M.install()
   _G.CreateFrame=M.new
   _G.UIParent=M.new("Frame"); UIParent._w,UIParent._h=1920,1080
   _G.GameTooltip=M.new("GameTooltip",nil,UIParent); GameTooltip:Hide()
+  local picker = M.new("Frame", "ColorPickerFrame", UIParent)
+  picker:Hide()
+  picker.Content = {ColorPicker = M.new("ColorSelect", nil, picker)}
+  picker.Footer = {OkayButton = M.new("Button", nil, picker), CancelButton = M.new("Button", nil, picker)}
+  function picker:GetColorRGB() return unpack(self._rgb) end
+  function picker:GetExtraInfo() return self.extraInfo end
+  function picker.Content.ColorPicker:SetColorRGB(r,g,b)
+    picker._rgb = {r,g,b}
+    if picker.swatchFunc then picker.swatchFunc() end
+  end
+  function picker:SetupColorPickerAndShow(info)
+    self.swatchFunc, self.cancelFunc, self.extraInfo = info.swatchFunc, info.cancelFunc, info.extraInfo
+    self.previousValues = {r=info.r, g=info.g, b=info.b, a=info.opacity}
+    self.hasOpacity = info.hasOpacity
+    self.Content.ColorPicker:SetColorRGB(info.r, info.g, info.b)
+    self:Show()
+  end
+  picker.Footer.OkayButton:SetScript("OnClick", function()
+    if picker.swatchFunc then picker.swatchFunc() end
+    picker:Hide()
+  end)
+  local function cancelColor()
+    if picker.cancelFunc then picker.cancelFunc(picker.previousValues) end
+    picker:Hide()
+  end
+  picker.Footer.CancelButton:SetScript("OnClick", cancelColor)
+  picker:SetScript("OnKeyDown", function(_, key) if key == "ESCAPE" then cancelColor() end end)
+  picker:RegisterEvent("GLOBAL_MOUSE_DOWN")
+  picker:SetScript("OnEvent", function()
+    if picker:IsShown() and not picker:IsMouseOver() then cancelColor() end
+  end)
   _G.StaticPopupDialogs={}; _G.SlashCmdList={}
   _G.StaticPopup_Show=function(name,_,_,data) M.popup={name=name,data=data} end
   M.reloads=0

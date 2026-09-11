@@ -4,6 +4,152 @@
 -- Each builder receives a `ctx` table with all needed upvalues and writes results
 -- into the ctx or directly into the ns.UI (UI) table.
 local _, ns = ...
+local Theme = ns.Theme
+
+function ns.UI_BuildThemesTab(ctx)
+  local UI, page, C = ns.UI, ctx.page, ctx.C
+  local scroll = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
+  scroll:SetPoint("TOPLEFT"); scroll:SetPoint("BOTTOMRIGHT", -22, 0)
+  local child = CreateFrame("Frame", nil, scroll)
+  child:SetSize(440, 802); scroll:SetScrollChild(child)
+  local function resize() child:SetWidth(math.max(440, scroll:GetWidth() - 12)) end
+  scroll:SetScript("OnSizeChanged", resize)
+  local controls = {}
+  local closePicker
+  UI.themeControls = controls
+  Theme.SectionHeader(child, "Thèmes et apparence", -10, 440)
+  local hint = ctx.mkLabel(child, "", 0, -38)
+  hint:SetWidth(440); hint:SetJustifyH("LEFT"); hint:SetWordWrap(true)
+  hint:SetText("Réglages enregistrés par personnage, séparément pour chaque thème. Les fenêtres se mettent à jour immédiatement hors combat.")
+  local status = ctx.mkLabel(child, "", 0, -76)
+  status:SetSize(440, 26); status:SetJustifyH("LEFT"); status:SetWordWrap(true)
+  Theme.BindColor(status, "SetTextColor", C.TEXT_DIM, 1)
+
+  local function refresh()
+    local tint = {r = C.GOLD[1], g = C.GOLD[2], b = C.GOLD[3]}
+    for key, control in pairs(controls) do
+      local value = key == "preset" and Theme.GetSelectedName() or Theme.GetOption(key)
+      if control.buttons then
+        for _, button in ipairs(control.buttons) do
+          local selected = button.value == value
+          if button.colors then
+            selected = true
+            for option, color in pairs(button.colors) do
+              if Theme.GetOption(option) ~= color then selected = false; break end
+            end
+          end
+          Theme.SetButtonSelected(button, selected and tint or false)
+        end
+      end
+      if control.edit and not control.edit:HasFocus() then control.edit:SetText(tostring(value)) end
+      if control.swatch then control.swatch:SetColorTexture(Theme.ColorRGB(value)) end
+    end
+    controls.decorations:SetText(Theme.GetOption("decorations") and "Décorations : activées" or "Décorations : masquées")
+    status:SetText(Theme.IsPending() and "Modifications enregistrées ; application à la fin du combat." or "Apparence à jour — aucun /reload nécessaire.")
+  end
+  UI.RefreshThemes = refresh
+
+  local function choices(key, title, y, values)
+    ctx.mkLabel(child, title, 0, y)
+    local control = {buttons = {}}
+    controls[key] = control
+    local width = math.floor((440 - (#values - 1) * 8) / #values)
+    for i, item in ipairs(values) do
+      local value = item[1]
+      local button = ctx.mkButton(child, item[2], width, 26, (i - 1) * (width + 8), y - 23, function()
+        if key == "preset" and closePicker then closePicker() end
+        if key == "preset" then Theme.SetName(value) else Theme.SetOption(key, value) end
+      end)
+      button.value = value
+      control.buttons[i] = button
+    end
+  end
+  choices("preset", "Thème de base", -106, {{"slate", "Slate (moderne)"}, {"legacy", "Legacy (classique)"}})
+  ctx.mkLabel(child, "Palettes de couleurs", 0, -168)
+  controls.palette = {buttons = {}}
+  for i, preset in ipairs(Theme.ColorPresets) do
+    local button = ctx.mkButton(child, preset.label, 216, 30,
+      ((i - 1) % 2) * 224, -191 - math.floor((i - 1) / 2) * 36, function()
+        if closePicker then closePicker() end
+        Theme.SetOptions(preset.colors)
+      end)
+    button.colors = preset.colors
+    controls.palette.buttons[i] = button
+    for j, key in ipairs({"backgroundColor", "borderColor", "accentColor"}) do
+      local swatch = button:CreateTexture(nil, "ARTWORK")
+      swatch:SetPoint("RIGHT", -8 - (3 - j) * 14, 0); swatch:SetSize(10, 14)
+      swatch:SetColorTexture(Theme.ColorRGB(preset.colors[key]))
+    end
+  end
+  choices("border", "Bordures", -318, {{"flat", "Droites"}, {"tooltip", "Classiques"}, {"none", "Aucune"}})
+  choices("background", "Fond des fenêtres", -414, {{"flat", "Uni"}, {"gradient", "Dégradé"}, {"textured", "Texturé"}})
+  choices("bars", "Texture des barres", -664, {{"flat", "Unie"}, {"classic", "Classique"}})
+
+  local function number(key, title, y)
+    ctx.mkLabel(child, title, 0, y - 4)
+    local edit
+    edit = ctx.mkEdit(child, 72, 22, 280, y, function()
+      local ok = Theme.SetOption(key, tonumber(edit:GetText()))
+      edit:SetText(tostring(Theme.GetOption(key)))
+      if not ok then status:SetText("Valeur invalide : utilisez un entier dans l’intervalle indiqué.") end
+    end)
+    controls[key] = {edit = edit}
+  end
+  number("borderSize", "Épaisseur des bordures (1–16)", -376)
+  number("opacity", "Opacité du fond (0–100 %)", -472)
+
+  local function colorPicker(key, title, y)
+    ctx.mkLabel(child, title, 0, y - 4)
+    local button = ctx.mkButton(child, "Choisir…", 142, 24, 280, y, function()
+      if closePicker then closePicker() end
+      local preset = Theme.GetSelectedName()
+      local original, customized = Theme.GetOption(key)
+      local r, g, b = Theme.ColorRGB(original)
+      local info = {r = r, g = g, b = b, hasOpacity = false}
+      info.extraInfo = info
+      local function ownsPicker()
+        return ColorPickerFrame:GetExtraInfo() == info
+      end
+      info.swatchFunc = function()
+        if ownsPicker() and Theme.GetSelectedName() == preset then
+          Theme.SetOption(key, Theme.ColorHex(ColorPickerFrame:GetColorRGB()))
+        end
+      end
+      info.cancelFunc = function()
+        if ownsPicker() and Theme.GetSelectedName() == preset then
+          if customized then Theme.SetOption(key, original) else Theme.ResetOptions(key) end
+        end
+      end
+      closePicker = function()
+        if ownsPicker() and ColorPickerFrame:IsShown() then
+          info.cancelFunc()
+          ColorPickerFrame:Hide()
+        end
+        closePicker = nil
+      end
+      ColorPickerFrame:SetupColorPickerAndShow(info)
+    end)
+    local swatch = button:CreateTexture(nil, "ARTWORK")
+    swatch:SetPoint("TOPRIGHT", -4, -4); swatch:SetSize(16, 16)
+    controls[key] = {button = button, swatch = swatch}
+  end
+  colorPicker("accentColor", "Couleur d’accent", -514)
+  colorPicker("backgroundColor", "Couleur du fond", -548)
+  colorPicker("borderColor", "Couleur des bordures", -582)
+  controls.decorations = ctx.mkButton(child, "", 240, 26, 0, -624, function()
+    Theme.SetOption("decorations", not Theme.GetOption("decorations"))
+  end)
+  local reset = ctx.mkButton(child, "Restaurer ce thème", 210, 28, 0, -728, function()
+    if closePicker then closePicker() end
+    Theme.ResetOptions()
+  end)
+  UI.themeResetButton = reset
+  local resetHint = ctx.mkLabel(child, "Restaure uniquement l’apparence du thème sélectionné.", 0, -768)
+  Theme.BindColor(resetHint, "SetTextColor", C.TEXT_DIM, 1)
+  page:SetScript("OnShow", function() resize(); refresh() end)
+  page:SetScript("OnHide", function() if closePicker then closePicker() end end)
+  refresh()
+end
 
 local PERCENTAGE_ERROR = "|cFF66CC66GrosOrteil|r Saisissez un pourcentage de -100 à -1 (dégâts) ou de 1 à 100 (soins)."
 local PERCENTAGE_TOOLTIP = "Modifie les PV de la fiche selon un pourcentage de son maximum : "
@@ -192,7 +338,7 @@ function ns.UI_BuildFicheTab(ctx)
       sep:SetPoint("TOPLEFT",  paramChild, "TOPLEFT",  16, y)
       sep:SetPoint("TOPRIGHT", paramChild, "TOPRIGHT", -16, y)
       sep:SetHeight(1)
-      sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.16)
+      Theme.BindColor(sep, "SetColorTexture", C.GOLD_MUTED, 0.16)
     end
 
     local function lbl(text, x, y)       mkLabel(cA, text, x, y + LBL_Y) end
@@ -246,7 +392,7 @@ function ns.UI_BuildFicheTab(ctx)
       sep:SetPoint("TOPLEFT",  contentParent, "TOPLEFT",  16, ay)
       sep:SetPoint("TOPRIGHT", contentParent, "TOPRIGHT", -16, ay)
       sep:SetHeight(1)
-      sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.16)
+      Theme.BindColor(sep, "SetColorTexture", C.GOLD_MUTED, 0.16)
     end
     mkSep(-178)
 
@@ -364,7 +510,7 @@ function ns.UI_BuildFicheTab(ctx)
       postureSection:SetPoint("TOP", contentParent, "TOP", 0, -986 + _LO)
       postureSection:SetWidth(BLOCK_W)
       postureSection:SetJustifyH("CENTER")
-      postureSection:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+      Theme.BindColor(postureSection, "SetTextColor", C.TEXT_TITLE, 1)
       postureSection:SetShadowOffset(1, -1); postureSection:SetShadowColor(0, 0, 0, 0.60)
       postureSection:SetText("Postures Élémentaires")
       UI.postureSectionLabel = postureSection
@@ -374,7 +520,7 @@ function ns.UI_BuildFicheTab(ctx)
       postureSepLine:SetPoint("TOPLEFT",  contentParent, "TOPLEFT",  0, -1004 + _LO)
       postureSepLine:SetPoint("TOPRIGHT", contentParent, "TOPRIGHT", 0, -1004 + _LO)
       postureSepLine:SetHeight(1)
-      postureSepLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+      Theme.BindColor(postureSepLine, "SetColorTexture", C.GOLD_MUTED, 0.40)
       UI.postureSepLine = postureSepLine
 
       UI.postureButtons = {}
@@ -452,7 +598,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
   header:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
   header:SetPoint("TOP", page, "TOP", 0, -14)
   header:SetJustifyH("CENTER")
-  header:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  Theme.BindColor(header, "SetTextColor", C.TEXT_TITLE, 1)
   header:SetShadowOffset(1, -1)
   header:SetShadowColor(0, 0, 0, 0.60)
   header:SetText("Affixes")
@@ -462,13 +608,13 @@ function ns.UI_BuildAffixesTab(ctx, opts)
   headerLine:SetPoint("TOPLEFT",  page, "TOPLEFT",  16, -34)
   headerLine:SetPoint("TOPRIGHT", page, "TOPRIGHT", -16, -34)
   headerLine:SetHeight(1)
-  headerLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.40)
+  Theme.BindColor(headerLine, "SetColorTexture", C.GOLD_MUTED, 0.40)
 
   local hint = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   hint:SetPoint("TOP", page, "TOP", 0, -44)
   hint:SetWidth(420)
   hint:SetJustifyH("CENTER")
-  hint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  Theme.BindColor(hint, "SetTextColor", C.TEXT_DIM, 1)
   hint:SetText("Cliquez pour activer ou désactiver un affixe : ses effets sont appliqués "
     .. (isPet and "immédiatement à la fiche du familier, indépendamment de ceux du personnage. "
                 or "immédiatement à la fiche. "))
@@ -524,7 +670,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
   turnHint:SetPoint("TOP", page, "TOP", 0, -192)
   turnHint:SetWidth(420)
   turnHint:SetJustifyH("CENTER")
-  turnHint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  Theme.BindColor(turnHint, "SetTextColor", C.TEXT_DIM, 1)
   turnHint:SetText("Les élixirs durent 3 tours. À la fin de chaque tour, cliquez sur\n"
     .. "« Tour suivant » pour le personnage et le familier.")
 
@@ -610,7 +756,7 @@ function ns.UI_BuildClassesTab(ctx)
     b.classKey = classKey
     b:SetBackdrop({ edgeFile = TEX.FLAT, edgeSize = 2,
                     insets = { left = 0, right = 0, top = 0, bottom = 0 } })
-    b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
+    Theme.BindColor(b, "SetBackdropBorderColor", C.BROWN_DEEP, 0.90)
 
     local row = (idx <= classBtnPerRow) and 1 or 2
     local idxInRow = (row == 1) and idx or (idx - classBtnPerRow)
@@ -637,7 +783,7 @@ function ns.UI_BuildClassesTab(ctx)
       if Core and Core.SetClassKey then Core.SetClassKey(classKey) end
     end)
     b:SetScript("OnEnter", function(self)
-      b:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
+      Theme.BindColor(b, "SetBackdropBorderColor", C.GOLD_BRIGHT, 1.0)
       local name = (Shared.CLASS_NAMES_FR and Shared.CLASS_NAMES_FR[classKey]) or classKey
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:ClearLines()
       GameTooltip:AddLine(name, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
@@ -658,9 +804,9 @@ function ns.UI_BuildClassesTab(ctx)
     b:SetScript("OnLeave", function()
       local ls = lastStateRef.v
       if ls and b.classKey == ls.classKey then
-        b:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
+        Theme.BindColor(b, "SetBackdropBorderColor", C.GOLD_BRIGHT, 1.0)
       else
-        b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
+        Theme.BindColor(b, "SetBackdropBorderColor", C.BROWN_DEEP, 0.90)
       end
       GameTooltip:Hide()
     end)
@@ -733,11 +879,10 @@ function ns.UI_BuildClassesTab(ctx)
     end
 
     local style = Shared.CLASS_STYLES and Shared.CLASS_STYLES[key]
-    local r, g, b = C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3]
-    if style then r, g, b = style.r, style.g, style.b end
+    local rgb = style and {style.r, style.g, style.b} or C.TEXT_TITLE
     cardName:SetText(Shared.GetClassNameFr(key))
-    cardName:SetTextColor(r, g, b, 1)
-    cardRule:SetColorTexture(r, g, b, 0.30)
+    Theme.BindColor(cardName, "SetTextColor", rgb, 1)
+    Theme.BindColor(cardRule, "SetColorTexture", rgb, 0.30)
 
     -- Resource lines: per-class profile, style label fallback, else "none".
     local lines = {}
@@ -755,11 +900,11 @@ function ns.UI_BuildClassesTab(ctx)
       local fs, line = cardLines[i], lines[i]
       if line then
         fs:SetText("•  " .. line.text)
-        fs:SetTextColor(line.r or 0.9, line.g or 0.84, line.b or 0.68, 1)
+        Theme.BindColor(fs, "SetTextColor", {line.r or 0.9, line.g or 0.84, line.b or 0.68}, 1)
         fs:Show()
       elseif i == 1 then
         fs:SetText("Aucune ressource")
-        fs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+        Theme.BindColor(fs, "SetTextColor", C.TEXT_DIM, 1)
         fs:Show()
       else
         fs:Hide()
@@ -796,14 +941,14 @@ function ns.UI_BuildHistoryTab(ctx)
 
   local histHeader = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   histHeader:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -2)
-  histHeader:SetTextColor(C.GOLD_DIM[1], C.GOLD_DIM[2], C.GOLD_DIM[3], 1)
+  Theme.BindColor(histHeader, "SetTextColor", C.GOLD_DIM, 1)
   histHeader:SetText("Historique des évènements")
   local histHeaderLine = page:CreateTexture(nil, "ARTWORK")
   histHeaderLine:SetTexture(TEX.FLAT)
   histHeaderLine:SetPoint("TOPLEFT", histHeader, "BOTTOMLEFT", 0, -2)
   histHeaderLine:SetPoint("RIGHT",   page,       "RIGHT",      -4, 0)
   histHeaderLine:SetHeight(1)
-  histHeaderLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.30)
+  Theme.BindColor(histHeaderLine, "SetColorTexture", C.GOLD_MUTED, 0.30)
 
   local sf = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
   sf:SetPoint("TOPLEFT",     histHeaderLine, "BOTTOMLEFT",  0, -4)
@@ -819,7 +964,7 @@ function ns.UI_BuildHistoryTab(ctx)
   txt:SetPoint("TOPLEFT", 0, 0)
   txt:SetJustifyH("LEFT"); txt:SetJustifyV("TOP")
   txt:SetWidth(CONTENT_W - 72)
-  txt:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
+  Theme.BindColor(txt, "SetTextColor", C.TEXT_NORMAL, 1)
   txt:SetText("")
   UI.historyText = txt
 
@@ -904,7 +1049,7 @@ function ns.UI_BuildPetFicheTab(ctx)
     lbl:SetPoint("TOPLEFT",  petContent, "TOPLEFT",  0, y)
     lbl:SetPoint("TOPRIGHT", petContent, "TOPRIGHT", 0, y)
     lbl:SetJustifyH("CENTER")
-    lbl:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+    Theme.BindColor(lbl, "SetTextColor", C.TEXT_TITLE, 1)
     lbl:SetShadowOffset(1, -1); lbl:SetShadowColor(0, 0, 0, 0.60)
     lbl:SetText(text)
   end
@@ -915,7 +1060,7 @@ function ns.UI_BuildPetFicheTab(ctx)
     sep:SetPoint("RIGHT", petContent, "RIGHT", -20, 0)
     sep:SetPoint("TOP",   petContent, "TOP",   0, y)
     sep:SetHeight(1)
-    sep:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.20)
+    Theme.BindColor(sep, "SetColorTexture", C.GOLD_MUTED, 0.20)
   end
 
   -- Pet panel uses a unified grid: anchor 380, col1 lbl@0 / EB@60 w70, col2 lbl@150 / EB@230 w70,
@@ -1070,14 +1215,14 @@ function ns.UI_BuildPetHistoryTab(ctx)
 
   local petHistHeader = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   petHistHeader:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -2)
-  petHistHeader:SetTextColor(C.GOLD_DIM[1], C.GOLD_DIM[2], C.GOLD_DIM[3], 1)
+  Theme.BindColor(petHistHeader, "SetTextColor", C.GOLD_DIM, 1)
   petHistHeader:SetText("Historique du familier")
   local petHistHeaderLine = page:CreateTexture(nil, "ARTWORK")
   petHistHeaderLine:SetTexture(TEX.FLAT)
   petHistHeaderLine:SetPoint("TOPLEFT", petHistHeader,     "BOTTOMLEFT",  0, -2)
   petHistHeaderLine:SetPoint("RIGHT",   page,              "RIGHT",       -4, 0)
   petHistHeaderLine:SetHeight(1)
-  petHistHeaderLine:SetColorTexture(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.30)
+  Theme.BindColor(petHistHeaderLine, "SetColorTexture", C.GOLD_MUTED, 0.30)
 
   local petSF = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
   petSF:SetPoint("TOPLEFT",     petHistHeaderLine, "BOTTOMLEFT",  0, -4)
@@ -1093,7 +1238,7 @@ function ns.UI_BuildPetHistoryTab(ctx)
   petTxt:SetPoint("TOPLEFT", 0, 0)
   petTxt:SetJustifyH("LEFT"); petTxt:SetJustifyV("TOP")
   petTxt:SetWidth(CONTENT_W - 72)
-  petTxt:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
+  Theme.BindColor(petTxt, "SetTextColor", C.TEXT_NORMAL, 1)
   petTxt:SetText("")
   UI.petHistoryText = petTxt
 
@@ -1319,10 +1464,10 @@ function ns.UI_BuildOnChangeCallback(ctx)
         if b and b.classKey then
           if b.classKey == s.classKey then
             b:SetAlpha(1)
-            b:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1.0)
+            Theme.BindColor(b, "SetBackdropBorderColor", C.GOLD_BRIGHT, 1.0)
           else
             b:SetAlpha(0.70)
-            b:SetBackdropBorderColor(0.08, 0.06, 0.02, 0.90)
+            Theme.BindColor(b, "SetBackdropBorderColor", C.BROWN_DEEP, 0.90)
           end
         end
       end
@@ -1367,12 +1512,12 @@ function ns.UI_BuildOnChangeCallback(ctx)
       if isDead then
         if s.stabilise then
           UI.stabiliseBtn:SetText("Stabilisé")
-          UI.stabiliseBtn:SetBackdropColor(0.05, 0.25, 0.05, 0.95)
-          UI.stabiliseBtn:SetBackdropBorderColor(0.20, 0.80, 0.20, 1.0)
+          Theme.BindColor(UI.stabiliseBtn, "SetBackdropColor", {0.05, 0.25, 0.05}, 0.95)
+          Theme.BindColor(UI.stabiliseBtn, "SetBackdropBorderColor", {0.20, 0.80, 0.20}, 1.0)
         else
           UI.stabiliseBtn:SetText("En agonie")
-          UI.stabiliseBtn:SetBackdropColor(0.25, 0.03, 0.03, 0.95)
-          UI.stabiliseBtn:SetBackdropBorderColor(0.85, 0.12, 0.12, 1.0)
+          Theme.BindColor(UI.stabiliseBtn, "SetBackdropColor", {0.25, 0.03, 0.03}, 0.95)
+          Theme.BindColor(UI.stabiliseBtn, "SetBackdropBorderColor", {0.85, 0.12, 0.12}, 1.0)
         end
       end
       if UI.lowerBlock and UI.ficheParamChild then

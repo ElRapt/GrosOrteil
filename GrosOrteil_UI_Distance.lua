@@ -15,7 +15,7 @@ local function label(parent, text, x, y, width, font, rgb)
   fs:SetWidth(width); fs:SetJustifyH("LEFT"); fs:SetJustifyV("TOP")
   fs:SetWordWrap(true)
   rgb = rgb or C.TEXT_NORMAL
-  fs:SetTextColor(rgb[1], rgb[2], rgb[3], 1)
+  Theme.BindColor(fs, "SetTextColor", rgb, 1)
   fs:SetText(text)
   return fs
 end
@@ -47,14 +47,14 @@ function Distance.Refresh(modeChanged)
     frame.hint:SetText(MODE_HINTS[Distance.mode])
     for mode, b in pairs(frame.modeButtons) do
       local rgb = mode == Distance.mode and C.GOLD or C.GOLD_MUTED
-      b:SetBackdropBorderColor(rgb[1], rgb[2], rgb[3], 1)
+      Theme.BindColor(b, "SetBackdropBorderColor", rgb, 1)
       local text = mode == Distance.mode and C.TEXT_TITLE or C.TEXT_NORMAL
-      b._fs:SetTextColor(text[1], text[2], text[3], 1)
+      Theme.BindColor(b._fs, "SetTextColor", text, 1)
     end
   end
   for _, row in ipairs(frame.categoryRows) do
     local rgb = result.category == row.key and C.TEXT_TITLE or C.TEXT_DIM
-    row.text:SetTextColor(rgb[1], rgb[2], rgb[3], 1)
+    Theme.BindColor(row.text, "SetTextColor", rgb, 1)
   end
 end
 
@@ -65,7 +65,7 @@ local function create()
   frame:SetSize(432, 468); frame:SetPoint("CENTER", UIParent, "CENTER", 180, 40)
   frame:SetFrameStrata("DIALOG"); frame:SetClampedToScreen(true)
   frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
-  Theme.ApplyNoteSkin(frame, 1)
+  Theme.ApplyBoardSkin(frame)
   frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
   frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
   label(frame, "Calculateur de distance", 18, -18, 354, "GameFontNormalLarge", C.TEXT_TITLE)

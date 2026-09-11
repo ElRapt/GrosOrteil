@@ -75,8 +75,6 @@ local BORDER_STAB     = { 0.28, 0.68, 0.30 }
 -- HP threshold markers (50% / 25% / 10%) — same definitions everywhere.
 local HP_MARKER_DEFS = Shared.HP_MARKER_DEFS
 
-local BACKDROP_CARD = Theme.Backdrop
-local BACKDROP_PLAQUE = Theme.Backdrop
 
 -- ── Pure data extraction (testable offline, no WoW frames) ─────────────────────
 
@@ -484,7 +482,7 @@ updateSortButton = function()
   ensureSortState()
   if sortButton._text then
     local rgb = currentSort and C.GOLD_LIGHT or C.TEXT_DIM
-    sortButton._text:SetTextColor(rgb[1], rgb[2], rgb[3], 1)
+    Theme.BindColor(sortButton._text, "SetTextColor", rgb, 1)
   end
 end
 
@@ -659,9 +657,9 @@ local function buildSection()
   local sec = CreateFrame("Button", nil, content, "SecureActionButtonTemplate, BackdropTemplate")
   sec:SetWidth(SCROLL_W)
   if sec.SetBackdrop then
-    sec:SetBackdrop(BACKDROP_CARD)
-    sec:SetBackdropColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 0.92)
-    sec:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+    Theme.BindBackdrop(sec)
+    Theme.BindColor(sec, "SetBackdropColor", CARD_BG, 0.92)
+    Theme.BindColor(sec, "SetBackdropBorderColor", CREAMY_BROWN, 0.90)
   end
   -- Both down and up must be registered: since 10.x, secure action buttons
   -- fire on the edge selected by the ActionButtonUseKeyDown cvar, so an
@@ -727,13 +725,13 @@ local function buildSection()
   -- and a tooltip here got in the way of click-to-target).
   sec:SetScript("OnEnter", function(self)
     if self.SetBackdropBorderColor then
-      self:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
+      Theme.BindColor(self, "SetBackdropBorderColor", GOLD, 1)
     end
   end)
   sec:SetScript("OnLeave", function(self)
     local c = self._borderColor or CREAMY_BROWN
     if self.SetBackdropBorderColor then
-      self:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 0.90)
+      Theme.BindColor(self, "SetBackdropBorderColor", c, c[4] or 0.90)
     end
   end)
 
@@ -777,7 +775,7 @@ local function updateSection(sec, data)
   end
 
   local col = data.nameColor or NAME_DEFAULT
-  sec.nameFs:SetTextColor(col[1], col[2], col[3], 1)
+  Theme.BindColor(sec.nameFs, "SetTextColor", col, 1)
   if data.classLabel and data.classLabel ~= "" then
     sec.nameFs:SetText(string.format("%s  |cffb0a08c— %s|r", shown or "?", data.classLabel))
   else
@@ -807,7 +805,7 @@ local function updateSection(sec, data)
   sec.accent:SetVertexColor(accentCol[1], accentCol[2], accentCol[3], 0.90)
   sec.rule:SetVertexColor(col[1], col[2], col[3], hasState and 0.30 or 0.12)
   if sec.SetBackdropBorderColor and not (sec.IsMouseOver and sec:IsMouseOver()) then
-    sec:SetBackdropBorderColor(borderCol[1], borderCol[2], borderCol[3], 0.90)
+    Theme.BindColor(sec, "SetBackdropBorderColor", borderCol, 0.90)
   end
   sec:SetAlpha(hasState and 1 or 0.65)
 
@@ -822,14 +820,14 @@ local function updateSection(sec, data)
     sec.hp.bar:SetMinMaxValues(0, maxHp)
     sec.hp.bar:SetValue(hp)
     local c = (data.hp == 0) and HP_DEAD_COLOR or HP_COLOR
-    sec.hp.bar:SetStatusBarColor(c[1], c[2], c[3], 1)
+    Theme.BindColor(sec.hp.bar, "SetStatusBarColor", c, 1)
     sec.hp.label:SetText(string.format("PV : %d / %d  (%d%%)",
       math.floor(data.hp + 0.5), math.floor(maxHp + 0.5), Shared.RoundPct(hp / maxHp)))
     applyMarkers(sec.hp, HP_MARKER_DEFS)
   else
     sec.hp.bar:SetMinMaxValues(0, 1)
     sec.hp.bar:SetValue(0)
-    sec.hp.bar:SetStatusBarColor(PLACEHOLDER_COL[1], PLACEHOLDER_COL[2], PLACEHOLDER_COL[3], 1)
+    Theme.BindColor(sec.hp.bar, "SetStatusBarColor", PLACEHOLDER_COL, 1)
     sec.hp.label:SetText("En attente...")
     hideMarkers(sec.hp)
   end
@@ -908,9 +906,9 @@ local function buildPetSection()
   local sec = CreateFrame("Button", nil, content, "SecureActionButtonTemplate, BackdropTemplate")
   sec:SetWidth(PET_W)
   if sec.SetBackdrop then
-    sec:SetBackdrop(BACKDROP_CARD)
-    sec:SetBackdropColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 0.85)
-    sec:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+    Theme.BindBackdrop(sec)
+    Theme.BindColor(sec, "SetBackdropColor", CARD_BG, 0.85)
+    Theme.BindColor(sec, "SetBackdropBorderColor", CREAMY_BROWN, 0.90)
   end
   sec:RegisterForClicks("AnyDown", "AnyUp")
   if sec.SetAttribute then
@@ -944,12 +942,12 @@ local function buildPetSection()
 
   sec:SetScript("OnEnter", function(self)
     if self.SetBackdropBorderColor then
-      self:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
+      Theme.BindColor(self, "SetBackdropBorderColor", GOLD, 1)
     end
   end)
   sec:SetScript("OnLeave", function(self)
     if self.SetBackdropBorderColor then
-      self:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+      Theme.BindColor(self, "SetBackdropBorderColor", CREAMY_BROWN, 0.90)
     end
   end)
 
@@ -984,7 +982,7 @@ local function updatePetSection(sec, data)
     sec:SetAttribute("unit", petUnit)  -- left-click targets the pet
   end
 
-  sec.nameFs:SetTextColor(PET_COLOR[1], PET_COLOR[2], PET_COLOR[3], 1)
+  Theme.BindColor(sec.nameFs, "SetTextColor", PET_COLOR, 1)
   sec.nameFs:SetText(string.format("%s  |cffb0a08c— Familier|r", pet.name or "Familier"))
 
   local top = CARD_TOP_PAD + PET_NAME_H + 3
@@ -995,7 +993,7 @@ local function updatePetSection(sec, data)
   sec.hp.bar:SetMinMaxValues(0, maxHp)
   sec.hp.bar:SetValue(hp)
   local c = (hp == 0) and PET_DEAD_COLOR or PET_COLOR
-  sec.hp.bar:SetStatusBarColor(c[1], c[2], c[3], 1)
+  Theme.BindColor(sec.hp.bar, "SetStatusBarColor", c, 1)
   sec.hp.label:SetText(string.format("PV : %d / %d  (%d%%)",
     math.floor(hp + 0.5), math.floor(maxHp + 0.5), Shared.RoundPct(hp / maxHp)))
 
@@ -1065,7 +1063,7 @@ local function createPanelControls()
     local b = CreateFrame("Button", nil, frame, "BackdropTemplate")
     b:SetSize(tabW, VIEWTAB_H)
     b:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_X + x, -(EDGE + 6 + PLAQUE_H + 4))
-    if b.SetBackdrop then b:SetBackdrop(BACKDROP_PLAQUE) end
+    if b.SetBackdrop then Theme.BindBackdrop(b) end
     local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("CENTER", b, "CENTER", 0, 0)
     fs:SetShadowColor(0, 0, 0, 0.8)
@@ -1077,7 +1075,7 @@ local function createPanelControls()
       if (currentView ~= view or pendingView) and applyView(view) then relayout() end
     end)
     b:SetScript("OnEnter", function(self)
-      if currentView ~= view then self._text:SetTextColor(1.0, 0.90, 0.50, 1) end
+      if currentView ~= view then Theme.BindColor(self._text, "SetTextColor", C.GOLD_LIGHT, 1) end
     end)
     b:SetScript("OnLeave", function()
       if styleViewTabs then styleViewTabs() end
@@ -1100,7 +1098,7 @@ local function createPanelControls()
     local b = CreateFrame("Button", nil, meterBar, "BackdropTemplate")
     b:SetSize(70, METERBAR_H - 4)
     b:SetPoint("LEFT", meterBar, "LEFT", x, 0)
-    if b.SetBackdrop then b:SetBackdrop(BACKDROP_PLAQUE) end
+    if b.SetBackdrop then Theme.BindBackdrop(b) end
     local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("CENTER", b, "CENTER", 0, 0)
     fs:SetShadowColor(0, 0, 0, 0.8)
@@ -1167,7 +1165,7 @@ local function createPanelControls()
   meterTotalFs = meterBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   meterTotalFs:SetPoint("RIGHT", resetBtn, "LEFT", -8, 0)
   meterTotalFs:SetJustifyH("RIGHT")
-  meterTotalFs:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  Theme.BindColor(meterTotalFs, "SetTextColor", C.TEXT_TITLE, 1)
   meterTotalFs:SetShadowColor(0, 0, 0, 0.8)
   meterTotalFs:SetShadowOffset(1, -1)
   meterTotalFs:SetText("")
@@ -1236,7 +1234,7 @@ local function ensureFrame()
   headerFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   headerFs:SetPoint("LEFT",  plaque, "LEFT",  10, 0)
   headerFs:SetJustifyH("LEFT")
-  headerFs:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  Theme.BindColor(headerFs, "SetTextColor", C.TEXT_TITLE, 1)
   headerFs:SetShadowColor(0, 0, 0, 0.8)
   headerFs:SetShadowOffset(1, -1)
   headerFs:SetText("Ressources du Groupe")
@@ -1250,7 +1248,7 @@ local function ensureFrame()
   countFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   countFs:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
   countFs:SetJustifyH("RIGHT")
-  countFs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  Theme.BindColor(countFs, "SetTextColor", C.TEXT_DIM, 1)
   countFs:SetText("")
   headerFs:SetPoint("RIGHT", countFs, "LEFT", -8, 0)
   headerFs:SetWordWrap(false)
@@ -1264,7 +1262,7 @@ local function ensureFrame()
   hintFs:SetHeight(FOOTER_H)
   hintFs:SetWordWrap(true)
   hintFs:SetJustifyH("LEFT")
-  hintFs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  Theme.BindColor(hintFs, "SetTextColor", C.TEXT_DIM, 1)
   hintFs:SetText("Clic g. : cibler  —  Clic d. : actions  —  Glisser : réordonner")
 
   scrollFrame = CreateFrame("ScrollFrame", "GrosOrteilRaidPanelScroll", frame)
@@ -1289,7 +1287,7 @@ local function ensureFrame()
 
   meterEmptyFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   meterEmptyFs:SetPoint("CENTER", scrollFrame, "CENTER", 0, 20)
-  meterEmptyFs:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  Theme.BindColor(meterEmptyFs, "SetTextColor", C.TEXT_DIM, 1)
   meterEmptyFs:Hide()
 
   -- Slim scroll indicator in the gap between the cards and the right rail.
@@ -1301,7 +1299,7 @@ local function ensureFrame()
   rail:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", PAD - 2, 0)
   rail:Hide()
   local thumb = frame:CreateTexture(nil, "ARTWORK", nil, 1)
-  thumb:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.55)
+  Theme.BindColor(thumb, "SetColorTexture", GOLD, 0.55)
   thumb:SetWidth(3)
   thumb:Hide()
 
@@ -1395,9 +1393,9 @@ local function getMeterRow(i)
   row = CreateFrame("Frame", nil, meterContent, "BackdropTemplate")
   row:SetSize(SCROLL_W, METER_ROW_H)
   if row.SetBackdrop then
-    row:SetBackdrop(BACKDROP_CARD)
-    row:SetBackdropColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 0.92)
-    row:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+    Theme.BindBackdrop(row)
+    Theme.BindColor(row, "SetBackdropColor", CARD_BG, 0.92)
+    Theme.BindColor(row, "SetBackdropBorderColor", CREAMY_BROWN, 0.90)
   end
   -- Class-colored fill, proportional to the top member's value.
   local fill = row:CreateTexture(nil, "BORDER")
@@ -1435,9 +1433,7 @@ layoutMeter = function()
   for i, r in ipairs(rows) do
     local row = getMeterRow(i)
     local style = Shared.CLASS_STYLES and Shared.CLASS_STYLES[r.classKey]
-    local cr, cg, cb
-    if style then cr, cg, cb = style.r, style.g, style.b
-    else cr, cg, cb = NAME_DEFAULT[1], NAME_DEFAULT[2], NAME_DEFAULT[3] end
+    local rgb = style and {style.r, style.g, style.b} or NAME_DEFAULT
     if r.classKey ~= "" then
       Shared.SetClassEmblem(row.icon, r.classKey)
       if row.icon.SetDesaturated then row.icon:SetDesaturated(false) end
@@ -1447,13 +1443,13 @@ layoutMeter = function()
       if row.icon.SetDesaturated then row.icon:SetDesaturated(true) end
     end
     row.name:SetText(string.format("%d.  %s", i, resolveDisplayName(r.name)))
-    row.name:SetTextColor(cr, cg, cb, 1)
+    Theme.BindColor(row.name, "SetTextColor", rgb, 1)
     row.value:SetText(string.format("%s — %d%%", fmtInt(r.value), math.floor(r.share * 100 + 0.5)))
-    row.value:SetTextColor(0.95, 0.90, 0.75, 1)
+    Theme.BindColor(row.value, "SetTextColor", C.TEXT_NORMAL, 1)
     local w = (result.maxValue > 0) and math.floor(fullW * (r.value / result.maxValue)) or 0
     if w < 1 then w = 1 end
     row.fill:SetWidth(w)
-    row.fill:SetVertexColor(cr, cg, cb, 0.28)
+    Theme.BindColor(row.fill, "SetVertexColor", rgb, 0.28)
     row:ClearAllPoints()
     row:SetPoint("TOPLEFT", meterContent, "TOPLEFT", 0, -y)
     row:Show()
@@ -1486,15 +1482,15 @@ styleViewTabs = function()
   for _, b in ipairs(viewTabs) do
     local active = (b._view == currentView)
     if b.SetBackdropColor then
-      b:SetBackdropColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], active and 0.97 or 0.55)
+      Theme.BindColor(b, "SetBackdropColor", C.BROWN_MED, active and 0.97 or 0.55)
       if active then
-        b:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
+        Theme.BindColor(b, "SetBackdropBorderColor", GOLD, 1)
       else
-        b:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+        Theme.BindColor(b, "SetBackdropBorderColor", CREAMY_BROWN, 0.90)
       end
     end
-    if active then b._text:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
-    else           b._text:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1) end
+    if active then Theme.BindColor(b._text, "SetTextColor", C.TEXT_TITLE, 1)
+    else           Theme.BindColor(b._text, "SetTextColor", C.TEXT_LABEL, 1) end
   end
 end
 
@@ -1502,15 +1498,15 @@ styleModeBtns = function()
   for _, b in ipairs(modeBtns) do
     local active = (b._mode == meterMode)
     if b.SetBackdropColor then
-      b:SetBackdropColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], active and 0.97 or 0.45)
+      Theme.BindColor(b, "SetBackdropColor", C.BROWN_MED, active and 0.97 or 0.45)
       if active then
-        b:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 1)
+        Theme.BindColor(b, "SetBackdropBorderColor", GOLD, 1)
       else
-        b:SetBackdropBorderColor(CREAMY_BROWN[1], CREAMY_BROWN[2], CREAMY_BROWN[3], 0.90)
+        Theme.BindColor(b, "SetBackdropBorderColor", CREAMY_BROWN, 0.90)
       end
     end
-    if active then b._text:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
-    else           b._text:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1) end
+    if active then Theme.BindColor(b._text, "SetTextColor", C.TEXT_TITLE, 1)
+    else           Theme.BindColor(b._text, "SetTextColor", C.TEXT_LABEL, 1) end
   end
 end
 
@@ -1596,7 +1592,7 @@ startCardDrag = function(sec)
     host:SetAllPoints(content)
     host:SetFrameLevel((content:GetFrameLevel() or 0) + 30)
     dropLine = host:CreateTexture(nil, "OVERLAY")
-    dropLine:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.90)
+    Theme.BindColor(dropLine, "SetColorTexture", GOLD, 0.90)
     dropLine:SetHeight(2)
   end
   dropLine:Show()

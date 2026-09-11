@@ -16,7 +16,7 @@ function ns.UI_BuildGrimoireTab(ctx)
   local mkEdit = ctx.mkEdit
   local setButtonEnabled = ctx.setButtonEnabled
   local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
-  local CARD_H, CARD_GAP = 150, 8
+  local CARD_MIN_H, CARD_GAP = 110, 8
 
   if not Grimoire then return end
 
@@ -90,8 +90,8 @@ function ns.UI_BuildGrimoireTab(ctx)
       bgFile = TEX.FLAT, edgeFile = TEX.FLAT, edgeSize = 2,
       insets = { left = 2, right = 2, top = 2, bottom = 2 },
     })
-    wrap:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.92)
-    wrap:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+    Theme.BindColor(wrap, "SetBackdropColor", C.BROWN_DEEP, 0.92)
+    Theme.BindColor(wrap, "SetBackdropBorderColor", C.GOLD_MUTED, 0.70)
 
     local edit
     if multiline then
@@ -102,7 +102,6 @@ function ns.UI_BuildGrimoireTab(ctx)
       edit:SetMultiLine(true)
       edit:SetAutoFocus(false)
       edit:SetFontObject("GameFontHighlight")
-      edit:SetHeight(40)
       scroll:SetScrollChild(edit)
       edit._scroll = scroll
 
@@ -120,18 +119,20 @@ function ns.UI_BuildGrimoireTab(ctx)
         if offset ~= scroll:GetVerticalScroll() then scroll:SetVerticalScroll(offset) end
         syncHitRect()
       end
-      local function syncMultilineSize()
-        local width = scroll:GetWidth() or 0
-        edit:SetWidth(math.max(40, width - 4))
-        local stringHeight = edit.GetStringHeight and edit:GetStringHeight() or 0
-        local visibleHeight = scroll:GetHeight() or 40
-        edit:SetHeight(math.max(40, visibleHeight, stringHeight + 12))
+      local function clampScroll()
         setScroll(scroll:GetVerticalScroll())
       end
-      scroll:SetScript("OnSizeChanged", syncMultilineSize)
+      local function syncWidth()
+        -- Multiline EditBoxes grow with their text. Fixing their height clips
+        -- the native caret and prevents the scroll frame from seeing overflow.
+        edit:SetWidth(math.max(40, scroll:GetWidth() - 4))
+        clampScroll()
+      end
+      scroll:HookScript("OnSizeChanged", syncWidth)
       scroll:HookScript("OnVerticalScroll", syncHitRect)
-      scroll:HookScript("OnScrollRangeChanged", syncHitRect)
-      edit:SetScript("OnTextChanged", syncMultilineSize)
+      scroll:HookScript("OnScrollRangeChanged", clampScroll)
+      edit:SetScript("OnSizeChanged", clampScroll)
+      edit:SetScript("OnTextChanged", clampScroll)
       edit:SetScript("OnCursorChanged", function(_, _, y, _, height)
         local cursorTop = -y
         local offset = scroll:GetVerticalScroll()
@@ -141,11 +142,21 @@ function ns.UI_BuildGrimoireTab(ctx)
           setScroll(cursorTop + height - scroll:GetHeight())
         end
       end)
-      edit:EnableMouseWheel(true)
-      edit:SetScript("OnMouseWheel", function(_, delta)
+      local function onMouseWheel(_, delta)
         setScroll(scroll:GetVerticalScroll() - delta * 36)
+      end
+      edit:EnableMouseWheel(true)
+      edit:SetScript("OnMouseWheel", onMouseWheel)
+      scroll:EnableMouseWheel(true)
+      scroll:SetScript("OnMouseWheel", onMouseWheel)
+      scroll:EnableMouse(true)
+      scroll:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then
+          edit:SetFocus()
+          edit:SetCursorPosition(#edit:GetText())
+        end
       end)
-      syncMultilineSize()
+      syncWidth()
     else
       edit = CreateFrame("EditBox", nil, wrap)
       edit:SetPoint("TOPLEFT", 6, -4)
@@ -159,14 +170,16 @@ function ns.UI_BuildGrimoireTab(ctx)
     edit:EnableMouse(true)
     if edit.SetPropagateMouseClicks then edit:SetPropagateMouseClicks(false) end
     edit:SetFontObject("GameFontHighlight")
-    edit:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
+    edit:SetBlinkSpeed(0.5)
+    edit:SetTextInsets(2, 2, 2, 2)
+    Theme.BindColor(edit, "SetTextColor", C.TEXT_BRIGHT, 1)
     edit:SetJustifyH("LEFT")
     if multiline then edit:SetJustifyV("TOP") end
     edit:SetScript("OnEditFocusGained", function()
-      wrap:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 0.90)
+      Theme.BindColor(wrap, "SetBackdropBorderColor", C.GOLD_BRIGHT, 0.90)
     end)
     edit:SetScript("OnEditFocusLost", function()
-      wrap:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+      Theme.BindColor(wrap, "SetBackdropBorderColor", C.GOLD_MUTED, 0.70)
     end)
     edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     edit._wrap = wrap
@@ -189,7 +202,7 @@ function ns.UI_BuildGrimoireTab(ctx)
 
     local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", dialog, "TOP", 0, -12)
-    title:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+    Theme.BindColor(title, "SetTextColor", C.TEXT_TITLE, 1)
     title:SetText("Copier la technique")
 
     local edit, wrap = makeTextEdit(dialog, true)
@@ -210,7 +223,7 @@ function ns.UI_BuildGrimoireTab(ctx)
 
     local hint = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     hint:SetPoint("TOP", wrap, "BOTTOM", 0, -7)
-    hint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+    Theme.BindColor(hint, "SetTextColor", C.TEXT_DIM, 1)
     hint:SetText("Le texte est sélectionné — appuyez sur Ctrl+C / Cmd+C.")
 
     local close = mkButton(dialog, "Fermer", 84, 22, 0, 0)
@@ -263,14 +276,14 @@ function ns.UI_BuildGrimoireTab(ctx)
 
     local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", dialog, "TOP", 0, -11)
-    title:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+    Theme.BindColor(title, "SetTextColor", C.TEXT_TITLE, 1)
     title:SetText("Choisir une icône")
 
     local iconCount = 0
     for i = 1, #IconCatalog do iconCount = iconCount + #(IconCatalog[i].icons or {}) end
     local subtitle = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
-    subtitle:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+    Theme.BindColor(subtitle, "SetTextColor", C.TEXT_DIM, 1)
     subtitle:SetText(tostring(iconCount) .. " icônes intégrées, classées par thème")
 
     local scroll = CreateFrame("ScrollFrame", nil, dialog, "UIPanelScrollFrameTemplate")
@@ -291,7 +304,7 @@ function ns.UI_BuildGrimoireTab(ctx)
 
       local categoryTitle = child:CreateFontString(nil, "OVERLAY", "GameFontNormal")
       categoryTitle:SetPoint("TOPLEFT", child, "TOPLEFT", startX, y)
-      categoryTitle:SetTextColor(C.GOLD_DIM[1], C.GOLD_DIM[2], C.GOLD_DIM[3], 1)
+      Theme.BindColor(categoryTitle, "SetTextColor", C.GOLD_DIM, 1)
       categoryTitle:SetText(categoryName)
       y = y - 22
 
@@ -307,8 +320,8 @@ function ns.UI_BuildGrimoireTab(ctx)
           bgFile = TEX.FLAT, edgeFile = TEX.FLAT, edgeSize = 2,
           insets = { left = 2, right = 2, top = 2, bottom = 2 },
         })
-        button:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.88)
-        button:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.55)
+        Theme.BindColor(button, "SetBackdropColor", C.BROWN_DARK, 0.88)
+        Theme.BindColor(button, "SetBackdropBorderColor", C.GOLD_MUTED, 0.55)
 
         local texture = button:CreateTexture(nil, "ARTWORK")
         texture:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -4)
@@ -321,7 +334,7 @@ function ns.UI_BuildGrimoireTab(ctx)
         local highlight = button:CreateTexture(nil, "HIGHLIGHT")
         highlight:SetAllPoints(button)
         highlight:SetTexture(TEX.FLAT)
-        highlight:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.14)
+        Theme.BindColor(highlight, "SetColorTexture", C.GOLD, 0.14)
 
         button._iconInfo = iconInfo
         button._categoryName = categoryName
@@ -379,9 +392,9 @@ function ns.UI_BuildGrimoireTab(ctx)
           button._texture:SetTexture(button._resolvedFile)
         end
         if selectedName and button._iconInfo.name == selectedName then
-          button:SetBackdropBorderColor(C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3], 1)
+          Theme.BindColor(button, "SetBackdropBorderColor", C.GOLD_BRIGHT, 1)
         else
-          button:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.55)
+          Theme.BindColor(button, "SetBackdropBorderColor", C.GOLD_MUTED, 0.55)
         end
       end
       self:Show()
@@ -423,7 +436,7 @@ function ns.UI_BuildGrimoireTab(ctx)
 
   local header = listView:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   header:SetPoint("TOPLEFT", listView, "TOPLEFT", 12, -8)
-  header:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  Theme.BindColor(header, "SetTextColor", C.TEXT_TITLE, 1)
   header:SetText("Grimoire")
 
   local addBtn = mkButton(listView, "Ajouter une technique", 168, 24, 0, 0)
@@ -435,7 +448,7 @@ function ns.UI_BuildGrimoireTab(ctx)
   hint:SetPoint("TOPLEFT", listView, "TOPLEFT", 12, -38)
   hint:SetPoint("TOPRIGHT", listView, "TOPRIGHT", -12, -38)
   hint:SetJustifyH("LEFT")
-  hint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  Theme.BindColor(hint, "SetTextColor", C.TEXT_DIM, 1)
   hint:SetText("Les coûts, dégâts / soins et utilisations sont purement informatifs ; rien n’est appliqué automatiquement.")
 
   local listScroll = CreateFrame("ScrollFrame", nil, listView, "UIPanelScrollFrameTemplate")
@@ -447,7 +460,7 @@ function ns.UI_BuildGrimoireTab(ctx)
 
   local emptyText = listChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   emptyText:SetPoint("TOP", listChild, "TOP", 0, -34)
-  emptyText:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  Theme.BindColor(emptyText, "SetTextColor", C.TEXT_DIM, 1)
   emptyText:SetText("Aucune technique. Commencez par en ajouter une.")
 
   local cards = {}
@@ -465,11 +478,10 @@ function ns.UI_BuildGrimoireTab(ctx)
 
   local function createCard(index)
     local card = CreateFrame("Frame", nil, listChild, "BackdropTemplate")
-    card:SetHeight(CARD_H)
-    card:SetPoint("TOPLEFT", listChild, "TOPLEFT", 0, -((index - 1) * (CARD_H + CARD_GAP)))
+    card:SetHeight(CARD_MIN_H)
     Theme.ApplyNoteSkin(card)
     local accent = card:CreateTexture(nil, "ARTWORK")
-    accent:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.8)
+    Theme.BindColor(accent, "SetColorTexture", C.GOLD, 0.8)
     accent:SetPoint("TOPLEFT", 1, -1); accent:SetPoint("BOTTOMLEFT", 1, 1); accent:SetWidth(2)
     if card.SetClipsChildren then card:SetClipsChildren(true) end
 
@@ -477,7 +489,7 @@ function ns.UI_BuildGrimoireTab(ctx)
     iconBg:SetSize(42, 42)
     iconBg:SetPoint("TOPLEFT", card, "TOPLEFT", 9, -9)
     iconBg:SetBackdrop({ edgeFile = TEX.FLAT, edgeSize = 1 })
-    iconBg:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.70)
+    Theme.BindColor(iconBg, "SetBackdropBorderColor", C.GOLD_MUTED, 0.70)
     local icon = iconBg:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT", iconBg, "TOPLEFT", 3, -3)
     icon:SetPoint("BOTTOMRIGHT", iconBg, "BOTTOMRIGHT", -3, 3)
@@ -489,31 +501,30 @@ function ns.UI_BuildGrimoireTab(ctx)
 
     local title = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", iconBg, "TOPRIGHT", 8, -1)
-    title:SetPoint("RIGHT", actionCol, "LEFT", -8, 0)
-    title:SetHeight(20)
+    title:SetPoint("TOPRIGHT", actionCol, "TOPLEFT", -8, -3)
     title:SetJustifyH("LEFT")
     title:SetJustifyV("TOP")
-    title:SetTextColor(C.TEXT_BRIGHT[1], C.TEXT_BRIGHT[2], C.TEXT_BRIGHT[3], 1)
-    if title.SetMaxLines then title:SetMaxLines(1) end
+    title:SetWordWrap(true)
+    title:SetNonSpaceWrap(true)
+    Theme.BindColor(title, "SetTextColor", C.TEXT_BRIGHT, 1)
 
     local desc = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    desc:SetPoint("TOPLEFT", iconBg, "TOPRIGHT", 8, -27)
-    desc:SetPoint("RIGHT", actionCol, "LEFT", -8, 0)
-    desc:SetHeight(51)
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    desc:SetPoint("TOPRIGHT", title, "BOTTOMRIGHT", 0, -6)
     desc:SetJustifyH("LEFT")
     desc:SetJustifyV("TOP")
     desc:SetWordWrap(true)
     desc:SetNonSpaceWrap(true)
-    desc:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
-    if desc.SetMaxLines then desc:SetMaxLines(3) end
+    Theme.BindColor(desc, "SetTextColor", C.TEXT_NORMAL, 1)
 
     local meta = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    meta:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 59, 9)
-    meta:SetPoint("RIGHT", actionCol, "LEFT", -8, 0)
-    meta:SetHeight(48)
+    meta:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -10)
+    meta:SetPoint("TOPRIGHT", desc, "BOTTOMRIGHT", 0, -10)
     meta:SetJustifyH("LEFT")
-    meta:SetJustifyV("BOTTOM")
-    meta:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+    meta:SetJustifyV("TOP")
+    meta:SetWordWrap(true)
+    meta:SetNonSpaceWrap(true)
+    Theme.BindColor(meta, "SetTextColor", C.TEXT_LABEL, 1)
 
     local copyBtn = mkButton(actionCol, "Copier", 68, 20, 0, 0)
     copyBtn:ClearAllPoints(); copyBtn:SetPoint("TOP", actionCol, "TOP", 0, 0)
@@ -562,15 +573,40 @@ function ns.UI_BuildGrimoireTab(ctx)
     return card
   end
 
-  local function layoutCards()
+  local function layoutCards(contentChanged)
+    if not listView:IsVisible() then return end
     local width = listScroll:GetWidth() or 0
     if width <= 0 then width = math.max(280, (ctx.CONTENT_W or 500) - 40) end
     width = math.max(260, width - 8)
-    listChild:SetWidth(width)
-    emptyText:SetWidth(math.max(180, width - 24))
-    for i = 1, #cards do cards[i]:SetWidth(width) end
+    if contentChanged or width ~= listChild:GetWidth() then
+      listChild:SetWidth(width)
+      emptyText:SetWidth(math.max(180, width - 24))
+      local totalHeight = 0
+      for _, card in ipairs(cards) do
+        if card._techniqueId then
+          card:SetWidth(width)
+          -- Measure after setting the width, without a height or line limit.
+          -- Titles and metadata can wrap too, especially at minimum width.
+          local textHeight = 0
+          for _, text in ipairs({card.title, card.desc, card.meta}) do
+            text:SetHeight(0)
+            local height = math.ceil(text:GetStringHeight())
+            text:SetHeight(height)
+            textHeight = textHeight + height
+          end
+          if totalHeight > 0 then totalHeight = totalHeight + CARD_GAP end
+          card:SetPoint("TOPLEFT", listChild, "TOPLEFT", 0, -totalHeight)
+          local height = math.max(CARD_MIN_H, 10 + textHeight + 6 + 10 + 10)
+          card:SetHeight(height)
+          totalHeight = totalHeight + height
+        end
+      end
+      listChild:SetHeight(math.max(90, totalHeight))
+    end
+    local range = math.max(0, listChild:GetHeight() - listScroll:GetHeight())
+    if listScroll:GetVerticalScroll() > range then listScroll:SetVerticalScroll(range) end
   end
-  listScroll:SetScript("OnSizeChanged", layoutCards)
+  listScroll:HookScript("OnSizeChanged", function() layoutCards() end)
 
   -- Editor view -------------------------------------------------------
   local editor = CreateFrame("Frame", nil, page)
@@ -579,13 +615,13 @@ function ns.UI_BuildGrimoireTab(ctx)
 
   local editorTitle = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   editorTitle:SetPoint("TOP", editor, "TOP", 0, -5)
-  editorTitle:SetTextColor(C.TEXT_TITLE[1], C.TEXT_TITLE[2], C.TEXT_TITLE[3], 1)
+  Theme.BindColor(editorTitle, "SetTextColor", C.TEXT_TITLE, 1)
 
   local formScroll = CreateFrame("ScrollFrame", nil, editor, "UIPanelScrollFrameTemplate")
   formScroll:SetPoint("TOPLEFT", editor, "TOPLEFT", 4, -34)
   formScroll:SetPoint("BOTTOMRIGHT", editor, "BOTTOMRIGHT", -22, 42)
   local formChild = CreateFrame("Frame", nil, formScroll)
-  formChild:SetHeight(480)
+  formChild:SetHeight(574)
   formScroll:SetScrollChild(formChild)
 
   local draft
@@ -593,27 +629,27 @@ function ns.UI_BuildGrimoireTab(ctx)
 
   local iconLabel = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   iconLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -7)
-  iconLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+  Theme.BindColor(iconLabel, "SetTextColor", C.TEXT_LABEL, 1)
   iconLabel:SetText("Icône")
 
   local iconBtn = CreateFrame("Button", nil, formChild, "BackdropTemplate")
   iconBtn:SetSize(48, 48)
   iconBtn:SetPoint("TOPLEFT", iconLabel, "BOTTOMLEFT", 0, -4)
   iconBtn:SetBackdrop({ edgeFile = TEX.FLAT, edgeSize = 2 })
-  iconBtn:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
+  Theme.BindColor(iconBtn, "SetBackdropBorderColor", C.GOLD_MUTED, 0.80)
   local iconPreview = iconBtn:CreateTexture(nil, "ARTWORK")
   iconPreview:SetPoint("TOPLEFT", iconBtn, "TOPLEFT", 4, -4)
   iconPreview:SetPoint("BOTTOMRIGHT", iconBtn, "BOTTOMRIGHT", -4, 4)
   local chooseIconText = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   chooseIconText:SetPoint("LEFT", iconBtn, "RIGHT", 9, 7)
-  chooseIconText:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
+  Theme.BindColor(chooseIconText, "SetTextColor", C.TEXT_NORMAL, 1)
   chooseIconText:SetText("Choisir une icône classique")
   local clearIconBtn = mkButton(formChild, "Retirer l’icône", 120, 20, 0, 0)
   clearIconBtn:ClearAllPoints(); clearIconBtn:SetPoint("TOPLEFT", iconBtn, "TOPRIGHT", 9, -25)
 
   local titleLabel = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   titleLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -82)
-  titleLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+  Theme.BindColor(titleLabel, "SetTextColor", C.TEXT_LABEL, 1)
   titleLabel:SetText("Titre *")
   local titleEdit, titleWrap = makeTextEdit(formChild, false)
   titleWrap:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -103)
@@ -623,45 +659,45 @@ function ns.UI_BuildGrimoireTab(ctx)
 
   local descLabel = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   descLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -139)
-  descLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+  Theme.BindColor(descLabel, "SetTextColor", C.TEXT_LABEL, 1)
   descLabel:SetText("Description")
   local descEdit, descWrap = makeTextEdit(formChild, true)
   descWrap:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -160)
   descWrap:SetPoint("TOPRIGHT", formChild, "TOPRIGHT", -10, -160)
-  descWrap:SetHeight(106)
+  descWrap:SetHeight(200)
 
   local costLabel = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  costLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -279)
-  costLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+  costLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -373)
+  Theme.BindColor(costLabel, "SetTextColor", C.TEXT_LABEL, 1)
   costLabel:SetText("Coût informatif")
   local costSelect = mkButton(formChild, "Aucun", 214, 24, 0, 0)
   costSelect:ClearAllPoints(); costSelect:SetPoint("TOPLEFT", costLabel, "BOTTOMLEFT", 0, -4)
   local amountLabel = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   amountLabel:SetPoint("LEFT", costSelect, "RIGHT", 12, 0)
-  amountLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+  Theme.BindColor(amountLabel, "SetTextColor", C.TEXT_LABEL, 1)
   amountLabel:SetText("Montant")
   local amountEdit = mkEdit(formChild, 68, 24, 0, 0)
   amountEdit._wrap:ClearAllPoints()
   amountEdit._wrap:SetPoint("LEFT", amountLabel, "RIGHT", 7, 0)
 
   local damageHealingLabel = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  damageHealingLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -341)
-  damageHealingLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+  damageHealingLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -435)
+  Theme.BindColor(damageHealingLabel, "SetTextColor", C.TEXT_LABEL, 1)
   damageHealingLabel:SetText("Dégâts / Soins (informatif)")
   local damageHealingEdit = makeTextEdit(formChild, false)
   damageHealingEdit._wrap:SetSize(104, 24)
-  damageHealingEdit._wrap:SetPoint("TOPLEFT", formChild, "TOPLEFT", 190, -335)
+  damageHealingEdit._wrap:SetPoint("TOPLEFT", formChild, "TOPLEFT", 190, -429)
   damageHealingEdit:SetNumeric(false)
   damageHealingEdit:SetMaxLetters(19)
   damageHealingEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
   local damageHealingHint = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   damageHealingHint:SetPoint("LEFT", damageHealingEdit._wrap, "RIGHT", 8, 0)
-  damageHealingHint:SetTextColor(C.TEXT_DIM[1], C.TEXT_DIM[2], C.TEXT_DIM[3], 1)
+  Theme.BindColor(damageHealingHint, "SetTextColor", C.TEXT_DIM, 1)
   damageHealingHint:SetText("ex. 120 ou 30-50")
 
   local usesLabel = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  usesLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -381)
-  usesLabel:SetTextColor(C.TEXT_LABEL[1], C.TEXT_LABEL[2], C.TEXT_LABEL[3], 1)
+  usesLabel:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -475)
+  Theme.BindColor(usesLabel, "SetTextColor", C.TEXT_LABEL, 1)
   usesLabel:SetText("Utilisations par mission")
   local usesMode = mkButton(formChild, "Illimité", 120, 24, 0, 0)
   usesMode:ClearAllPoints(); usesMode:SetPoint("TOPLEFT", usesLabel, "BOTTOMLEFT", 0, -4)
@@ -669,7 +705,7 @@ function ns.UI_BuildGrimoireTab(ctx)
   usesEdit._wrap:ClearAllPoints(); usesEdit._wrap:SetPoint("LEFT", usesMode, "RIGHT", 10, 0)
 
   local errorText = formChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  errorText:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -449)
+  errorText:SetPoint("TOPLEFT", formChild, "TOPLEFT", 10, -543)
   errorText:SetPoint("RIGHT", formChild, "RIGHT", -10, 0)
   errorText:SetJustifyH("LEFT")
   errorText:SetTextColor(1.0, 0.38, 0.25, 1)
@@ -694,14 +730,14 @@ function ns.UI_BuildGrimoireTab(ctx)
       local costLabelText, stale = costTextFor(Core and Core.state, draft.cost)
       costSelect:SetText(costLabelText)
       if stale and costSelect._fs then
-        costSelect._fs:SetTextColor(1.0, 0.55, 0.30, 1)
+        Theme.BindColor(costSelect._fs, "SetTextColor", C.DANGER, 1)
       elseif costSelect._fs then
-        costSelect._fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
+        Theme.BindColor(costSelect._fs, "SetTextColor", C.GOLD_LIGHT, 1)
       end
       amountEdit._wrap:Show(); amountLabel:Show()
     else
       costSelect:SetText("Aucun")
-      if costSelect._fs then costSelect._fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1) end
+      if costSelect._fs then Theme.BindColor(costSelect._fs, "SetTextColor", C.GOLD_LIGHT, 1) end
       amountEdit._wrap:Hide(); amountLabel:Hide()
     end
     if draft.usesPerMission then
@@ -883,32 +919,37 @@ function ns.UI_BuildGrimoireTab(ctx)
     if draft and editor:IsVisible() then refreshEditorSelectors(); return end
     if not listView:IsVisible() then return end
     local techniques = Grimoire.GetTechniques(state)
+    local contentChanged = false
     header:SetText("Grimoire · " .. #techniques)
     emptyText:SetShown(#techniques == 0)
     for i = 1, #techniques do
       local technique = techniques[i]
       local card = cards[i] or createCard(i)
-      card._techniqueId = technique.id
-      card.title:SetText(technique.title ~= "" and technique.title or "Technique sans titre")
-      card.desc:SetText(technique.description ~= "" and technique.description or "Aucune description.")
+      local title = technique.title ~= "" and technique.title or "Technique sans titre"
+      local description = technique.description ~= "" and technique.description or "Aucune description."
       local costText = costTextFor(state, technique.cost)
       local usesText = technique.usesPerMission and (tostring(technique.usesPerMission) .. " / mission") or "Illimité"
       local damageHealingText = Grimoire.FormatDamageHealing(technique) or "Aucun"
-      card.meta:SetText("Coût : " .. costText
+      local metadata = "Coût : " .. costText
         .. "\nDégâts / Soins : " .. damageHealingText
-        .. "\nUtilisations : " .. usesText)
+        .. "\nUtilisations : " .. usesText
+      if card._techniqueId ~= technique.id or card.title:GetText() ~= title
+          or card.desc:GetText() ~= description or card.meta:GetText() ~= metadata then
+        contentChanged = true
+      end
+      card._techniqueId = technique.id
+      card.title:SetText(title); card.desc:SetText(description); card.meta:SetText(metadata)
       applyIcon(card.icon, technique.icon)
       setButtonEnabled(card.upBtn, i > 1)
       setButtonEnabled(card.downBtn, i < #techniques)
       card:Show()
     end
     for i = #techniques + 1, #cards do
+      if cards[i]._techniqueId then contentChanged = true end
       cards[i]._techniqueId = nil
       cards[i]:Hide()
     end
-    local totalHeight = #techniques > 0 and (#techniques * CARD_H + (#techniques - 1) * CARD_GAP) or 90
-    listChild:SetHeight(totalHeight)
-    layoutCards()
+    layoutCards(contentChanged)
   end
 
   UI.grimoireRows = cards

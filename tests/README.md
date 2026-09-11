@@ -26,6 +26,15 @@ saved theme (which falls back to Slate). Removed-feature regressions now cover
 Beledar migration and harmless obsolete commands; Cambuse coverage is retained.
 They do not emulate Blizzard's rendering or taint engine.
 
+Theme picker regressions cover live previews, confirmation, exact cancellation,
+combat deferral and ownership of the shared native picker. Palette tests cover
+atomic validation, a single repaint, editable colors and selection derived from
+the current colors. Card layout tests cover full text, wrapping, resizing,
+reordering, deletion and clamping scroll position after content shrinks.
+Multiline EditBoxes
+grow from newlines and wrapping in the UI double; `GetStringHeight` is restricted
+to FontStrings so an invalid sizing path cannot silently pass again.
+
 Lifecycle regressions also cover canceling deferred first creation, latest queued
 view/visibility intent, combat-end layout counts, roster changes, secure target
 handlers, Escape registration and drag cleanup. Distance tests verify continued
@@ -39,16 +48,39 @@ Before merging UI changes, check in WoW with Lua errors and taint logging enable
 - Open `/go`, visit each page, change class and switch to a named pet. Confirm
   long RP names, numeric values and tooltips stay readable with and without TRP3.
 - Resize to the minimum and maximum sizes, close while dragging, and `/reload`.
-  Confirm position, dimensions and the footer's **Thème** preference persist.
-  Slate is the default. Select Legacy, then **Appliquer (/reload)** to restore
-  the former brown/gold appearance. Check all windows and return to Slate.
-  The selection persists per character; applying it is disabled in combat.
+  Confirm position, dimensions and preferences in the **Thèmes** tab persist.
+  Slate is the default. Switch to Legacy and back with the main, target, raid
+  and distance windows open; each should update without reloading. Try all
+  border and background styles, border thickness, opacity (including 0), bar
+  textures, decorations and the three **Choisir…** color buttons. The native
+  picker previews changes live without requiring TRP3. Confirm a color, then
+  try Cancel, Escape and clicking outside: each should restore the exact starting
+  appearance, including an untouched preset. Leaving the tab, switching presets
+  or resetting should close an unfinished picker. Another addon's picker must
+  remain usable when leaving the tab.
+  Check the Themes pigment icon and each of the six color palettes, including
+  **Noir & blanc**. A palette changes accent, background and border colors while
+  preserving border style, opacity and other appearance choices. Its highlight
+  should clear after a custom color edit and return if those colors match again.
+  Switching presets retains each preset's edits. **Restaurer ce thème** resets
+  only the selected preset's appearance. Invalid input retains the saved value.
+  In combat, edits are saved and applied together when combat ends; secure raid
+  targeting must keep working. Focused drafts and class/status colors must survive.
   In Legacy, check the character crest/name and footer controls are inset from
   the wood border at minimum size and with UI scaling. Move the window using
   its header; dragging selected text inside the body must not move the window.
 - Create, edit, reorder, copy and delete a grimoire entry; open the icon picker.
   Select just a few words with mouse drag or Shift+arrows, then replace them.
-  Check long descriptions, wheel/caret scrolling, Ctrl+A and Ctrl+Z/Ctrl+Y while
+  Confirm each card fits its entire title, description and metadata. Try short
+  text, long paragraphs, explicit newlines and unbroken words. Resize, edit,
+  reorder and delete: cards should grow/shrink and remain separated; shortening
+  the list while scrolled to its end must not leave an empty viewport.
+  In **Modifier**, check the larger description area
+  and visible blinking caret, including on empty text and at the final line.
+  Paste long paragraphs and many short lines; scroll using the wheel, scrollbar,
+  arrows, Home/End and Ctrl+Home/End. Resize, delete all text, then click the blank
+  viewport to resume typing. Verify both form and description scrollbars at the
+  minimum window size. Check Ctrl+A and Ctrl+Z/Ctrl+Y while
   typing. Change a selector or a character value before saving: title,
   description, damage/heal text, cost and use-count drafts must remain intact.
 - Use damage, healing, shields, postures and undo/redo. In **Valeur**, enter `15`
@@ -138,10 +170,30 @@ nothing). All unavailable paths need verification with the actual client.
 
 `GrosOrteil_Theme.lua` owns both palettes, surfaces and animation lifecycle.
 It initializes after SavedVariables load, before any UI is built, and preserves
-captured color-table references. A theme selection only changes saved settings;
-the explicit reload applies it to all windows, including protected raid frames.
-Existing `Shared` skin functions delegate to it, so UI builders do not need a
-second theme implementation. Use `Theme.AddHover` only on ordinary addon buttons,
+captured color-table references. `settings.theme` selects the preset;
+`settings.themeOptions[preset]` holds that preset's overrides, validated on read/write.
+The existing tab builders and controls provide the **Thèmes** page in a formerly
+unused navigation slot. Theme bindings retain current presentation on existing
+regions (including selected, disabled and focused colors), then repaint on a
+settings change. They do not rebuild frames, refresh Core or poll for changes.
+The tab uses Blizzard's [native color picker](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_ColorPickerFrame/Mainline/ColorPickerFrame.lua)
+callbacks and retains the existing hex overrides for storage. `GetOption` also
+reports whether a value is customized; `ResetOptions(key)` removes just that
+override so canceling a preview can restore the original preset exactly.
+Color presets are static recipes for those same three overrides. `SetOptions`
+validates the whole change before saving and repainting once; individual edits
+use that same path. No palette identifier or card heights are saved. Grimoire
+cards measure their existing FontStrings after setting the available width;
+the list's existing refresh/resize path stacks the resulting card heights.
+Combat defers application until `PLAYER_REGEN_ENABLED`, using the latest saved
+settings. Window insets fit either preset without moving controls on a switch.
+Backdrop descriptions are replaced because Blizzard's
+[`SetBackdrop`](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_SharedXML/Backdrop.lua)
+skips reapplying the same table identity. RGB tables remain stable.
+Existing `Shared` skin functions delegate to Theme. Use `Theme.BindColor` for
+every write to a palette-driven property, including a later class/status color;
+otherwise a stale binding would restore the earlier tint on a theme change.
+Use `Theme.AddHover` only on ordinary addon buttons,
 never on secure targeting buttons. `Theme.WatchBar` animates a texture; it never
 interpolates the authoritative bar value or replaces its event handler.
 

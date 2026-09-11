@@ -529,20 +529,20 @@ local function createPopup()
   popupFrame:SetScript("OnDragStop", popupFrame.StopMovingOrSizing)
 
   -- Dark tooltip-note skin, matching the cards pinned on the boards.
-  Theme.ApplyNoteSkin(popupFrame, 0.96)
+  Theme.ApplyBoardSkin(popupFrame)
   popupFrame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -56, 220)
 
   -- Header plaque band with a gold underline and a class-colored accent.
   popupFrame.header = popupFrame:CreateTexture(nil, "BORDER")
   popupFrame.header:SetTexture("Interface\\Buttons\\WHITE8x8")
-  popupFrame.header:SetVertexColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], 0.92)
+  Theme.BindColor(popupFrame.header, "SetVertexColor", C.BROWN_MED, 0.92)
   popupFrame.header:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 10, -10)
   popupFrame.header:SetPoint("TOPRIGHT", popupFrame, "TOPRIGHT", -10, -10)
   popupFrame.header:SetHeight(46)
 
   popupFrame.headerLine = popupFrame:CreateTexture(nil, "BORDER", nil, 1)
   popupFrame.headerLine:SetTexture("Interface\\Buttons\\WHITE8x8")
-  popupFrame.headerLine:SetVertexColor(1.00, 0.675, 0.125, 0.35)
+  Theme.BindColor(popupFrame.headerLine, "SetVertexColor", C.GOLD, 0.35)
   popupFrame.headerLine:SetPoint("TOPLEFT",  popupFrame.header, "BOTTOMLEFT",  0, 0)
   popupFrame.headerLine:SetPoint("TOPRIGHT", popupFrame.header, "BOTTOMRIGHT", 0, 0)
   popupFrame.headerLine:SetHeight(1)
@@ -621,7 +621,7 @@ local function createPopup()
   for i = 1, #Shared.RANGED_ATTACKS do
     local line = popupFrame.rangedPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     line:SetPoint("TOPLEFT", popupFrame.rangedPanel, "TOPLEFT", 0, -(i - 1) * 20)
-    line:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
+    Theme.BindColor(line, "SetTextColor", C.TEXT_NORMAL, 1)
     popupFrame.rangedLines[i] = line
   end
 
@@ -1413,7 +1413,7 @@ local function createHoverPopup()
   hoverFrame:SetWidth(HOVER_BAR_W + HOVER_PAD * 2)
   hoverFrame:SetHeight(HOVER_PAD * 2 + HOVER_BAR_H)
   -- Same dark tooltip-note skin as the rest of the addon.
-  Theme.ApplyNoteSkin(hoverFrame, 0.94)
+  Theme.ApplyBoardSkin(hoverFrame)
 
   -- Quick fade-in when the hover first appears (not on refreshes), and
   -- fade-out when the mouse leaves.
