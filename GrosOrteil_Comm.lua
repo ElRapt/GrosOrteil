@@ -105,20 +105,13 @@ local function packWounds(w)
   }
 end
 
-local function packRangedAttacks(src, out)
-  for range, field in pairs({ courte = "attaqueDistanceCourte",
-      moyenne = "attaqueDistanceMoyenne", longue = "attaqueDistanceLongue" }) do
-    if ns.Core and ns.Core.GetRangedAttack then
-      out[field] = ns.Core.GetRangedAttack(src, range)
-    else
-      out[field] = tonumber(src[field]) or tonumber(src.attaqueDistance) or 0
-    end
-  end
+local function receivedRange(value, fallback)
+  if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then return fallback end
+  return math.max(0, math.min(1e9, value))
 end
 
 local function buildPayload(src, petSrc, classKey)
   local out = copyNumeric(src, NUMERIC_FIELDS)
-  packRangedAttacks(src, out)
   out.wounds   = packWounds(src.wounds)
   out.stabilise = src.stabilise and true or false
   out.classKey = classKey
@@ -149,7 +142,6 @@ local function buildPayload(src, petSrc, classKey)
   }
 
   local pet = copyNumeric(petSrc, PET_NUMERIC_FIELDS)
-  packRangedAttacks(petSrc, pet)
   pet.enabled          = not not petSrc.enabled
   pet.authorityEnabled = not not petSrc.authorityEnabled
   pet.name             = type(petSrc.name) == "string" and petSrc.name or "Familier"
@@ -174,7 +166,12 @@ local function packStatePayload(s)
       classKey = unitClass
     end
   end
-  return buildPayload(s, p, classKey)
+  local out = buildPayload(s, p, classKey)
+  for _, def in ipairs(ns.Shared.RANGED_ATTACKS) do
+    out[def.field] = ns.Core.GetRangedAttack(s, def.key)
+    out.pet[def.field] = ns.Core.GetRangedAttack(p, def.key)
+  end
+  return out
 end
 
 function Comm.SerializeState(state)
@@ -227,7 +224,13 @@ function Comm:DeserializeState(cmd, payload, sender)
 
     local decodedPet = type(decoded.pet) == "table" and decoded.pet or {}
     local classKey = type(decoded.classKey) == "string" and decoded.classKey or nil
-    return buildPayload(decoded, decodedPet, classKey)
+    local out = buildPayload(decoded, decodedPet, classKey)
+    -- Peers send effective values, never local bases or bonus bookkeeping.
+    for _, def in ipairs(ns.Shared.RANGED_ATTACKS) do
+      out[def.field] = receivedRange(decoded[def.field], receivedRange(decoded.attaqueDistance, 0))
+      out.pet[def.field] = receivedRange(decodedPet[def.field], receivedRange(decodedPet.attaqueDistance, 0))
+    end
+    return out
   end
 
   if cmd == "STATE_DATA_PART" or cmd == "STATE_DATA_COMPRESSED_PART" then

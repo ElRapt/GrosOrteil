@@ -50,7 +50,6 @@ local SOURCES = {
   "GrosOrteil_Core.lua",
   "GrosOrteil_Grimoire.lua",
   "GrosOrteil_GrimoireIcons.lua",
-  "GrosOrteil_PercentageHeal.lua",
   "GrosOrteil_UI_Grimoire.lua",
   "GrosOrteil_Comm.lua",
   "GrosOrteil_TargetPopup.lua",

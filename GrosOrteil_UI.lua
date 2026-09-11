@@ -31,7 +31,6 @@ local roundPct             = Shared.RoundPct
 -- Presentation shared by the main window, raid panel, grimoire and popups.
 local Theme = ns.Theme
 local C, TEX = Theme.Colors, Theme.Textures
-local BACKDROP_BUTTON = Theme.Backdrop
 local BACKDROP_SIDEBAR = Theme.Backdrop
 local BACKDROP_TAB = { edgeFile = TEX.FLAT, edgeSize = 1 }
 
@@ -208,20 +207,9 @@ local function mkButton(parent, text, w, h, x, y, onClick)
   local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
   b:SetSize(w, h)
   b:SetPoint("TOPLEFT", x, y)
-  b:SetBackdrop(BACKDROP_BUTTON)
-  b:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
-  b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
-
-  -- Highlight overlay (warm glow on hover).
-  local hl = b:CreateTexture(nil, "HIGHLIGHT")
-  hl:SetAllPoints()
-  hl:SetTexture(TEX.FLAT)
-  hl:SetColorTexture(1.0, 0.80, 0.30, 0.10)
-
   -- Text label.
   local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   fs:SetPoint("CENTER", 0, 0)
-  fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
   fs:SetText(text)
   b._fs = fs
 
@@ -236,24 +224,6 @@ local function mkButton(parent, text, w, h, x, y, onClick)
   b:SetScript("OnMouseUp", function()
     fs:SetPoint("CENTER", 0, 0)
   end)
-
-  -- Disabled/enabled state visual overrides.
-  local origDisable = b.Disable
-  function b:Disable()
-    origDisable(self)
-    if self._goHover then self._goHover:Hide() end
-    fs:SetTextColor(C.TEXT_DISABLED[1], C.TEXT_DISABLED[2], C.TEXT_DISABLED[3], 1)
-    self:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.65)
-    self:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.35)
-  end
-  local origEnable = b.Enable
-  function b:Enable()
-    origEnable(self)
-    fs:SetTextColor(C.GOLD_LIGHT[1], C.GOLD_LIGHT[2], C.GOLD_LIGHT[3], 1)
-    self:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
-    self:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
-    Theme.StyleButton(self, self._goRole)
-  end
 
   if onClick then b:SetScript("OnClick", function() onClick() end) end
   Theme.StyleButton(b)
@@ -416,11 +386,11 @@ function ns.UI_Init()
   frame:HookScript("OnHide", stopWindowDrag)
 
   -- Slate shell and restrained gold corner accents.
-  Shared.ApplyBoardSkin(frame)
-  Shared.ApplyBoardRails(frame)
+  Theme.ApplyBoardSkin(frame)
+  Theme.ApplyBoardRails(frame)
 
   -- Header plaque pinned over the top rail (holds title + close button).
-  local plaque = Shared.MakePlaque(frame, 42)
+  local plaque = Theme.MakePlaque(frame, 42)
   UI.plaque = plaque
   if legacy then
     plaque:ClearAllPoints()
@@ -434,11 +404,11 @@ function ns.UI_Init()
   plaque:SetScript("OnDragStop", stopWindowDrag)
 
   -- Gentle fade-in whenever the window opens; fade-out when closed.
-  local fadeIn = Shared.MakeFadeIn(frame, 0.18)
+  local fadeIn = Theme.MakeFadeIn(frame, 0.18)
   frame:HookScript("OnShow", function()
     if fadeIn then fadeIn:Play() end
   end)
-  local fadeOut = Shared.MakeFadeOut(frame, 0.15)
+  local fadeOut = Theme.MakeFadeOut(frame, 0.15)
   UI.fadeOut = fadeOut
 
   frame:SetPoint(db.ui.point, UIParent, db.ui.relativePoint or db.ui.point, db.ui.x, db.ui.y)
@@ -720,7 +690,7 @@ function ns.UI_Init()
   sidebar:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
   sidebar:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
   sidebar:SetWidth(SIDEBAR_W)
-  Shared.ApplyNoteSkin(sidebar, 0.96)
+  Theme.ApplyNoteSkin(sidebar, 0.96)
   UI.sidebar = sidebar
 
   -- Top gradient overlay on sidebar for depth.
@@ -766,7 +736,7 @@ function ns.UI_Init()
   local content = CreateFrame("Frame", nil, body, "BackdropTemplate")
   content:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", GUTTER, 0)
   content:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
-  Shared.ApplyNoteSkin(content, 0.92)
+  Theme.ApplyNoteSkin(content, 0.92)
   UI.content = content
 
   -- Inner top shadow for inset depth on content.
@@ -1205,7 +1175,7 @@ function ns.UI_Init()
       applyResTextColor(txt)
       txt:SetText(string.format(
         "Points élémentaires : %d / %d (%d%%)",
-        totalCur, totalMax, roundPct(pct)
+        math.floor(totalCur), math.floor(totalMax), roundPct(pct)
       ))
     end
   end
@@ -1690,7 +1660,6 @@ function ns.UI_Init()
   end)
   resetBtn:ClearAllPoints()
   resetBtn:SetPoint("BOTTOM", popupToggleBtn, "TOP", 0, 10)
-  resetBtn:SetBackdropBorderColor(0.85, 0.30, 0.20, 0.80)
   if resetBtn._fs then
     resetBtn._fs:SetTextColor(1.00, 0.55, 0.40, 1)
   end
@@ -1809,7 +1778,7 @@ function ns.UI_Init()
         local petMaxHp = math.max(1, tonumber(pet.maxHp) or 1)
         local petPct   = petHp / petMaxHp
         hpBar:SetValue(math.max(0, math.min(1, petPct)))
-        hpText:SetText(string.format("PV familier : %d / %d (%d%%)", petHp, petMaxHp, roundPct(petPct)))
+        hpText:SetText(string.format("PV familier : %d / %d (%d%%)", math.floor(petHp), math.floor(petMaxHp), roundPct(petPct)))
         local petMs = type(pet.magicShield) == "table" and pet.magicShield or {}
         Shared.UpdateHpShieldOverlays(
           UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
@@ -1845,7 +1814,8 @@ function ns.UI_Init()
       local hpNow     = (s.hp or 0)
       local hpPct     = (baseMaxHp > 0) and (hpNow / baseMaxHp) or 0
       hpBar:SetValue(math.max(0, math.min(1, hpPct)))
-      hpText:SetText(string.format("PV : %d / %d (%d%%)", hpNow, baseMaxHp, roundPct(hpPct)))
+      -- Keep fractional HP authoritative; %d requires integers under Lua 5.4.
+      hpText:SetText(string.format("PV : %d / %d (%d%%)", math.floor(hpNow), math.floor(baseMaxHp), roundPct(hpPct)))
       Shared.UpdateHpShieldOverlays(
         UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
         hpNow, baseMaxHp, s.tempBlock or 0, (s.magicShield and s.magicShield.hp or 0)
@@ -1940,7 +1910,7 @@ function UI.NotifyUpdateAvailable(remoteVersion, localVersion)
     b:SetPoint("TOPLEFT",  UI.frame, "BOTTOMLEFT",  8, -4)
     b:SetPoint("TOPRIGHT", UI.frame, "BOTTOMRIGHT", -8, -4)
     b:SetHeight(30)
-    Shared.ApplyNoteSkin(b, 0.96)
+    Theme.ApplyNoteSkin(b, 0.96)
 
     local icon = b:CreateTexture(nil, "ARTWORK")
     icon:SetSize(16, 16)

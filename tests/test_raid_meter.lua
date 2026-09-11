@@ -163,7 +163,7 @@ T.describe("Core meter counters", function()
     reset()
     Core.SetHP(10, 100)
     Core.Heal(100)                       -- self heal
-    Core.DivineHeal()                    -- divine self heal
+    Core.PercentageHeal(75)                    -- divine self heal
     Core.HealFrom(10, "Healer")          -- received from someone else
     Core.SetPetEnabled(true)
     Core.SetPetHP(5, 20)

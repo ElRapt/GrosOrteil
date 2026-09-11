@@ -414,6 +414,18 @@ T.describe("Grimoire UI builder smoke", function()
     reset("MAGE")
     local oldUI = ns.UI
     local oldSpellAPI = rawget(_G, "C_Spell")
+    local oldCreateFrame = CreateFrame
+    -- This view now renders on visibility; the minimal logic mocks are hidden.
+    _G.CreateFrame = function(kind, name, parent, template)
+      local frame = oldCreateFrame(kind, name, parent, template)
+      function frame:Show() self._hidden = false end
+      function frame:Hide() self._hidden = true end
+      function frame:IsVisible()
+        return not rawget(self, "_hidden") and (not parent or parent:IsVisible())
+      end
+      return frame
+    end
+    local page = CreateFrame("Frame")
     local mock = _G.MOCKS
     ns.UI = {}
 
@@ -438,7 +450,7 @@ T.describe("Grimoire UI builder smoke", function()
       return edit
     end
     local ok, err = pcall(ns.UI_BuildGrimoireTab, {
-      page = mock.makeFrame(), C = colors,
+      page = page, C = colors,
       TEX = { FLAT = "flat", BG_DARK = "dark" },
       Core = Core, Grimoire = Grimoire, GrimoireIcons = GrimoireIcons,
       mkButton = buttonFactory, mkEdit = editFactory,
@@ -480,6 +492,8 @@ T.describe("Grimoire UI builder smoke", function()
     T.assertNotNil(resolvedSpellButton)
     T.assertEq(resolvedSpellButton._resolvedFile, 1000000 + resolvedSpellButton._iconInfo.spellId)
     rawset(_G, "C_Spell", oldSpellAPI)
+    page:Hide()
+    _G.CreateFrame = oldCreateFrame
     rawset(_G, "TRP3_IconBrowser", oldTRPBrowser)
     ns.UI = oldUI
     reset()

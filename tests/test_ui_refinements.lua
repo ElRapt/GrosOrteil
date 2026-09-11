@@ -58,7 +58,7 @@ return function(T, ns, frames)
       UI.rangedToggle:RunScript("OnClick"); frames.layout()
       T.assertTrue(UI.rangedPanel:IsShown()); T.assertEq(UI.ficheAfterRanged:GetTop(),bottom-84)
       local edit=UI.rangedPanel.inputs.courte
-      edit:SetFocus(); edit:SetText("80"); edit:RunScript("OnEnterPressed")
+      edit:SetFocus(); edit:Insert("80"); edit:RunScript("OnEnterPressed")
       T.assertEq(Core.GetRangedAttack(Core.state,"courte"),80)
       T.assertEq(Core.GetRangedAttack(Core.state,"moyenne"),50)
       T.assertEq(UI.rangedPanel.inputs.longue:GetText(),"50")
@@ -74,13 +74,91 @@ return function(T, ns, frames)
       if UI.petRangedPanel:IsShown() then UI.petRangedToggle:RunScript("OnClick") end
       UI.petRangedToggle:RunScript("OnClick"); frames.layout()
       local edit=UI.petRangedPanel.inputs.longue
-      edit:SetFocus(); edit:SetText("15"); edit:RunScript("OnEnterPressed")
+      edit:SetFocus(); edit:Insert("15"); edit:RunScript("OnEnterPressed")
       T.assertEq(Core.GetRangedAttack(Core.state.pet,"longue"),15)
       T.assertEq(Core.GetRangedAttack(Core.state.pet,"courte"),30)
       T.assertNil(Core.state.attaqueDistanceLongue)
       UI.petRangedToggle:RunScript("OnClick")
       T.assertFalse(UI.petRangedPanel:IsShown())
       T.assertEq(Core.GetRangedAttack(Core.state.pet,"longue"),15)
+      UI.setSidebarSection(1); UI.setTab(1)
+    end)
+    T.it("preserves Auto on untouched range blur but commits an explicitly retyped value", function()
+      reset(); Core.SetAttaque(20,40); Core.SetPetEnabled(true); Core.SetPetAttaque(10,30)
+      for _, sheet in ipairs({{UI.rangedPanel, false, 40}, {UI.petRangedPanel, true, 30}}) do
+        UI.setSidebarSection(sheet[2] and 2 or 1); UI.setTab(sheet[2] and 9 or 1)
+        sheet[1]:Show()
+        local edit = sheet[1].inputs.courte
+        local target = sheet[2] and Core.state.pet or Core.state
+        local rev = Core.state.rev
+        edit:SetFocus(); edit:ClearFocus()
+        T.assertNil(target.attaqueDistanceCourte); T.assertEq(Core.state.rev, rev)
+        edit:SetFocus(); edit:Insert(tostring(sheet[3])); edit:RunScript("OnEnterPressed")
+        T.assertEq(target.attaqueDistanceCourte, sheet[3]); T.assertEq(Core.state.rev, rev + 1)
+        Core.Undo()
+        target = sheet[2] and Core.state.pet or Core.state
+        T.assertNil(target.attaqueDistanceCourte)
+        Core.Redo()
+        target = sheet[2] and Core.state.pet or Core.state
+        T.assertEq(target.attaqueDistanceCourte, sheet[3])
+      end
+      UI.setSidebarSection(1); UI.setTab(1)
+    end)
+    T.it("keeps focused range drafts through bonus expiry and refreshes untouched values on blur", function()
+      for _, isPet in ipairs({false, true}) do
+        reset(); Core.SetAttaque(20,40); Core.SetPetEnabled(true); Core.SetPetAttaque(10,40)
+        UI.setSidebarSection(isPet and 2 or 1); UI.setTab(isPet and 9 or 1)
+        local panel = isPet and UI.petRangedPanel or UI.rangedPanel
+        panel:Show()
+        local toggle = isPet and Core.TogglePetAffix or Core.ToggleAffix
+        local target = isPet and Core.state.pet or Core.state
+        local edit = panel.inputs.courte
+        toggle("ELIXIR_PUISSANCE")
+        edit:SetFocus()
+        Core.NextTurn(); Core.NextTurn(); Core.NextTurn()
+        T.assertEq(edit:GetText(), "70")
+        local rev = Core.state.rev
+        edit:ClearFocus()
+        T.assertNil(target.attaqueDistanceCourte); T.assertEq(Core.state.rev, rev)
+        T.assertEq(edit:GetText(), "40")
+        toggle("ELIXIR_PUISSANCE")
+        edit:SetFocus(); edit:Insert("85")
+        Core.NextTurn(); Core.NextTurn(); Core.NextTurn()
+        T.assertEq(edit:GetText(), "85")
+        edit:RunScript("OnEnterPressed")
+        T.assertEq(Core.GetRangedAttack(target, "courte"), 85)
+        T.assertEq(target.attaqueDistanceCourte, 85) -- bonuses at commit time
+        toggle("ELIXIR_PUISSANCE")
+        T.assertEq(edit:GetText(), "115")
+      end
+      UI.setSidebarSection(1); UI.setTab(1)
+    end)
+    T.it("Auto discards a focused range draft and remains inherited after reload", function()
+      for _, isPet in ipairs({false, true}) do
+        reset(); Core.SetAttaque(20,40); Core.SetPetEnabled(true); Core.SetPetAttaque(10,40)
+        UI.setSidebarSection(isPet and 2 or 1); UI.setTab(isPet and 9 or 1)
+        local panel = isPet and UI.petRangedPanel or UI.rangedPanel
+        panel:Show()
+        local edit, auto = panel.inputs.courte
+        for _, f in ipairs(frames.frames) do
+          if f._kind == "Button" and f._parent == panel and f:GetText() == "Auto" then auto = f; break end
+        end
+        Core.SetRangedAttack("courte", 65, isPet)
+        edit:SetFocus(); edit:Insert("90")
+        local rev = Core.state.rev
+        assert(auto):RunScript("OnClick")
+        T.assertFalse(edit:HasFocus()); T.assertEq(Core.state.rev, rev + 1)
+        local target = isPet and Core.state.pet or Core.state
+        T.assertNil(target.attaqueDistanceCourte); T.assertEq(edit:GetText(), "40")
+        panel:Hide(); panel:Show(); ns.Core_Init()
+        target = isPet and Core.state.pet or Core.state
+        T.assertNil(target.attaqueDistanceCourte)
+        if isPet then Core.SetPetAttaque(10,50) else Core.SetAttaque(20,50) end
+        T.assertEq(edit:GetText(), "50")
+        edit:SetFocus(); edit:Insert("invalid"); rev = Core.state.rev; edit:ClearFocus()
+        T.assertEq(Core.state.rev, rev); T.assertNil(target.attaqueDistanceCourte)
+        T.assertEq(edit:GetText(), "50")
+      end
       UI.setSidebarSection(1); UI.setTab(1)
     end)
     T.it("expands target ranges, moves health below them and collapses on reopen", function()

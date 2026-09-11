@@ -182,12 +182,8 @@ end
 
 function Distance.SetMode(mode)
   if mode ~= "target" and mode ~= "origin" and mode ~= "waypoint" then return false end
+  local changed = Distance.mode ~= mode
   Distance.mode = mode
-  if Distance.Refresh then Distance.Refresh() end
+  if Distance.Refresh then Distance.Refresh(changed) end
   return true
-end
-
-function Distance.Init()
-  -- No timers or frames until the panel is opened. The memorized location is
-  -- session-only; a reload cannot revive an old point from a different phase.
 end

@@ -21,6 +21,22 @@ local function receive()
 end
 
 T.describe("Ranged attack profiles", function()
+  T.it("preserves the companion API's general attack reads, writes and notifications", function()
+    reset()
+    local API, notifications = GrosOrteilAPI, 0
+    Core.SetRangedAttack("courte", 65)
+    local unsubscribe = API.OnChange(function() notifications = notifications + 1 end)
+    notifications = 0
+    API.SetAttaque(15, 48)
+    local melee, distance = API.GetAttaque()
+    unsubscribe()
+    T.assertEq(melee, 15); T.assertEq(distance, 48); T.assertEq(notifications, 1)
+    assertRanges(Core.state, 65, 48, 48)
+    assertRanges(Core.state.pet, 20, 20, 20)
+    Core.SetRangedAttack("courte", nil)
+    T.assertEq(notifications, 1)
+  end)
+
   T.it("inherits the general distance attack until each range is edited", function()
     reset()
     assertRanges(Core.state, 40, 40, 40)
@@ -186,6 +202,53 @@ T.describe("Ranged attack profiles", function()
 end)
 
 T.describe("Ranged attack sharing", function()
+  T.it("ignores private bonus bookkeeping in received effective ranges", function()
+    local serializer = LibStub("AceSerializer-3.0")
+    local source = { attaqueDistance = 80, attaqueDistanceCourte = 50,
+      attaqueDistanceMoyenne = 0, attaqueDistanceLongue = 1e9,
+      affixes = { ELIXIR_PUISSANCE = true, CAMBUSE_ATTAQUE = true },
+      insanityAtkApplied = 15, affixApplied = { ELIXIR_PUISSANCE = { attaqueDistance = 30 } } }
+    source.pet = { attaqueDistance = 25, attaqueDistanceCourte = 10,
+      affixes = source.affixes, insanityAtkApplied = 15, affixApplied = source.affixApplied }
+    local peer = Comm:DeserializeState("STATE_DATA", serializer:Serialize(source), "RangedTester")
+    assertRanges(peer, 50, 0, 1e9)
+    assertRanges(peer.pet, 10, 25, 25)
+    for _, sheet in ipairs({peer, peer.pet}) do
+      T.assertNil(sheet.affixes); T.assertNil(sheet.affixApplied); T.assertNil(sheet.insanityAtkApplied)
+    end
+  end)
+
+  T.it("normalizes finite wire ranges and falls back for invalid or missing values", function()
+    local serializer = LibStub("AceSerializer-3.0")
+    for _, invalid in ipairs({ math.huge, -math.huge, "12.5", "abc", false, {} }) do
+      local source = { attaqueDistance = 48, attaqueDistanceCourte = invalid,
+        attaqueDistanceMoyenne = -10, attaqueDistanceLongue = 2e9,
+        pet = { attaqueDistance = invalid, attaqueDistanceCourte = invalid,
+          attaqueDistanceMoyenne = 12.5, attaqueDistanceLongue = -10 } }
+      local peer = Comm:DeserializeState("STATE_DATA", serializer:Serialize(source), "RangedTester")
+      assertRanges(peer, 48, 0, 1e9)
+      assertRanges(peer.pet, 0, 12.5, 0)
+      T.assertEq(peer.attaqueDistanceCourte, 48)
+      T.assertEq(peer.attaqueDistanceMoyenne, 0); T.assertEq(peer.attaqueDistanceLongue, 1e9)
+      T.assertEq(peer.pet.attaqueDistanceCourte, 0)
+      T.assertEq(peer.pet.attaqueDistanceMoyenne, 12.5); T.assertEq(peer.pet.attaqueDistanceLongue, 0)
+    end
+  end)
+
+  T.it("rejects NaN range values at the decoded-message boundary", function()
+    local serializer = LibStub("AceSerializer-3.0")
+    local deserialize = serializer.Deserialize
+    serializer.Deserialize = function()
+      return true, { attaqueDistance = 48, attaqueDistanceCourte = 0/0,
+        pet = { attaqueDistance = 0/0, attaqueDistanceCourte = 0/0 } }
+    end
+    local ok, peer = pcall(Comm.DeserializeState, Comm, "STATE_DATA", "fixture", "RangedTester")
+    serializer.Deserialize = deserialize
+    T.assertTrue(ok)
+    T.assertEq(peer.attaqueDistanceCourte, 48)
+    T.assertEq(peer.pet.attaqueDistanceCourte, 0)
+  end)
+
   T.it("shares effective player and pet values without applying temporary bonuses twice", function()
     reset()
     Core.SetClassKey("SHADOWPRIEST")

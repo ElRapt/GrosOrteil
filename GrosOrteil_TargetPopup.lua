@@ -500,10 +500,9 @@ local function layoutRangedPopup()
   f.rangedPanel:SetShown(f.rangedExpanded and true or false)
   f.attaqueIcon:SetTexture(f.rangedExpanded
     and "Interface\\Buttons\\UI-MinusButton-UP" or "Interface\\Buttons\\UI-PlusButton-UP")
-  for i, def in ipairs({ { "courte", "Courte (5–25 m)" },
-      { "moyenne", "Moyenne (25–40 m)" }, { "longue", "Longue (> 40 m)" } }) do
-    local value = ns.Core.GetRangedAttack(f.rangedSource, def[1])
-    f.rangedLines[i]:SetText(string.format("%s : %d", def[2], roundNumber(value)))
+  for i, def in ipairs(Shared.RANGED_ATTACKS) do
+    local value = ns.Core.GetRangedAttack(f.rangedSource, def.key)
+    f.rangedLines[i]:SetText(string.format("%s : %d", def.label, roundNumber(value)))
   end
   f.hpRow.holder:ClearAllPoints()
   f.hpRow.holder:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -114 - offset)
@@ -530,7 +529,7 @@ local function createPopup()
   popupFrame:SetScript("OnDragStop", popupFrame.StopMovingOrSizing)
 
   -- Dark tooltip-note skin, matching the cards pinned on the boards.
-  Shared.ApplyNoteSkin(popupFrame, 0.96)
+  Theme.ApplyNoteSkin(popupFrame, 0.96)
   popupFrame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -56, 220)
 
   -- Header plaque band with a gold underline and a class-colored accent.
@@ -619,7 +618,7 @@ local function createPopup()
   popupFrame.rangedPanel:SetPoint("TOPLEFT", popupFrame, "TOPLEFT", 36, -114)
   popupFrame.rangedPanel:Hide()
   popupFrame.rangedLines = {}
-  for i = 1, 3 do
+  for i = 1, #Shared.RANGED_ATTACKS do
     local line = popupFrame.rangedPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     line:SetPoint("TOPLEFT", popupFrame.rangedPanel, "TOPLEFT", 0, -(i - 1) * 20)
     line:SetTextColor(C.TEXT_NORMAL[1], C.TEXT_NORMAL[2], C.TEXT_NORMAL[3], 1)
@@ -824,12 +823,12 @@ local function createPopup()
   popupFrame.statusBanner:SetShadowOffset(1, -1)
   popupFrame.statusBanner:SetShadowColor(0, 0, 0, 1)
   popupFrame.statusBanner:Hide()
-  popupFrame.statusPulse = Shared.MakePulse(popupFrame.statusBanner)
+  popupFrame.statusPulse = Theme.MakePulse(popupFrame.statusBanner)
 
   -- Gentle fade-in when the popup first opens (not on in-place refreshes),
   -- and fade-out when it closes.
-  popupFrame.fadeIn  = Shared.MakeFadeIn(popupFrame, 0.15)
-  popupFrame.fadeOut = Shared.MakeFadeOut(popupFrame, 0.15)
+  popupFrame.fadeIn  = Theme.MakeFadeIn(popupFrame, 0.15)
+  popupFrame.fadeOut = Theme.MakeFadeOut(popupFrame, 0.15)
 
   -- Resize grip (drag = rescale, right-click = default), persisted in settings.
   if Shared.AttachScaleGrip then
@@ -1414,12 +1413,12 @@ local function createHoverPopup()
   hoverFrame:SetWidth(HOVER_BAR_W + HOVER_PAD * 2)
   hoverFrame:SetHeight(HOVER_PAD * 2 + HOVER_BAR_H)
   -- Same dark tooltip-note skin as the rest of the addon.
-  Shared.ApplyNoteSkin(hoverFrame, 0.94)
+  Theme.ApplyNoteSkin(hoverFrame, 0.94)
 
   -- Quick fade-in when the hover first appears (not on refreshes), and
   -- fade-out when the mouse leaves.
-  hoverFrame.fadeIn  = Shared.MakeFadeIn(hoverFrame, 0.12)
-  hoverFrame.fadeOut = Shared.MakeFadeOut(hoverFrame, 0.12)
+  hoverFrame.fadeIn  = Theme.MakeFadeIn(hoverFrame, 0.12)
+  hoverFrame.fadeOut = Theme.MakeFadeOut(hoverFrame, 0.12)
 
   -- HP bar + overlays + markers
   hoverFrame.hpBar = createHoverBar(hoverFrame)
@@ -1460,7 +1459,7 @@ local function createHoverPopup()
   hoverFrame.statusLabel:SetShadowColor(0, 0, 0, 1)
   hoverFrame.statusLabel:SetJustifyH("CENTER")
   hoverFrame.statusLabel:Hide()
-  hoverFrame.statusPulse = Shared.MakePulse(hoverFrame.statusLabel)
+  hoverFrame.statusPulse = Theme.MakePulse(hoverFrame.statusLabel)
 
   hoverFrame:Hide()
 end

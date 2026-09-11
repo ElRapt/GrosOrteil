@@ -58,12 +58,6 @@ local function sfxHealLight()
   playFirstSoundKit({ "SPELL_HOLY_HEAL", "SPELL_HOLY_FLASH_HEAL", "IG_SPELLBOOK_OPEN" })
 end
 
-local function sfxLayOnHands()
-  -- User-provided sound FileID
-  if playSoundFileId(1955776) then return end
-  playFirstSoundKit({ "SPELL_HOLY_LAY_ON_HANDS", "SPELL_HOLY_REDEMPTION", "RAID_WARNING" })
-end
-
 -- Floating combat text: the UI registers a handler that shows rising/fading
 -- feedback above the HP bar. Kinds: "DAMAGE" (amount), "HEAL" (amount),
 -- "BLOCK" (hit fully absorbed/mitigated), "DODGE". No-op until registered.
@@ -76,7 +70,6 @@ end
 local function emitCombatText(kind, amount, subject)
   if combatTextHandler then pcall(combatTextHandler, kind, amount, subject) end
 end
-Core.EmitCombatText = emitCombatText
 
 -- Listener errors are non-fatal: notify() pcalls each callback so a single
 -- bad listener can't break the chain. Errors flow through geterrorhandler
@@ -154,15 +147,19 @@ local SNAPSHOT_SCALARS = {
   -- snapshotting them keeps an undone toggle consistent with its recorded
   -- applied deltas.
   "attaqueMelee", "attaqueDistance", "insanityAtkApplied",
-  "attaqueDistanceCourte", "attaqueDistanceMoyenne", "attaqueDistanceLongue",
 }
 local SNAPSHOT_PET_FIELDS = {
   "enabled", "name", "hp", "maxHp",
   "armor", "trueArmor", "dodge",
   "attaqueMelee", "attaqueDistance", "tempArmor",
-  "attaqueDistanceCourte", "attaqueDistanceMoyenne", "attaqueDistanceLongue",
   "authorityEnabled",
 }
+local RANGED_FIELDS = {}
+for _, def in ipairs(ns.Shared.RANGED_ATTACKS) do
+  RANGED_FIELDS[def.key] = def.field
+  SNAPSHOT_SCALARS[#SNAPSHOT_SCALARS + 1] = def.field
+  SNAPSHOT_PET_FIELDS[#SNAPSHOT_PET_FIELDS + 1] = def.field
+end
 local SNAPSHOT_POSTURE_BASE = {
   "armor", "dodge", "maxHp",
   "maxRes", "maxRes2", "maxRes3", "maxRes4",
@@ -1406,8 +1403,8 @@ function Core.DamageDirect(amount)
   applyHit(s, s, amount, { armor = false, ignoreDodge = true, direct = true, historyKind = "DAMAGE_DIRECT" })
 end
 
--- opts: { kind=str, isPet=bool, gainRatio=number|nil, woundCapFn=fn|nil, subject=str|nil }
--- gainRatio: fixed fraction of maxHp (DivineHeal=0.75, Surgery=0.50); nil = normal heal with cap
+-- Normal healing respects wound caps; percentage actions use the HP setters directly.
+-- opts: { kind=str, isPet=bool, woundCapFn=fn|nil, subject=str|nil, healer=str|nil }
 local function applyHeal(s, t, amount, opts)
   amount = clampNumber(amount, 0, 1e9) or 0
 
@@ -1417,36 +1414,22 @@ local function applyHeal(s, t, amount, opts)
   local woundCapFn = opts.woundCapFn or (opts.isPet and getPetWoundCap or getWoundCap)
   local target = opts.isPet and t or s  -- woundCapFn expects the wounds-bearing table
 
-  if opts.gainRatio then
-    -- Bypass heal: fixed ratio, ignores wound cap
-    sfxLayOnHands()
-    local gain = maxBefore * opts.gainRatio
-    t.hp = math.min((t.hp or 0) + gain, maxBefore)
-    if not opts.isPet then clampHpToEffectiveMax(s) end
-    pushHistory({ kind = opts.kind, subject = opts.subject, gain = gain,
-                  hpBefore = hpBefore, hpAfter = t.hp or 0, maxHp = maxBefore })
-    recomputeWounds(t)
-    local applied = (t.hp or 0) - hpBefore
-    if applied > 0 then emitCombatText("HEAL", applied) end
-  else
-    -- Normal heal: capped by wound threshold
-    if amount > 0 then sfxHealLight() end
-    local current  = t.hp or 0
-    local proposed = current + amount
-    local capMax   = maxBefore * woundCapFn(target)
-    local healed   = math.min(proposed, capMax, maxBefore)
-    t.hp = math.max(current, healed)
-    if not opts.isPet then clampHpToEffectiveMax(s) end
-    pushHistory({ kind = opts.kind, subject = opts.subject, input = amount,
-                  current = current, proposed = proposed,
-                  capMax = capMax, effMax = maxBefore,
-                  applied = (t.hp or 0) - hpBefore,
-                  hpBefore = hpBefore, hpAfter = t.hp or 0, maxHp = maxBefore,
-                  woundCap = woundCapFn(target), healer = opts.healer })
-    updateWoundsSticky(t)
-    local appliedHeal = (t.hp or 0) - hpBefore
-    if appliedHeal > 0 then emitCombatText("HEAL", appliedHeal) end
-  end
+  if amount > 0 then sfxHealLight() end
+  local current  = t.hp or 0
+  local proposed = current + amount
+  local capMax   = maxBefore * woundCapFn(target)
+  local healed   = math.min(proposed, capMax, maxBefore)
+  t.hp = math.max(current, healed)
+  if not opts.isPet then clampHpToEffectiveMax(s) end
+  pushHistory({ kind = opts.kind, subject = opts.subject, input = amount,
+                current = current, proposed = proposed,
+                capMax = capMax, effMax = maxBefore,
+                applied = (t.hp or 0) - hpBefore,
+                hpBefore = hpBefore, hpAfter = t.hp or 0, maxHp = maxBefore,
+                woundCap = woundCapFn(target), healer = opts.healer })
+  updateWoundsSticky(t)
+  local appliedHeal = (t.hp or 0) - hpBefore
+  if appliedHeal > 0 then emitCombatText("HEAL", appliedHeal) end
 
   if (t.hp or 0) > 0 and not opts.isPet then s.stabilise = nil end
   bump(); notify()
@@ -1468,7 +1451,7 @@ end
 
 -- Group-meter "Soins" counter: heals GIVEN to others. Credited when a target
 -- accepts a heal-others request and reports back the amount actually applied
--- (post wound-cap). Self, divine, surgery and pet heals deliberately don't
+-- (post wound-cap). Self, percentage and pet heals deliberately don't
 -- count — the meter measures help provided to the group.
 function Core.CreditHealGiven(amount)
   local s = Core.state
@@ -1480,16 +1463,40 @@ function Core.CreditHealGiven(amount)
   bump(); notify()
 end
 
-function Core.DivineHeal()
+-- Signed HP adjustments bypass healing caps and defenses. Neither sign credits
+-- the group meter. Reuse the HP setters for wounds, revisioning and undo/redo.
+local function percentageHeal(value, isPet)
+  local percent = tonumber(value)
+  if not percent or percent ~= percent or math.abs(percent) < 1 or math.abs(percent) > 100 then
+    return false
+  end
   local s = Core.state
-  if not s then return end
-  applyHeal(s, s, 0, { kind = "DIVINE_HEAL", gainRatio = 0.75 })
+  if not s or (isPet and (type(s.pet) ~= "table" or not s.pet.enabled)) then return false end
+  local target = isPet and s.pet or s
+  local before, maxHp = tonumber(target.hp), tonumber(target.maxHp)
+  -- Reject invalid state before adding history, using the setters' HP bounds.
+  if not maxHp or maxHp ~= maxHp or maxHp < 1 or maxHp > 1e9
+      or not before or before ~= before or before < 0 or before > maxHp then
+    return false
+  end
+  local after = math.max(0, math.min(maxHp, before + maxHp * percent / 100))
+  local applied = math.abs(after - before)
+  pushHistory({ kind = percent < 0 and "PERCENT_DAMAGE" or "PERCENT_HEAL",
+                subject = isPet and "PET" or nil, percent = percent, applied = applied,
+                hpBefore = before, hpAfter = after, maxHp = maxHp })
+  if isPet then Core.SetPetHP(after, maxHp) else Core.SetHP(after, maxHp) end
+  if applied > 0 then
+    emitCombatText(percent < 0 and "DAMAGE" or "HEAL", applied, isPet and "PET" or "CHAR")
+  end
+  return true
 end
 
-function Core.Surgery()
-  local s = Core.state
-  if not s then return end
-  applyHeal(s, s, 0, { kind = "SURGERY", gainRatio = 0.50 })
+function Core.PercentageHeal(value)
+  return percentageHeal(value, false)
+end
+
+function Core.PetPercentageHeal(value)
+  return percentageHeal(value, true)
 end
 
 function Core.AddRes(amount)
@@ -1577,18 +1584,12 @@ end
 -- propres effets et deltas, restaurés ensemble par annuler/rétablir.
 local TIMED_AFFIXES = { ELIXIR_PUISSANCE = 3, ELIXIR_RESISTANCE = 3 }
 
-local function affixDeltas(key)
-  if key == "CAMBUSE_ATTAQUE" then
-    return { attaqueMelee = 10, attaqueDistance = 10, dodge = 5 }
-  elseif key == "CAMBUSE_PV" then
-    return { maxHp = 20, hp = 20 }
-  elseif key == "ELIXIR_PUISSANCE" then
-    return { attaqueMelee = 30, attaqueDistance = 30 }
-  elseif key == "ELIXIR_RESISTANCE" then
-    return { armor = 6 }
-  end
-  return nil
-end
+local AFFIX_DELTAS = {
+  CAMBUSE_ATTAQUE = { attaqueMelee = 10, attaqueDistance = 10, dodge = 5 },
+  CAMBUSE_PV = { maxHp = 20, hp = 20 },
+  ELIXIR_PUISSANCE = { attaqueMelee = 30, attaqueDistance = 30 },
+  ELIXIR_RESISTANCE = { armor = 6 },
+}
 
 local function ensureAffixTables(t)
   if type(t.affixes)      ~= "table" then t.affixes      = {} end
@@ -1612,7 +1613,7 @@ local function applyAffixField(t, applied, field, delta)
 end
 
 local function applyAffix(t, key)
-  local deltas = affixDeltas(key)
+  local deltas = AFFIX_DELTAS[key]
   if not deltas then return end
   local applied = {}
   -- maxHp d'abord, pour que le clamp des PV voie le nouveau plafond.
@@ -1677,7 +1678,7 @@ end
 
 function Core.IsAffixActive(key)
   local s = Core.state
-  return (s and affixDeltas(key) and type(s.affixes) == "table" and s.affixes[key]) and true or false
+  return (s and AFFIX_DELTAS[key] and type(s.affixes) == "table" and s.affixes[key]) and true or false
 end
 
 local function toggleAffixTarget(t, key)
@@ -1694,7 +1695,7 @@ end
 function Core.ToggleAffix(key)
   local s = Core.state
   if not s then return end
-  if type(key) ~= "string" or not affixDeltas(key) then return end
+  if type(key) ~= "string" or not AFFIX_DELTAS[key] then return end
   toggleAffixTarget(s, key)
   bump(); notify()
 end
@@ -1703,10 +1704,6 @@ end
 -- bonuses outside these bases makes affix expiry and Insanity affect every
 -- range without duplicating their applied-delta bookkeeping.
 do
-  local fields = {
-    courte = "attaqueDistanceCourte", moyenne = "attaqueDistanceMoyenne",
-    longue = "attaqueDistanceLongue",
-  }
   local function finiteNumber(value, minimum, maximum)
     if type(value) ~= "number" or value ~= value
         or value == math.huge or value == -math.huge then return nil end
@@ -1716,7 +1713,7 @@ do
     local bonus = finiteNumber(s.insanityAtkApplied, 0, 1e9) or 0
     if type(s.affixes) == "table" then
       for key, active in pairs(s.affixes) do
-        local deltas = active and affixDeltas(key)
+        local deltas = active and AFFIX_DELTAS[key]
         if deltas then
           -- A capped general attack must not truncate a bonus on a lower
           -- custom range. Its effective value has its own independent cap.
@@ -1729,14 +1726,14 @@ do
 
   function Core.GetRangedAttack(s, range)
     s = type(s) == "table" and s or {}
-    local field = fields[range]
+    local field = RANGED_FIELDS[range]
     local base = field and finiteNumber(s[field], -1e9, 1e9)
     if base then return math.min(1e9, math.max(0, base + temporaryBonus(s))) end
     return finiteNumber(s.attaqueDistance, 0, 1e9) or 0
   end
 
   function Core.SetRangedAttack(range, value, isPet)
-    local s, field = Core.state, fields[range]
+    local s, field = Core.state, RANGED_FIELDS[range]
     if not s or not field then return end
     local target = isPet and ensurePet(s) or s
     local base
@@ -1756,7 +1753,7 @@ function Core.TogglePetAffix(key)
   if not s then return end
   local p = ensurePet(s)
   if not p or not p.enabled then return end
-  if type(key) ~= "string" or not affixDeltas(key) then return end
+  if type(key) ~= "string" or not AFFIX_DELTAS[key] then return end
   toggleAffixTarget(p, key)
   bump(); notify()
 end
@@ -1784,10 +1781,6 @@ function Core.NextTurn()
   local petChanged = advanceAffixTurns(s.pet)
   if playerChanged or petChanged then bump(); notify() end
 end
-
--- Compatibility for old macros: removed special cases cannot alter a sheet.
-function Core.ToggleSpecialCase() end
-function Core.TogglePetSpecialCase() end
 
 -- Restaure les PV au maximum.
 function Core.RestoreHP()
@@ -1915,22 +1908,6 @@ function Core.PetHealFrom(amount, healerName)
   local p = ensurePet(s)
   if not p.enabled then return end
   applyHeal(s, p, amount, { kind = "HEAL", isPet = true, subject = "PET", healer = healerName })
-end
-
-function Core.PetDivineHeal()
-  local s = Core.state
-  if not s then return end
-  local p = ensurePet(s)
-  if not p.enabled then return end
-  applyHeal(s, p, 0, { kind = "DIVINE_HEAL", isPet = true, subject = "PET", gainRatio = 0.75 })
-end
-
-function Core.PetSurgery()
-  local s = Core.state
-  if not s then return end
-  local p = ensurePet(s)
-  if not p.enabled then return end
-  applyHeal(s, p, 0, { kind = "SURGERY",    isPet = true, subject = "PET", gainRatio = 0.50 })
 end
 
 function Core.PetRestoreHP()

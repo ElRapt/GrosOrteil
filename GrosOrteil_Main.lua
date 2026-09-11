@@ -135,7 +135,6 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if ns.Heal_Init then
       ns.Heal_Init()
     end
-    if ns.Distance then ns.Distance.Init() end
     initMinimapIcon()
 
     f:UnregisterEvent("ADDON_LOADED")

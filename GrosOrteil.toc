@@ -29,7 +29,6 @@ GrosOrteil_Grimoire.lua
 GrosOrteil_GrimoireIcons.lua
 GrosOrteil_UI_Tabs.lua
 GrosOrteil_UI_Grimoire.lua
-GrosOrteil_PercentageHeal.lua
 GrosOrteil_UI.lua
 GrosOrteil_Comm.lua
 GrosOrteil_TargetPopup.lua
@@ -40,5 +39,4 @@ GrosOrteil_RaidPanel.lua
 GrosOrteil_Guard.lua
 GrosOrteil_Bonus.lua
 GrosOrteil_Tests.lua
-GrosOrteil_PercentageHeal_Tests.lua
 GrosOrteil_Guard_Tests.lua

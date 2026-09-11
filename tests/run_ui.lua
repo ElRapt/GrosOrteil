@@ -70,7 +70,7 @@ T.describe("Complete UI integration", function()
     noErrors()
   end)
   T.it("loads the actual TOC and initializes all pages exactly once", function()
-    T.assertNotNil(ns.Guard); T.assertNotNil(ns.PercentageHeal)
+    T.assertNotNil(ns.Guard); T.assertNotNil(Core.PercentageHeal); T.assertNotNil(Core.PetPercentageHeal)
     T.assertEq(#UI.pages,11)
     local count=0
     for _,tab in ipairs(UI.tabs) do if tab:IsShown() then count=count+1 end end
@@ -122,6 +122,55 @@ T.describe("Complete UI integration", function()
     value:SetText("20")
     button("Pourcentage"):RunScript("OnClick")
     T.assertEq(Core.state.hp,30)
+    noErrors()
+  end)
+  T.it("creates only the two surviving percentage controls", function()
+    local percentages = {}
+    for _, f in ipairs(frames.frames) do
+      if f._kind == "Button" then
+        T.assertNeq(f:GetText(), "Soins divins (75%)")
+        T.assertNeq(f:GetText(), "Chirurgie (50%)")
+        if f:GetText() == "Pourcentage" then percentages[#percentages + 1] = f end
+      end
+    end
+    T.assertEq(#percentages, 2)
+    T.assertEq(percentages[1]:GetWidth(), 440)
+    T.assertEq(percentages[2]:GetWidth(), 380)
+  end)
+  T.it("keeps percentage input separate from commits and rejects invalid clicks", function()
+    Core.ResetToDefaults(); Core.SetHP(70, 100)
+    Core.SetPetEnabled(true); Core.SetPetHP(60, 100)
+    for _, sheet in ipairs({ {1, 1, UI.inputs.actionValue, "PV : 57 / 100 (57%)"},
+        {2, 9, UI.inputs.petActionVal, "PV familier : 47 / 100 (48%)"} }) do
+      UI.setSidebarSection(sheet[1]); UI.setTab(sheet[2])
+      local value, action = sheet[3], button("Pourcentage")
+      local target = sheet[1] == 2 and Core.state.pet or Core.state
+      local before, rev = target.hp, Core.state.rev
+      value:SetFocus(); value:SetText("-12.5"); value:RunScript("OnEnterPressed")
+      T.assertFalse(value:HasFocus())
+      T.assertEq(target.hp, before); T.assertEq(Core.state.rev, rev)
+      action:RunScript("OnClick")
+      T.assertEq(target.hp, before - 12.5)
+      T.assertEq(UI.hpText:GetText(), sheet[4])
+      T.assertEq(UI.hpBar:GetValue(), (before - 12.5) / 100)
+      T.assertEq(Core.state.rev, rev + 1)
+      T.assertEq(Core.state.history[1].applied, 12.5)
+      T.assertEq(Core.state.meter.dmg, 0)
+      action:RunScript("OnEnter"); action:RunScript("OnLeave")
+      local hp, count = target.hp, #Core.state.history
+      rev = Core.state.rev
+      local printer, messages = print, {}
+      _G.print = function(message) messages[#messages + 1] = message end
+      for _, invalid in ipairs({ "0", "0.5", "-101", "1e999", "abc" }) do
+        value:SetText(invalid); action:RunScript("OnClick")
+      end
+      _G.print = printer
+      T.assertEq(#messages, 5)
+      T.assertTrue(messages[1]:find("-100", 1, true) ~= nil)
+      T.assertEq(target.hp, hp); T.assertEq(Core.state.rev, rev)
+      T.assertEq(#Core.state.history, count)
+    end
+    UI.setSidebarSection(1); UI.setTab(1)
     noErrors()
   end)
   T.it("accepts signed percentage damage and healing in player and pet fields", function()
@@ -282,6 +331,12 @@ T.describe("Raid panel combat boundaries",function()
   T.it("defers first creation until combat ends",function()
     frames.combat=true; frames.fire("PLAYER_REGEN_DISABLED")
     ns.RaidPanel.Show(); T.assertNil(_G.GrosOrteilRaidPanel)
+    ns.RaidPanel.Hide()
+    frames.combat=false; frames.fire("PLAYER_REGEN_ENABLED")
+    T.assertNil(_G.GrosOrteilRaidPanel)
+    frames.combat=true; frames.fire("PLAYER_REGEN_DISABLED")
+    ns.RaidPanel.Toggle(); ns.RaidPanel.Toggle(); ns.RaidPanel.Toggle()
+    T.assertNil(_G.GrosOrteilRaidPanel)
     frames.combat=false; frames.fire("PLAYER_REGEN_ENABLED"); frames.layout()
     T.assertTrue(_G.GrosOrteilRaidPanel:IsShown())
     noErrors()
@@ -352,5 +407,7 @@ T.describe("Runtime regressions",function()
   end)
 end)
 require("test_grimoire_editor")(T,ns,frames)
+require("test_ui_refresh")(T,ns,frames)
+require("test_ui_lifecycle")(T,ns,frames)
 local ok=T.run({verbose=true})
 os.exit(ok and 0 or 1)

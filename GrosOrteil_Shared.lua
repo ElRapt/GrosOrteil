@@ -6,6 +6,13 @@ local _, ns = ...
 local Shared = {}
 ns.Shared = Shared
 
+-- Ordered range keys, persisted/wire fields and labels shared by their consumers.
+Shared.RANGED_ATTACKS = {
+  { key = "courte", field = "attaqueDistanceCourte", label = "Courte (5–25 m)" },
+  { key = "moyenne", field = "attaqueDistanceMoyenne", label = "Moyenne (25–40 m)" },
+  { key = "longue", field = "attaqueDistanceLongue", label = "Longue (> 40 m)" },
+}
+
 ---------------------------------------------------------------------------
 -- Class style definitions (label, color per class)
 ---------------------------------------------------------------------------
@@ -404,17 +411,12 @@ end
 function Shared.MakeBarFrame(parent, w, h)
   local barFrame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
   barFrame:SetSize(w, h)
-  barFrame:SetBackdrop({
-    bgFile   = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = 1,
-  })
-  if ns.Theme then ns.Theme.ApplyNoteSkin(barFrame) end
+  ns.Theme.ApplyNoteSkin(barFrame)
 
   local bar = CreateFrame("StatusBar", nil, barFrame)
   bar:SetAllPoints(barFrame)
-  bar:SetStatusBarTexture(ns.Theme and ns.Theme.Textures.STATUSBAR or "Interface\\Buttons\\WHITE8x8")
-  if ns.Theme then ns.Theme.WatchBar(bar) end
+  bar:SetStatusBarTexture(ns.Theme.Textures.STATUSBAR)
+  ns.Theme.WatchBar(bar)
   bar:SetMinMaxValues(0, 100)
   bar:SetValue(0)
 

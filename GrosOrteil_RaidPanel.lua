@@ -750,7 +750,7 @@ local function buildSection()
   statusFs:Hide()
   sec.statusFs = statusFs
   -- Soft pulse for the "EN AGONIE" state.
-  sec.statusPulse = Shared.MakePulse(statusFs)
+  sec.statusPulse = Theme.MakePulse(statusFs)
 
   return sec
 end
@@ -1074,7 +1074,7 @@ local function createPanelControls()
     b._text = fs
     b._view = view
     b:SetScript("OnClick", function()
-      if applyView and (currentView ~= view or pendingView) then applyView(view) end
+      if (currentView ~= view or pendingView) and applyView(view) then relayout() end
     end)
     b:SetScript("OnEnter", function(self)
       if currentView ~= view then self._text:SetTextColor(1.0, 0.90, 0.50, 1) end
@@ -1178,17 +1178,11 @@ local function createPanelControls()
   sortButton:SetSize(48, 24)
   sortButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -24, 10)
   sortButton:SetFrameLevel((frame:GetFrameLevel() or 0) + 10)
-  if sortButton.SetBackdrop then
-    sortButton:SetBackdrop(BACKDROP_PLAQUE)
-    sortButton:SetBackdropColor(C.BROWN_MED[1], C.BROWN_MED[2], C.BROWN_MED[3], 0.95)
-    sortButton:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 0.90)
-  end
   local sortLabel = sortButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   sortLabel:SetPoint("CENTER", 0, 0)
   sortLabel:SetText("Tri")
   sortButton._text = sortLabel
   Theme.StyleButton(sortButton)
-  sortButton:SetHighlightTexture("Interface\\Buttons\\UI-Listbox-Highlight2")
   sortButton:SetScript("OnClick", function(self) openSortMenu(self) end)
   sortButton:SetScript("OnEnter", function(self)
     local tip = rawget(_G, "GameTooltip")
@@ -1216,6 +1210,7 @@ local function ensureFrame()
   if frame then return end
 
   frame = CreateFrame("Frame", "GrosOrteilRaidPanel", UIParent, "BackdropTemplate")
+  frame:Hide() -- Show() supplies current data before the first layout.
   frame:SetSize(PANEL_W, PANEL_H)
   frame:SetPoint("CENTER")
   frame:SetClampedToScreen(true)
@@ -1227,8 +1222,8 @@ local function ensureFrame()
   frame:SetScript("OnDragStop",  function(f) f:StopMovingOrSizing() end)
 
   -- Shared slate shell and fine gold accents.
-  Shared.ApplyBoardSkin(frame)
-  Shared.ApplyBoardRails(frame)
+  Theme.ApplyBoardSkin(frame)
+  Theme.ApplyBoardRails(frame)
 
   -- ESC closes it (standard pattern; taint-safe for a non-protected frame).
   local specials = rawget(_G, "UISpecialFrames")
@@ -1236,7 +1231,7 @@ local function ensureFrame()
     table.insert(specials, "GrosOrteilRaidPanel")
   end
 
-  local plaque = Shared.MakePlaque(frame, PLAQUE_H)
+  local plaque = Theme.MakePlaque(frame, PLAQUE_H)
 
   headerFs = plaque:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   headerFs:SetPoint("LEFT",  plaque, "LEFT",  10, 0)
@@ -1335,8 +1330,8 @@ local function ensureFrame()
   scrollFrame:SetScript("OnVerticalScroll", updateScrollThumb)
 
   -- Gentle fade-in when the panel opens, fade-out when it closes.
-  fadeIn  = Shared.MakeFadeIn(frame, 0.18)
-  fadeOut = Shared.MakeFadeOut(frame, 0.12, function()
+  fadeIn  = Theme.MakeFadeIn(frame, 0.18)
+  fadeOut = Theme.MakeFadeOut(frame, 0.12, function()
     if inCombat() then pendingVisibility = false; return false end
     return true
   end)
@@ -1361,24 +1356,13 @@ local function ensureFrame()
     })
   end
 
-  -- Secure section buttons can't be moved/shown/re-attributed in combat, so a
-  -- relayout requested during combat is deferred until combat ends. Roster
-  -- changes re-pull the member list so joins/leaves show without reopening.
+  -- Roster changes refresh membership; the lifecycle handler owns combat deferral.
   frame:HookScript("OnHide", function()
     if dragging then stopCardDrag(dragging) end
   end)
-  frame:RegisterEvent("PLAYER_REGEN_ENABLED")
   frame:RegisterEvent("GROUP_ROSTER_UPDATE")
-  frame:SetScript("OnEvent", function(_, event)
-    if not frame:IsShown() then return end
-    if event == "GROUP_ROSTER_UPDATE" then
-      if Refresh then Refresh() end
-      return
-    end
-    if pendingRelayout then
-      pendingRelayout = false
-      if relayout then relayout() end
-    end
+  frame:SetScript("OnEvent", function()
+    if frame:IsShown() then Refresh() end
   end)
 
   -- Live self-updates: peers learn about our changes via comm, but locally we
@@ -1566,7 +1550,7 @@ applyView = function(view)
   styleModeBtns()
   updateSortButton()
   applyFooterHint()
-  relayout()
+  return true
 end
 
 -- ── Drag-to-reorder (group view) ───────────────────────────────────────────────
@@ -1640,11 +1624,12 @@ end
 
 relayout = function()
   if not frame then return end
+  if inCombat() and currentView ~= "meter" then pendingRelayout = true; return end
+  pendingRelayout = false
   if currentView == "meter" then
     layoutMeter()
     return
   end
-  if inCombat() then pendingRelayout = true; return end
   ensureSortState()
   local data = collectData(currentMembers)
   if currentSort then data = sortDisplayData(data, currentSort) end
@@ -1746,11 +1731,13 @@ function RaidPanel.Init()
     end
     if pendingView then
       local view = pendingView; pendingView = nil
-      if frame then applyView(view) end
+      if frame then applyView(view); pendingRelayout = true end
     end
     if pendingVisibility ~= nil then
       local show = pendingVisibility; pendingVisibility = nil
       if show then RaidPanel.Show() else RaidPanel.Hide() end
+    elseif pendingRelayout and frame and frame:IsShown() then
+      relayout()
     end
   end)
   if not ns.TargetPopup or not ns.TargetPopup.OnStateArrived then return end

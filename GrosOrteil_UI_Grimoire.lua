@@ -182,13 +182,6 @@ function ns.UI_BuildGrimoireTab(ctx)
     dialog:SetFrameStrata("DIALOG")
     dialog:SetClampedToScreen(true)
     dialog:EnableMouse(true)
-    dialog:SetBackdrop({
-      bgFile = TEX.FLAT, edgeFile = TEX.FLAT, edgeSize = 2,
-      insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    dialog:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.98)
-    dialog:SetBackdropBorderColor(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.85)
-
     Theme.ApplyBoardSkin(dialog)
     Theme.ApplyBoardRails(dialog)
     local fade = Theme.MakeFadeIn(dialog)
@@ -263,13 +256,6 @@ function ns.UI_BuildGrimoireTab(ctx)
     dialog:SetFrameStrata("DIALOG")
     dialog:SetClampedToScreen(true)
     dialog:EnableMouse(true)
-    dialog:SetBackdrop({
-      bgFile = TEX.FLAT, edgeFile = TEX.FLAT, edgeSize = 2,
-      insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    dialog:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.98)
-    dialog:SetBackdropBorderColor(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.85)
-
     Theme.ApplyBoardSkin(dialog)
     Theme.ApplyBoardRails(dialog)
     local fade = Theme.MakeFadeIn(dialog)
@@ -481,12 +467,6 @@ function ns.UI_BuildGrimoireTab(ctx)
     local card = CreateFrame("Frame", nil, listChild, "BackdropTemplate")
     card:SetHeight(CARD_H)
     card:SetPoint("TOPLEFT", listChild, "TOPLEFT", 0, -((index - 1) * (CARD_H + CARD_GAP)))
-    card:SetBackdrop({
-      bgFile = TEX.FLAT, edgeFile = TEX.FLAT, edgeSize = 1,
-      insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    card:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.72)
-    card:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.45)
     Theme.ApplyNoteSkin(card)
     local accent = card:CreateTexture(nil, "ARTWORK")
     accent:SetColorTexture(C.GOLD[1], C.GOLD[2], C.GOLD[3], 0.8)
@@ -900,6 +880,8 @@ function ns.UI_BuildGrimoireTab(ctx)
   end)
 
   local function refresh(state)
+    if draft and editor:IsVisible() then refreshEditorSelectors(); return end
+    if not listView:IsVisible() then return end
     local techniques = Grimoire.GetTechniques(state)
     header:SetText("Grimoire · " .. #techniques)
     emptyText:SetShown(#techniques == 0)
@@ -927,7 +909,6 @@ function ns.UI_BuildGrimoireTab(ctx)
     local totalHeight = #techniques > 0 and (#techniques * CARD_H + (#techniques - 1) * CARD_GAP) or 90
     listChild:SetHeight(totalHeight)
     layoutCards()
-    if draft and editor:IsShown() then refreshEditorSelectors() end
   end
 
   UI.grimoireRows = cards
@@ -938,6 +919,11 @@ function ns.UI_BuildGrimoireTab(ctx)
   UI.grimoireDamageHealingEdit = damageHealingEdit
   UI.refreshGrimoire = refresh
   UI.openGrimoireEditor = openEditor
+  listView:HookScript("OnShow", function() refresh(Core.state) end)
+  editor:HookScript("OnShow", function() refresh(Core.state) end)
+  Core.OnChange(function(state)
+    if page:IsVisible() then UI.refreshGrimoire(state) end
+  end)
   page:HookScript("OnHide", function()
     if UI.grimoireIconPicker then UI.grimoireIconPicker:Hide() end
   end)

@@ -5,26 +5,38 @@
 -- into the ctx or directly into the ns.UI (UI) table.
 local _, ns = ...
 
+local PERCENTAGE_ERROR = "|cFF66CC66GrosOrteil|r Saisissez un pourcentage de -100 à -1 (dégâts) ou de 1 à 100 (soins)."
+local PERCENTAGE_TOOLTIP = "Modifie les PV de la fiche selon un pourcentage de son maximum : "
+  .. "15 ou +15 soigne 15 %, -15 inflige 15 % de dégâts. Valeurs de -100 à -1 ou de 1 à 100. "
+  .. "Les soins ignorent les plafonds de blessure ; les dégâts ignorent l'armure et les boucliers."
+
 local function buildRangedEditor(ctx, parent, isPet)
   local panel = CreateFrame("Frame", nil, parent)
   panel:SetSize(380, 84)
   panel:Hide()
   panel.inputs = {}
-  for i, def in ipairs({
-    { "courte", "Courte (5–25 m)" }, { "moyenne", "Moyenne (25–40 m)" },
-    { "longue", "Longue (> 40 m)" },
-  }) do
-    local range, label = def[1], def[2]
-    local edit
+  for i, def in ipairs(ns.Shared.RANGED_ATTACKS) do
+    local range, label = def.key, def.label
+    local edit, edited
     ctx.mkLabel(panel, label, 0, -2 - (i - 1) * 28)
     edit = ctx.mkEdit(panel, 90, 22, 176, -(i - 1) * 28, function()
-      local value = ctx.getNumber(edit)
-      if value ~= nil or edit:GetText():match("^%s*$") then
-        ctx.Core.SetRangedAttack(range, value, isPet)
+      if edited then
+        edited = false
+        local value = ctx.getNumber(edit)
+        if value ~= nil or edit:GetText():match("^%s*$") then
+          ctx.Core.SetRangedAttack(range, value, isPet)
+        end
       end
+      local state = ctx.Core.state
+      ctx.setNumber(edit, ctx.Core.GetRangedAttack(isPet and state.pet or state, range))
+    end)
+    edit:SetScript("OnTextChanged", function(_, userInput)
+      if userInput then edited = true end
     end)
     panel.inputs[range] = edit
     local reset = ctx.mkButton(panel, "Auto", 64, 22, 276, -(i - 1) * 28, function()
+      edited = false
+      edit:ClearFocus()
       ctx.Core.SetRangedAttack(range, nil, isPet)
     end)
     if ctx.addTip then
@@ -74,49 +86,6 @@ function ns.UI_BuildFicheTab(ctx)
   local attaqueMeleeEB, attaqueDistanceEB, chanceCurEB, chanceMaxEB, perceptionEB
   local regenParTourEB
 
-  local function applyAllHP()
-    Core.SetHP(ctx.getNumber(hpCur), ctx.getNumber(hpMax))
-  end
-  local function applyAllArmor()
-    local vArmor     = ctx.getNumber(armorEB)
-    local vTrueArmor = ctx.getNumber(trueArmorEB)
-    local vTempArmor = ctx.getNumber(tempArmorEB)
-    local vDodge     = ctx.getNumber(dodgeEB)
-    local vBlock     = ctx.getNumber(blockEB)
-    Core.SetArmor(vArmor, vTrueArmor)
-    Core.SetTempArmor(vTempArmor)
-    Core.SetDodge(vDodge)
-    Core.SetTempBlock(vBlock)
-  end
-  local function applyAllAttaque()
-    if Core and Core.SetAttaque then
-      local vMelee = ctx.getNumber(attaqueMeleeEB)
-      local vDist  = ctx.getNumber(attaqueDistanceEB)
-      Core.SetAttaque(vMelee, vDist)
-    end
-  end
-  local function applyAllChance()
-    if Core and Core.SetChance then
-      local vCur = ctx.getNumber(chanceCurEB)
-      local vMax = ctx.getNumber(chanceMaxEB)
-      Core.SetChance(vCur, vMax)
-    end
-  end
-  local function applyAllPerception()
-    if Core and Core.SetPerception then Core.SetPerception(ctx.getNumber(perceptionEB)) end
-  end
-  local function applyAllRegenParTour()
-    if Core and Core.SetRegenParTour then Core.SetRegenParTour(ctx.getNumber(regenParTourEB)) end
-  end
-  local function applyAllMagicShield()
-    local vHp    = ctx.getNumber(msHpEB)
-    local vMaxHp = ctx.getNumber(msMaxHpEB)
-    local vArmor = ctx.getNumber(msArmorEB)
-    Core.SetMagicShield(vHp, vMaxHp, vArmor)
-  end
-  local function applyAllManaShield()
-    Core.SetManaShieldArmor(ctx.getNumber(mnsArmorEB))
-  end
   local function doDmgArmor()  Core.DamageWithArmor(ctx.getNumber(actValEB) or 0) end
   local function doDmgTrue()   Core.DamageTrue(ctx.getNumber(actValEB) or 0) end
   local function doDmgDirect() Core.DamageDirect(ctx.getNumber(actValEB) or 0) end
@@ -162,23 +131,6 @@ function ns.UI_BuildFicheTab(ctx)
   UI.resRowCur   = UI.resRowCur   or {}
   UI.resRowMax   = UI.resRowMax   or {}
 
-  local function applyAllRes()
-    local snapshots = {}
-    for i = 1, 5 do
-      local row = UI.resRow[i]
-      if row and row:IsShown() then
-        snapshots[#snapshots + 1] = {
-          idx = row.resIdx or i,
-          cur = ctx.getNumber(UI.resRowCur[i]),
-          max = ctx.getNumber(UI.resRowMax[i]),
-        }
-      end
-    end
-    for _, v in ipairs(snapshots) do
-      if Core and Core.SetResIndex then Core.SetResIndex(v.idx, v.cur, v.max) end
-    end
-  end
-
   local function mkResRow(idx, y)
     local row = CreateFrame("Frame", nil, UI.ficheAfterRanged)
     row:SetSize(354, 24)
@@ -189,8 +141,12 @@ function ns.UI_BuildFicheTab(ctx)
     local label = mkLabel(row, "Ressource", 0, 0)
     UI.resRowLabel[idx] = label
     mkLabel(row, "/", 196, 0)
-    local curEB = mkEdit(row, 70, 20, 120, 2, applyAllRes)
-    local maxEB = mkEdit(row, 70, 20, 210, 2, applyAllRes)
+    local curEB = mkEdit(row, 70, 20, 120, 2, function()
+      Core.SetResIndex(row.resIdx, ctx.getNumber(UI.resRowCur[idx]))
+    end)
+    local maxEB = mkEdit(row, 70, 20, 210, 2, function()
+      Core.SetResIndex(row.resIdx, nil, ctx.getNumber(UI.resRowMax[idx]))
+    end)
     UI.resRowCur[idx] = curEB
     UI.resRowMax[idx] = maxEB
     mkButton(row, "+", 28, 20, 294, 2, function()
@@ -247,10 +203,10 @@ function ns.UI_BuildFicheTab(ctx)
     -- Points de vie
     mkSectionHeader("Points de vie", -10)
     lbl("PV", 0, -38); lbl("/", 148, -38)
-    hpCur = edt(110, 26,  -36, applyAllHP)
-    hpMax = edt(110, 166, -36, applyAllHP)
+    hpCur = edt(110, 26,  -36, function() Core.SetHP(ctx.getNumber(hpCur)) end)
+    hpMax = edt(110, 166, -36, function() Core.SetHP(nil, ctx.getNumber(hpMax)) end)
     lbl("Rég. / tour", 0, -106)
-    regenParTourEB = edt(110, 166, -104, applyAllRegenParTour)
+    regenParTourEB = edt(110, 166, -104, function() Core.SetRegenParTour(ctx.getNumber(regenParTourEB)) end)
     local iconRegenParTour = mkActionIcon(cA,
       "Interface/Icons/ability_toughness",
       "Régénération par tour",
@@ -267,8 +223,8 @@ function ns.UI_BuildFicheTab(ctx)
     end)
     UI.stabiliseBtn:Hide()
     lbl("PC", 0, -72)
-    chanceCurEB = edt(48, 26, -70, applyAllChance); lbl("/", 80, -72)
-    chanceMaxEB = edt(48, 92, -70, applyAllChance)
+    chanceCurEB = edt(48, 26, -70, function() Core.SetChance(ctx.getNumber(chanceCurEB)) end); lbl("/", 80, -72)
+    chanceMaxEB = edt(48, 92, -70, function() Core.SetChance(Core.state.chance, ctx.getNumber(chanceMaxEB)) end)
     smallBtn("-", 22, 148, -70, function() if Core and Core.AddChance then Core.AddChance(-1) end end)
     smallBtn("+", 22, 174, -70, function() if Core and Core.AddChance then Core.AddChance(1)  end end)
 
@@ -297,20 +253,20 @@ function ns.UI_BuildFicheTab(ctx)
     -- Armure & Esquive
     mkSectionHeader("Armure & Esquive", -190)
     lbl("Armure", 0, -216); lbl("Armure invul", 190, -216)
-    armorEB     = edt(110, 66,  -214, applyAllArmor)
-    trueArmorEB = edt(110, 284, -214, applyAllArmor)
+    armorEB     = edt(110, 66,  -214, function() Core.SetArmor(ctx.getNumber(armorEB)) end)
+    trueArmorEB = edt(110, 284, -214, function() Core.SetArmor(nil, ctx.getNumber(trueArmorEB)) end)
     lbl("Esquive", 0, -250); lbl("Armure tempo.", 190, -250)
-    dodgeEB     = edt(110, 66,  -248, applyAllArmor)
-    tempArmorEB = edt(110, 284, -248, applyAllArmor)
+    dodgeEB     = edt(110, 66,  -248, function() Core.SetDodge(ctx.getNumber(dodgeEB)) end)
+    tempArmorEB = edt(110, 284, -248, function() Core.SetTempArmor(ctx.getNumber(tempArmorEB)) end)
     mkSep(-284)
 
     -- Attaque & Perception
     mkSectionHeader("Attaque & Perception", -296)
     lbl("CaC", 0, -322); lbl("Distance", 190, -322)
-    attaqueMeleeEB    = edt(110, 66,  -320, applyAllAttaque)
-    attaqueDistanceEB = edt(110, 284, -320, applyAllAttaque)
+    attaqueMeleeEB    = edt(110, 66,  -320, function() Core.SetAttaque(ctx.getNumber(attaqueMeleeEB)) end)
+    attaqueDistanceEB = edt(110, 284, -320, function() Core.SetAttaque(nil, ctx.getNumber(attaqueDistanceEB)) end)
     lbl("Perception", 0, -356)
-    perceptionEB = edt(110, 66, -354, applyAllPerception)
+    perceptionEB = edt(110, 66, -354, function() Core.SetPerception(ctx.getNumber(perceptionEB)) end)
     UI.rangedPanel = buildRangedEditor(ctx, UI.lowerBlock, false)
     UI.rangedPanel:SetPoint("TOPLEFT", UI.lowerBlock, "TOPLEFT", 0, -382 + _LO)
     UI.rangedToggle = smallBtn("+ Portées", 204, 190, -354, function()
@@ -329,6 +285,7 @@ function ns.UI_BuildFicheTab(ctx)
     mkSectionHeader("Actions", -402)
     lbl("Valeur", 0, -430)
     actValEB = edt(120, 60, -428, nil)
+    actValEB:SetNumeric(false) -- Allow signed and fractional action values.
     addTip(btn("Dégâts (armure)", 210, 0,   -462, doDmgArmor),
       "Dégâts (armure)",
       "Subit la valeur en dégâts : esquive, blocage et bouclier magique d'abord, "
@@ -345,18 +302,15 @@ function ns.UI_BuildFicheTab(ctx)
       "Soins",
       "Rend la valeur en PV, dans la limite du plafond de blessure "
         .. "(50 % après une blessure grave, 25 % après une blessure critique).")
-    addTip(btn("Soins divins (75%)", 210, 0, -538, function() Core.DivineHeal() end),
-      "Soins divins",
-      "Rend 75 % du max de PV, en ignorant les plafonds de blessure.")
-    addTip(btn("Chirurgie (50%)",    210, 230, -538, function() Core.Surgery() end),
-      "Chirurgie",
-      "Rend 50 % du max de PV, en ignorant les plafonds de blessure.")
+    addTip(btn("Pourcentage", 440, 0, -538, function()
+      if not Core.PercentageHeal(ctx.getNumber(actValEB)) then print(PERCENTAGE_ERROR) end
+    end), "Pourcentage", PERCENTAGE_TOOLTIP)
     mkSep(-580)
 
     -- Blocage
     mkSectionHeader("Blocage", -592)
     lbl("Blocage", 0, -618)
-    blockEB = edt(110, 162, -616, applyAllArmor)
+    blockEB = edt(110, 162, -616, function() Core.SetTempBlock(ctx.getNumber(blockEB)) end)
     addTip(btn("Réinit.", 100, 284, -616, function() Core.ResetTempBlock() end),
       "Réinitialiser le blocage",
       "Remet le blocage temporaire à zéro.")
@@ -365,20 +319,22 @@ function ns.UI_BuildFicheTab(ctx)
     -- Boucliers magiques: 1x3 grid on PV row (cur | max | Réinit); col1 alignment elsewhere.
     mkSectionHeader("Boucliers magiques", -664)
     lbl("PV", 0, -690); lbl("/", 148, -690)
-    msHpEB    = edt(110, 26,  -688, applyAllMagicShield)
-    msMaxHpEB = edt(110, 166, -688, applyAllMagicShield)
+    msHpEB    = edt(110, 26,  -688, function() Core.SetMagicShield(ctx.getNumber(msHpEB)) end)
+    msMaxHpEB = edt(110, 166, -688, function()
+      Core.SetMagicShield(Core.state.magicShield.hp, ctx.getNumber(msMaxHpEB))
+    end)
     btn("Réinit.", 100, 284, -688, function()
       if Core and Core.ResetMagicShield then Core.ResetMagicShield() end
     end)
     lbl("Armure", 0, -722)
-    msArmorEB = edt(110, 166, -720, applyAllMagicShield)
+    msArmorEB = edt(110, 166, -720, function() Core.SetMagicShield(nil, nil, ctx.getNumber(msArmorEB)) end)
     mnsToggleBtn = btn("Activer bouclier de mana", 240, 0, -756, function()
       if Core and Core.ToggleManaShield then Core.ToggleManaShield() end
     end)
     UI.manaShieldToggleBtn = mnsToggleBtn
     mnsArmorLabel = mkLabel(contentParent, "Armure", 246, -756 + LBL_Y + _LO)
     UI.manaShieldArmorLabel = mnsArmorLabel
-    mnsArmorEB = edt(100, 284, -756, applyAllManaShield)
+    mnsArmorEB = edt(100, 284, -756, function() Core.SetManaShieldArmor(ctx.getNumber(mnsArmorEB)) end)
     UI.manaShieldArmorEB = mnsArmorEB
     mnsToggleBtn:Hide(); mnsArmorLabel:Hide()
     if mnsArmorEB._wrap then mnsArmorEB._wrap:Hide() else mnsArmorEB:Hide() end
@@ -429,7 +385,7 @@ function ns.UI_BuildFicheTab(ctx)
         local bx = startX + (i - 1) * (BTN_W + GAP)
         local b = mkButton(contentParent, def.label, BTN_W, BTN_H2, bx, -1014 + _LO)
         b._postureKey = def.key
-        b._postureR, b._postureG, b._postureB = def.r, def.g, def.b
+        b._postureTint = def
         local tipTitle, tipDesc = def.tip, def.desc
         b:SetScript("OnEnter", function(self)
           GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
@@ -539,7 +495,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
     local b = mkButton(anchors[row], def.label, BTN_W, BTN_H, col * (BTN_W + GAP), 0)
     b._affixKey = def.key
     b._affixLabel = def.label
-    b._affixR, b._affixG, b._affixB = def.r, def.g, def.b
+    b._affixTint = def
     b:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
       GameTooltip:AddLine(def.label, C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
@@ -595,13 +551,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
       setButtonEnabled(b, enabled)
       local turns = holder.affixTurns and holder.affixTurns[b._affixKey]
       b:SetText(b._affixLabel .. (turns and (" (" .. turns .. ")") or ""))
-      if af[b._affixKey] then
-        b:SetBackdropColor(b._affixR * 0.35, b._affixG * 0.35, b._affixB * 0.35, 0.95)
-        b:SetBackdropBorderColor(b._affixR, b._affixG, b._affixB, 1.0)
-      else
-        b:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
-        b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
-      end
+      ns.Theme.SetButtonSelected(b, af[b._affixKey] and b._affixTint or false)
     end
     local playerTurns = s.affixTurns or {}
     local petTurns = s.pet and s.pet.affixTurns or {}
@@ -729,7 +679,7 @@ function ns.UI_BuildClassesTab(ctx)
   infoCard:SetPoint("TOPLEFT",  classStrip, "BOTTOMLEFT",  20, -16)
   infoCard:SetPoint("TOPRIGHT", classStrip, "BOTTOMRIGHT", -20, -16)
   infoCard:SetHeight(110)
-  Shared.ApplyNoteSkin(infoCard, 0.45)
+  ns.Theme.ApplyNoteSkin(infoCard, 0.45)
 
   -- Round class-hall crest: transparent background, no backing plate needed.
   local cardIcon = infoCard:CreateTexture(nil, "ARTWORK")
@@ -925,30 +875,7 @@ function ns.UI_BuildPetFicheTab(ctx)
   local petMsHpEB, petMsMaxHpEB, petMsArmorEB
   local petActionValEB
   local petDmgArmorBtn, petDmgTrueBtn, petDmgDirectBtn
-  local petHealBtn, petDivineBtn, petSurgeryBtn
-
-  local function applyAllPet()
-    if not Core then return end
-    local petNameVal   = petNameEB and petNameEB:GetText() or nil
-    local petHpCurVal  = ctx.getNumber(petHpCurEB)
-    local petHpMaxVal  = ctx.getNumber(petHpMaxEB)
-    local armorVal     = ctx.getNumber(petArmorEB)
-    local trueArmorVal = ctx.getNumber(petTrueArmorEB)
-    local dodgeVal     = ctx.getNumber(petDodgeEB)
-    local meleeVal     = ctx.getNumber(petAttaqueMeleeEB)
-    local distVal      = ctx.getNumber(petAttaqueDistanceEB)
-    local tempArmorVal = ctx.getNumber(petTempArmorEB)
-    local msHpVal      = ctx.getNumber(petMsHpEB)
-    local msMaxHpVal   = ctx.getNumber(petMsMaxHpEB)
-    local msArmorVal   = ctx.getNumber(petMsArmorEB)
-    if Core.SetPetName  and petNameVal then Core.SetPetName(petNameVal) end
-    if Core.SetPetHP    then Core.SetPetHP(petHpCurVal, petHpMaxVal) end
-    if Core.SetPetArmor then Core.SetPetArmor(armorVal, trueArmorVal) end
-    if Core.SetPetDodge then Core.SetPetDodge(dodgeVal) end
-    if Core.SetPetAttaque   then Core.SetPetAttaque(meleeVal, distVal) end
-    if Core.SetPetTempArmor then Core.SetPetTempArmor(tempArmorVal) end
-    if Core.SetPetMagicShield then Core.SetPetMagicShield(msHpVal, msMaxHpVal, msArmorVal) end
-  end
+  local petHealBtn, petPercentageBtn
 
   local petSF = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
   petSF:SetPoint("TOPLEFT",     page, "TOPLEFT",     0,   0)
@@ -1010,26 +937,26 @@ function ns.UI_BuildPetFicheTab(ctx)
   end)
   local aPetNom = mkRowAnchor(petPane, PET_ROW_W, -54)
   mkLabel(aPetNom, "Nom", 0, -2)
-  petNameEB = mkEdit(aPetNom, 320, 20, 60, 0, applyAllPet)
+  petNameEB = mkEdit(aPetNom, 320, 20, 60, 0, function() Core.SetPetName(petNameEB:GetText()) end)
   petNameEB:SetNumeric(false)
   local aPetHP = mkRowAnchor(petPane, PET_ROW_W, -80)
   mkLabel(aPetHP, "PV", 0, -2)
-  petHpCurEB = mkEdit(aPetHP, 70, 20, 60,  0, applyAllPet)
+  petHpCurEB = mkEdit(aPetHP, 70, 20, 60,  0, function() Core.SetPetHP(ctx.getNumber(petHpCurEB)) end)
   mkLabel(aPetHP, "/", 138, -2)
-  petHpMaxEB = mkEdit(aPetHP, 70, 20, 148, 0, applyAllPet)
+  petHpMaxEB = mkEdit(aPetHP, 70, 20, 148, 0, function() Core.SetPetHP(nil, ctx.getNumber(petHpMaxEB)) end)
 
   -- Armure & Esquive (inclut Armure temporaire)
   mkPetSep(-106); mkPetHeader("Armure & Esquive", -114)
   local aPetDef1 = mkRowAnchor(petPane, PET_ROW_W, -132)
   mkLabel(aPetDef1, "Armure", 0, -2)
-  petArmorEB     = mkEdit(aPetDef1, 70, 20, 60,  0, applyAllPet)
+  petArmorEB     = mkEdit(aPetDef1, 70, 20, 60,  0, function() Core.SetPetArmor(ctx.getNumber(petArmorEB)) end)
   mkLabel(aPetDef1, "Armure invul", 150, -2)
-  petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 230, 0, applyAllPet)
+  petTrueArmorEB = mkEdit(aPetDef1, 70, 20, 230, 0, function() Core.SetPetArmor(nil, ctx.getNumber(petTrueArmorEB)) end)
   local aPetDef2 = mkRowAnchor(petPane, PET_ROW_W, -160)
   mkLabel(aPetDef2, "Esquive", 0, -2)
-  petDodgeEB = mkEdit(aPetDef2, 70, 20, 60, 0, applyAllPet)
+  petDodgeEB = mkEdit(aPetDef2, 70, 20, 60, 0, function() Core.SetPetDodge(ctx.getNumber(petDodgeEB)) end)
   mkLabel(aPetDef2, "Arm. tempo.", 150, -2)
-  petTempArmorEB = mkEdit(aPetDef2, 70, 20, 230, 0, applyAllPet)
+  petTempArmorEB = mkEdit(aPetDef2, 70, 20, 230, 0, function() Core.SetPetTempArmor(ctx.getNumber(petTempArmorEB)) end)
   mkButton(aPetDef2, "Réinit.", 70, 20, 310, 0, function()
     if Core and Core.ResetPetTempArmor then Core.ResetPetTempArmor() end
   end)
@@ -1038,9 +965,9 @@ function ns.UI_BuildPetFicheTab(ctx)
   mkPetSep(-188); mkPetHeader("Attaque", -196)
   local aPetAtt = mkRowAnchor(petPane, PET_ROW_W, -214)
   mkLabel(aPetAtt, "CaC", 0, -2)
-  petAttaqueMeleeEB    = mkEdit(aPetAtt, 70, 20, 60,  0, applyAllPet)
+  petAttaqueMeleeEB    = mkEdit(aPetAtt, 70, 20, 60,  0, function() Core.SetPetAttaque(ctx.getNumber(petAttaqueMeleeEB)) end)
   mkLabel(aPetAtt, "Distance", 150, -2)
-  petAttaqueDistanceEB = mkEdit(aPetAtt, 70, 20, 230, 0, applyAllPet)
+  petAttaqueDistanceEB = mkEdit(aPetAtt, 70, 20, 230, 0, function() Core.SetPetAttaque(nil, ctx.getNumber(petAttaqueDistanceEB)) end)
 
   UI.petRangedPanel = buildRangedEditor(ctx, aPetAtt, true)
   UI.petRangedPanel:SetPoint("TOPLEFT", aPetAtt, "TOPLEFT", 0, -28)
@@ -1063,21 +990,24 @@ function ns.UI_BuildPetFicheTab(ctx)
   mkPetSep(-242); mkPetHeader("Bouclier magique", -250)
   local aPetMs1 = mkRowAnchor(petContent, PET_ROW_W, -268)
   mkLabel(aPetMs1, "PV", 0, -2)
-  petMsHpEB    = mkEdit(aPetMs1, 70, 20, 60,  0, applyAllPet)
+  petMsHpEB    = mkEdit(aPetMs1, 70, 20, 60,  0, function() Core.SetPetMagicShield(ctx.getNumber(petMsHpEB)) end)
   mkLabel(aPetMs1, "/", 138, -2)
-  petMsMaxHpEB = mkEdit(aPetMs1, 70, 20, 148, 0, applyAllPet)
+  petMsMaxHpEB = mkEdit(aPetMs1, 70, 20, 148, 0, function()
+    Core.SetPetMagicShield(Core.state.pet.magicShield.hp, ctx.getNumber(petMsMaxHpEB))
+  end)
   mkButton(aPetMs1, "Réinit.", 70, 20, 310, 0, function()
     if Core and Core.ResetPetMagicShield then Core.ResetPetMagicShield() end
   end)
   local aPetMs2 = mkRowAnchor(petContent, PET_ROW_W, -296)
   mkLabel(aPetMs2, "Armure", 0, -2)
-  petMsArmorEB = mkEdit(aPetMs2, 70, 20, 60, 0, applyAllPet)
+  petMsArmorEB = mkEdit(aPetMs2, 70, 20, 60, 0, function() Core.SetPetMagicShield(nil, nil, ctx.getNumber(petMsArmorEB)) end)
 
   -- Actions
   mkPetSep(-324); mkPetHeader("Actions", -332)
   local aPetVal = mkRowAnchor(petContent, PET_ROW_W, -350)
   mkLabel(aPetVal, "Valeur", 0, -2)
   petActionValEB = mkEdit(aPetVal, 80, 20, 60, 0)
+  petActionValEB:SetNumeric(false)
   local aPetBtns1 = mkRowAnchor(petContent, PET_ROW_W, -378)
   ---@diagnostic disable-next-line: unused-vararg
   local addTip = ctx.addTip or function(b, ...) return b end
@@ -1102,14 +1032,9 @@ function ns.UI_BuildPetFicheTab(ctx)
   end), "Soins",
     "Rend la valeur en PV au familier, dans la limite du plafond de blessure.")
   local aPetBtns3 = mkRowAnchor(petContent, PET_ROW_W, -434)
-  petDivineBtn = addTip(mkButton(aPetBtns3, "Soins divins (75%)", 180, 22, 0, 0, function()
-    if Core and Core.PetDivineHeal then Core.PetDivineHeal() end
-  end), "Soins divins",
-    "Rend 75 % du max de PV du familier, en ignorant les plafonds de blessure.")
-  petSurgeryBtn = addTip(mkButton(aPetBtns3, "Chirurgie (50%)", 180, 22, 200, 0, function()
-    if Core and Core.PetSurgery then Core.PetSurgery() end
-  end), "Chirurgie",
-    "Rend 50 % du max de PV du familier, en ignorant les plafonds de blessure.")
+  petPercentageBtn = addTip(mkButton(aPetBtns3, "Pourcentage", 380, 22, 0, 0, function()
+    if not Core.PetPercentageHeal(ctx.getNumber(petActionValEB)) then print(PERCENTAGE_ERROR) end
+  end), "Pourcentage", PERCENTAGE_TOOLTIP)
 
   petPane:SetHeight(508)
 
@@ -1120,7 +1045,7 @@ function ns.UI_BuildPetFicheTab(ctx)
                      petAttaqueMeleeEB, petAttaqueDistanceEB, petTempArmorEB,
                      petMsHpEB, petMsMaxHpEB, petMsArmorEB, petActionValEB }
   UI.petButtons  = { petDmgArmorBtn, petDmgTrueBtn, petDmgDirectBtn,
-                     petHealBtn, petDivineBtn, petSurgeryBtn }
+                     petHealBtn, petPercentageBtn }
   ctx.petInputs  = {
     petName = petNameEB, petHpCur = petHpCurEB, petHpMax = petHpMaxEB,
     petArmor = petArmorEB, petTrueArmor = petTrueArmorEB,
@@ -1324,25 +1249,26 @@ function ns.UI_BuildOnChangeCallback(ctx)
             end
             if txt then
               applyResTextColor(txt)
+              local shownCur, shownMax = math.modf(cur), math.modf(maxv)
               if isWarlockCorruption then
                 local tier = cur < 10 and "Nulle" or cur < 25 and "Passive" or cur < 45 and "Moyenne" or "Forte"
-                txt:SetText(string.format("%s : %d / %d (%d%%) — %s", p.label or "Corruption", cur, maxv, roundPct(pct), tier))
+                txt:SetText(string.format("%s : %d / %d (%d%%) — %s", p.label or "Corruption", shownCur, shownMax, roundPct(pct), tier))
               elseif isInsanity then
                 local tier = cur < 2 and "Nulle"
                   or cur < 11 and "Palier 1"
                   or cur < 18 and "Palier 2"
                   or cur < 25 and "Palier 3"
                   or "Folie latente"
-                txt:SetText(string.format("%s : %d (%d%%) — %s", p.label or "Insanité", cur, roundPct(pct), tier))
+                txt:SetText(string.format("%s : %d (%d%%) — %s", p.label or "Insanité", shownCur, roundPct(pct), tier))
               elseif isMageArcaneCharge then
                 local tier = cur >= 8 and "T5 disponible" or cur >= 4 and "T4 disponible" or nil
                 if tier then
-                  txt:SetText(string.format("%s : %d / %d — %s", p.label or "Charge arcanique", cur, maxv, tier))
+                  txt:SetText(string.format("%s : %d / %d — %s", p.label or "Charge arcanique", shownCur, shownMax, tier))
                 else
-                  txt:SetText(string.format("%s : %d / %d", p.label or "Charge arcanique", cur, maxv))
+                  txt:SetText(string.format("%s : %d / %d", p.label or "Charge arcanique", shownCur, shownMax))
                 end
               else
-                txt:SetText(string.format("%s : %d / %d (%d%%)", p.label or "Ressource", cur, maxv, roundPct(pct)))
+                txt:SetText(string.format("%s : %d / %d (%d%%)", p.label or "Ressource", shownCur, shownMax, roundPct(pct)))
               end
             end
             if isWarlockCorruption then positionMarkers(UI.corruptionMarkers, bar)
@@ -1420,13 +1346,7 @@ function ns.UI_BuildOnChangeCallback(ctx)
             local pk = b._postureKey; local rk = reqKeys[pk]
             local pts = rk and (s[rk] or 0) or 0
             setButtonEnabled(b, pts >= 3)
-            if s.shamanPosture == pk then
-              b:SetBackdropColor(b._postureR * 0.35, b._postureG * 0.35, b._postureB * 0.35, 0.95)
-              b:SetBackdropBorderColor(b._postureR, b._postureG, b._postureB, 1.0)
-            else
-              b:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
-              b:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
-            end
+            ns.Theme.SetButtonSelected(b, s.shamanPosture == pk and b._postureTint or false)
           else
             b:Hide()
           end
@@ -1437,7 +1357,6 @@ function ns.UI_BuildOnChangeCallback(ctx)
     -- Affixes de zone (personnage + familier)
     if UI.refreshAffixButtons then UI.refreshAffixButtons(s) end
     if UI.refreshPetAffixButtons then UI.refreshPetAffixButtons(s) end
-    if UI.refreshGrimoire then UI.refreshGrimoire(s) end
 
     -- Scalar inputs
     ctx.setNumber(UI.inputs.hpCur, s.hp)

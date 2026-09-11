@@ -89,6 +89,19 @@ local COLORS = {
 
 function History.FormatEntry(e)
 	if type(e) ~= "table" then return nil end
+	if e.kind == "PERCENT_HEAL" or e.kind == "PERCENT_DAMAGE" then
+		local damage = e.kind == "PERCENT_DAMAGE"
+		return string.format(
+			"%s%s en pourcentage | Pourcentage %s%% | Résultat %d\n"
+				.. "%s | Max effectif %d\nAvant %d | Après %d",
+			e.subject == "PET" and "[Familier] " or "",
+			damage and "Dégâts" or "Soin", tostring(e.percent or 0),
+			fmtInt(tonumber(e.applied) or 0),
+			damage and "Armure et boucliers ignorés" or "Plafond bypassé",
+			fmtInt(tonumber(e.maxHp) or 0), fmtInt(tonumber(e.hpBefore) or 0),
+			fmtInt(tonumber(e.hpAfter) or 0)
+		)
+	end
 	local t = fmtTime(e.ts)
 	if t ~= "" then t = "[" .. t .. "]" end
 

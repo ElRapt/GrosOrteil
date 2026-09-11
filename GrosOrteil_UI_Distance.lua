@@ -30,7 +30,7 @@ local function button(parent, text, x, y, width, onClick)
   return b
 end
 
-function Distance.Refresh()
+function Distance.Refresh(modeChanged)
   if not frame or not frame:IsShown() then return end
   local result = Distance.Measure()
   frame.result = result
@@ -43,12 +43,14 @@ function Distance.Refresh()
     frame.category:SetText("")
     frame.status:SetText(result.message)
   end
-  frame.hint:SetText(MODE_HINTS[Distance.mode])
-  for mode, b in pairs(frame.modeButtons) do
-    local rgb = mode == Distance.mode and C.GOLD or C.GOLD_MUTED
-    b:SetBackdropBorderColor(rgb[1], rgb[2], rgb[3], 1)
-    local text = mode == Distance.mode and C.TEXT_TITLE or C.TEXT_NORMAL
-    b._fs:SetTextColor(text[1], text[2], text[3], 1)
+  if modeChanged then
+    frame.hint:SetText(MODE_HINTS[Distance.mode])
+    for mode, b in pairs(frame.modeButtons) do
+      local rgb = mode == Distance.mode and C.GOLD or C.GOLD_MUTED
+      b:SetBackdropBorderColor(rgb[1], rgb[2], rgb[3], 1)
+      local text = mode == Distance.mode and C.TEXT_TITLE or C.TEXT_NORMAL
+      b._fs:SetTextColor(text[1], text[2], text[3], 1)
+    end
   end
   for _, row in ipairs(frame.categoryRows) do
     local rgb = result.category == row.key and C.TEXT_TITLE or C.TEXT_DIM
@@ -96,7 +98,7 @@ local function create()
   local fade = Theme.MakeFadeIn(frame)
   frame:SetScript("OnShow", function()
     elapsed = 0
-    Distance.Refresh(); fade:Play()
+    Distance.Refresh(true); fade:Play()
     frame:SetScript("OnUpdate", function(_, delta)
       elapsed = elapsed + delta
       if elapsed >= 0.25 then elapsed = 0; Distance.Refresh() end

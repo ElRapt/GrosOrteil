@@ -87,8 +87,8 @@ T.describe("E2E play session", function()
     T.assertTrue(Core.state.wounds.hit25, "hit25 sticky after low HP")
     Core.Heal(999)  -- wound cap = 50% = 50
     T.assertEq(Core.state.hp, 50, "Heal capped at wound threshold")
-    Core.DivineHeal()  -- bypass cap: +75% maxHp
-    T.assertEq(Core.state.hp, 100, "DivineHeal bypasses cap, clamped to maxHp")
+    Core.PercentageHeal(75)  -- bypass cap: +75% maxHp
+    T.assertEq(Core.state.hp, 100, "PercentageHeal(75) bypasses cap, clamped to maxHp")
     roundtripCheck("step3-heal")
 
     -- ─── Step 4: enable pet + pet combat ──────────────────────────
@@ -169,7 +169,7 @@ T.describe("E2E play session", function()
     Core.DamageTrue(50)  -- damage at hp=0 with stabilise: hp stays 0, stab stays
     T.assertEq(Core.state.hp, 0)
     T.assertEq(Core.state.stabilise, true)
-    Core.Surgery()  -- 50% maxHp revive, clears stabilise
+    Core.PercentageHeal(50)  -- 50% maxHp revive, clears stabilise
     T.assertTrue(Core.state.hp > 0)
     T.assertNil(Core.state.stabilise)
     roundtripCheck("step9-revive")

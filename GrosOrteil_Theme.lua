@@ -1,9 +1,7 @@
 ---@diagnostic disable: undefined-global
 -- Addon-owned presentation only. No Blizzard globals, secure handlers or game
--- state are replaced here. Shared's public skin helpers remain compatibility
--- aliases so every window uses the same palette and animation lifecycle.
+-- state are replaced here. Every window uses this palette and animation lifecycle.
 local _, ns = ...
-local Shared = ns.Shared
 local Theme = {}
 ns.Theme = Theme
 
@@ -51,7 +49,7 @@ local LEGACY_BACKDROP = {
 }
 local LEGACY_BOARD = {edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 16}
 local LEGACY_SURFACES = {
-  CREAMY_BROWN = {0.48, 0.39, 0.32}, GOLD = PALETTES.legacy.GOLD,
+  CREAMY_BROWN = {0.48, 0.39, 0.32},
   CARD_BG = {0.085, 0.065, 0.045}, PLAQUE_BG = {0.10, 0.075, 0.05},
   EDGE = 4, WOOD = 20,
 }
@@ -60,9 +58,6 @@ local TRP3_WOOD_V = "Interface/AddOns/totalRP3/Resources/UI/!ui-frame-wooden-bor
 local TRP3_WOOD_H = "Interface/AddOns/totalRP3/Resources/UI/_ui-frame-wooden-border"
 local BLIZZ_BG = "Interface/FrameGeneral/UIFrameNeutralBackground"
 Theme.Backdrop = {}
-Shared.THEME = {}
-Shared.BACKDROP_BOARD = {}
-Shared.BACKDROP_NOTE = Theme.Backdrop
 
 -- UI modules capture these tables (and individual RGB tables) while loading,
 -- before WoW restores SavedVariables. Preserve every captured reference.
@@ -86,11 +81,6 @@ local function applyPalette(name)
   local legacy = name == "legacy"
   copyInto(C, PALETTES[name])
   copyInto(Theme.Backdrop, legacy and LEGACY_BACKDROP or SLATE_BACKDROP)
-  copyInto(Shared.BACKDROP_BOARD, legacy and LEGACY_BOARD or SLATE_BACKDROP)
-  copyInto(Shared.THEME, legacy and LEGACY_SURFACES or {
-    CREAMY_BROWN = C.GOLD_MUTED, GOLD = C.GOLD,
-    CARD_BG = C.BROWN_DARK, PLAQUE_BG = C.BROWN_MED, EDGE = 4, WOOD = 0,
-  })
   Theme.Textures.STATUSBAR = legacy and "Interface/TargetingFrame/UI-StatusBar" or FLAT
 end
 applyPalette("slate")
@@ -134,10 +124,9 @@ local function color(region, rgb, alpha)
   region:SetColorTexture(rgb[1], rgb[2], rgb[3], alpha or 1)
 end
 
-function Theme.ApplyNoteSkin(frame, alpha)
-  frame:SetBackdrop(Theme.Backdrop)
+local function noteColors(frame, alpha)
   if activeName == "legacy" then
-    local T = Shared.THEME
+    local T = LEGACY_SURFACES
     frame:SetBackdropColor(T.CARD_BG[1], T.CARD_BG[2], T.CARD_BG[3], alpha or 0.92)
     frame:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 0.90)
     return
@@ -146,10 +135,15 @@ function Theme.ApplyNoteSkin(frame, alpha)
   frame:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.65)
 end
 
+function Theme.ApplyNoteSkin(frame, alpha)
+  frame:SetBackdrop(Theme.Backdrop)
+  noteColors(frame, alpha)
+end
+
 function Theme.ApplyBoardSkin(frame)
   if activeName == "legacy" then
-    local T = Shared.THEME
-    frame:SetBackdrop(Shared.BACKDROP_BOARD)
+    local T = LEGACY_SURFACES
+    frame:SetBackdrop(LEGACY_BOARD)
     frame:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 1)
     if rawget(frame, "_goBoard") then return frame._goBoard end
     local board = frame:CreateTexture(nil, "BACKGROUND")
@@ -179,7 +173,7 @@ function Theme.ApplyBoardSkin(frame)
 end
 
 local function applyLegacyRails(frame)
-  local EDGE, WOOD = Shared.THEME.EDGE, Shared.THEME.WOOD
+  local EDGE, WOOD = LEGACY_SURFACES.EDGE, LEGACY_SURFACES.WOOD
   if rawget(_G, "TRP3_API") then
     local function woodV(point, x, flip)
       local t = frame:CreateTexture(nil, "BORDER", nil, -3)
@@ -237,7 +231,7 @@ function Theme.MakePlaque(frame, height)
   plaque:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -10)
   plaque:SetHeight(height or 38)
   if activeName == "legacy" then
-    local T = Shared.THEME
+    local T = LEGACY_SURFACES
     Theme.ApplyNoteSkin(plaque)
     plaque:SetBackdropColor(T.PLAQUE_BG[1], T.PLAQUE_BG[2], T.PLAQUE_BG[3], 0.97)
     plaque:SetBackdropBorderColor(T.CREAMY_BROWN[1], T.CREAMY_BROWN[2], T.CREAMY_BROWN[3], 1)
@@ -330,14 +324,54 @@ function Theme.AddHover(button)
   button:HookScript("OnHide", clear)
 end
 
-function Theme.StyleButton(button, role)
-  button._goRole = role
-  Theme.ApplyNoteSkin(button)
+local function buttonColors(button)
+  local role, selection = button._goRole, rawget(button, "_goSelection")
+  local enabled = button:IsEnabled()
   local label = rawget(button, "_fs") or rawget(button, "_text")
   local rgb = role == "danger" and C.DANGER or role == "primary" and C.SUCCESS or C.TEXT_NORMAL
-  if label then label:SetTextColor(rgb[1], rgb[2], rgb[3], 1) end
-  if role then button:SetBackdropBorderColor(rgb[1], rgb[2], rgb[3], 0.65) end
-  Theme.AddHover(button)
+  local text = enabled and rgb or C.TEXT_DISABLED
+  if label then label:SetTextColor(text[1], text[2], text[3], 1) end
+  if selection then
+    button:SetBackdropColor(selection.r * 0.35, selection.g * 0.35, selection.b * 0.35, 0.95)
+    button:SetBackdropBorderColor(selection.r, selection.g, selection.b, 1)
+  elseif selection == false then
+    button:SetBackdropColor(C.BROWN_DARK[1], C.BROWN_DARK[2], C.BROWN_DARK[3], 0.90)
+    button:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.80)
+  elseif not enabled then
+    button:SetBackdropColor(C.BROWN_DEEP[1], C.BROWN_DEEP[2], C.BROWN_DEEP[3], 0.65)
+    button:SetBackdropBorderColor(C.GOLD_MUTED[1], C.GOLD_MUTED[2], C.GOLD_MUTED[3], 0.35)
+  else
+    noteColors(button)
+    if role then button:SetBackdropBorderColor(rgb[1], rgb[2], rgb[3], 0.65) end
+  end
+end
+
+function Theme.StyleButton(button, role)
+  button._goRole = role
+  if not rawget(button, "_goStyled") then
+    button._goStyled = true
+    button:SetBackdrop(Theme.Backdrop)
+    local enable, disable = button.Enable, button.Disable
+    function button:Enable()
+      if self:IsEnabled() then return end
+      enable(self); buttonColors(self)
+    end
+    function button:Disable()
+      if not self:IsEnabled() then return end
+      disable(self)
+      if self._goHover then self._goHover:Hide() end
+      buttonColors(self)
+    end
+    Theme.AddHover(button)
+  end
+  buttonColors(button)
+end
+
+-- Affixes and postures share the same selected tint, including when disabled.
+function Theme.SetButtonSelected(button, tint)
+  if rawget(button, "_goSelection") == tint then return end
+  button._goSelection = tint
+  buttonColors(button)
 end
 
 function Theme.SectionHeader(parent, text, y, width)
@@ -390,11 +424,3 @@ function Theme.WatchBar(bar)
   end)
   bar:HookScript("OnHide", function() effect:Stop(); flash:Hide(); previous = nil end)
 end
-
-Shared.ApplyBoardSkin = Theme.ApplyBoardSkin
-Shared.ApplyBoardRails = Theme.ApplyBoardRails
-Shared.ApplyNoteSkin = Theme.ApplyNoteSkin
-Shared.MakePlaque = Theme.MakePlaque
-Shared.MakeFadeIn = Theme.MakeFadeIn
-Shared.MakeFadeOut = Theme.MakeFadeOut
-Shared.MakePulse = Theme.MakePulse
