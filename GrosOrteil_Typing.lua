@@ -24,6 +24,15 @@ local function usable(value)
   return not Shared.IsSecret(value) and type(value) == "string" and value ~= ""
 end
 
+local function displayName(sender)
+  local popup = ns.TargetPopup
+  local name = popup and popup.GetRPDisplayName and popup.GetRPDisplayName(sender)
+  if not usable(name) then return sender end
+  -- The channel owns the text color, including names with embedded RP colors.
+  name = name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  return name ~= "" and name or sender
+end
+
 -- Unlike roster display keys, network identities must retain their realm.
 local function nameKey(name, realm)
   if not usable(name) then return nil end
@@ -101,6 +110,8 @@ function Typing.Receive(sender, channel, payload)
     dirty = true
   end
   if peer.channel ~= channel then dirty = true end
+  local shownName = displayName(sender)
+  if peer.name ~= shownName then peer.name, dirty = shownName, true end
   peer.channel, peer.expires, peer.position = channel, GetTime() + EXPIRY, position
 end
 
@@ -151,7 +162,7 @@ local function updatePlate(plate, unit)
   if peer and not icon then
     icon = plate:CreateTexture(nil, "OVERLAY")
     icon:SetSize(18, 18)
-    icon:SetPoint("BOTTOM", plate, "TOP", 0, 4)
+    icon:SetPoint("BOTTOM", plate, "TOP", 0, 0)
     icon:SetTexture(ICON)
     plate.grosOrteilTypingIcon = icon
   end
@@ -168,10 +179,16 @@ end
 
 local function refreshSummary()
   if not summary then return end
-  local count, only = 0
-  for _, peer in pairs(peers) do count, only = count + 1, peer end
+  local count, only, channel = 0
+  for _, peer in pairs(peers) do
+    count, only = count + 1, peer
+    if count == 1 then channel = peer.channel
+    elseif channel ~= peer.channel then channel = nil end
+  end
   if count == 0 then summary:Hide(); return end
   summary.text:SetText(count == 1 and (only.name .. " écrit…") or (count .. " personnes écrivent…"))
+  local color = channel and ChatTypeInfo[channel]
+  summary.text:SetTextColor(color and color.r or 1, color and color.g or 1, color and color.b or 1)
   summary:Show()
 end
 
@@ -273,7 +290,8 @@ function Typing.Initialize()
   -- Constant footprint even with a whole raid typing. Details appear only on hover.
   summary = CreateFrame("Frame", "GrosOrteilTypingSummary", UIParent)
   summary:SetSize(280, 20)
-  summary:SetPoint("BOTTOMLEFT", ChatFrame1 or UIParent, "TOPLEFT", 0, 6)
+  -- Leave room for the chat tabs above the message area.
+  summary:SetPoint("BOTTOMLEFT", ChatFrame1 or UIParent, "TOPLEFT", 0, 32)
   summary:EnableMouse(true)
   local icon = summary:CreateTexture(nil, "ARTWORK")
   icon:SetSize(16, 16)

@@ -13,7 +13,11 @@ version de GrosOrteil qui la prend en charge.
   du canal, sans limite de distance. `/whisper` le transmet uniquement au personnage
   destinataire ; les conversations Battle.net ne sont pas prises en charge.
 - Un résumé sur une ligne au-dessus du chat reste lisible avec de nombreux
-  participants. Survolez-le pour consulter les noms et leurs canaux.
+  participants. Il affiche le nom TRP connu, sinon le nom du personnage, et
+  prend la couleur du canal (rose pour les chuchotements). Survolez-le pour
+  consulter les noms TRP et leurs canaux. Si plusieurs canaux sont utilisés
+  simultanément, le total reste blanc et chaque nom survolé garde la couleur
+  de son canal.
 - Le statut s'arrête à l'envoi, à la fermeture ou après 8 secondes sans modification.
   Une déconnexion ou un arrêt perdu ne laisse pas d'indicateur au-delà de 7 secondes
   après le dernier signal reçu. Les signaux actifs sont renouvelés toutes les

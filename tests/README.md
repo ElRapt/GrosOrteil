@@ -31,6 +31,8 @@ They do not emulate Blizzard's rendering or taint engine.
 idle/expiry/disable/world cleanup, realm-safe nameplate matching, recycled and
 forbidden plates, and 40 simultaneous typists. It reports the cost of 10,000
 idle and 40-peer samples and checks that heartbeats allocate no extra UI regions.
+It also checks TRP names and their fallback, profile changes on heartbeat,
+channel colors in the summary and nameplate bubbles, and mixed-channel crowds.
 
 Theme picker regressions cover live previews, confirmation, exact cancellation,
 combat deferral and ownership of the shared native picker. Palette tests cover

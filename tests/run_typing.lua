@@ -160,7 +160,7 @@ T.describe("Typing indicators",function()
     T.assertEq(summary.text:GetText(),"2 personnes écrivent…")
     party=false
     frames.fire("GROUP_ROSTER_UPDATE")
-    T.assertEq(summary.text:GetText(),"Friend-TestRealm écrit…")
+    T.assertEq(summary.text:GetText(),"Friend écrit…")
     receive("Friend-TestRealm","SAY",false); tick()
     T.assertTrue(summary:IsShown(),"a stop for another channel must not clear a whisper")
   end)
@@ -244,6 +244,59 @@ T.describe("Typing indicators",function()
     tick(10); T.assertEq(joins,2)
     typing.SetEnabled(false); T.assertTrue(left)
     _G.GetChannelName,_G.JoinTemporaryChannel,_G.LeaveChannelByName=get,join,leave
+  end)
+  T.it("uses TRP names in the summary and tooltip while retaining network identities",function()
+    reset(); local p=plate("nameplate1","Alice")
+    local original=LibRPNames
+    local rpName="|cffff0000Alicia de la Lune|r"
+    _G.LibRPNames={Get=function(sender)
+      T.assertEq(sender,"Alice-TestRealm")
+      return rpName
+    end}
+    receive("Alice-TestRealm","WHISPER"); tick()
+    T.assertEq(summary.text:GetText(),"Alicia de la Lune écrit…")
+    T.assertTrue(p.grosOrteilTypingIcon:IsShown())
+    summary:RunScript("OnEnter")
+    T.assertEq(GameTooltip._callAddLine[1],"Alicia de la Lune — WHISPER")
+    T.assertEq(GameTooltip._callAddLine[3],ChatTypeInfo.WHISPER.g)
+    rpName="Alicia Soleil"
+    receive("Alice-TestRealm","WHISPER"); tick(3)
+    T.assertEq(summary.text:GetText(),"Alicia Soleil écrit…")
+    T.assertEq(GameTooltip._callAddLine[1],"Alicia Soleil — WHISPER")
+    frames.fire("CHAT_MSG_WHISPER","Bonjour","Alice-TestRealm")
+    T.assertFalse(summary:IsShown()); T.assertFalse(p.grosOrteilTypingIcon:IsShown())
+    _G.LibRPNames=original
+  end)
+  T.it("uses channel colors for text and nameplate bubbles and handles mixed crowds",function()
+    reset(); party,raid,instance=true,true,true
+    local p=plate("nameplate1","Alice")
+    for _,channel in ipairs({"SAY","PARTY","RAID","INSTANCE_CHAT","WHISPER"}) do
+      receive("Alice-TestRealm",channel); tick()
+      local color=ChatTypeInfo[channel]
+      for index,component in ipairs({color.r,color.g,color.b}) do
+        T.assertEq(summary.text._textColor[index],component)
+        T.assertEq(p.grosOrteilTypingIcon._vertexColor[index],component)
+      end
+      T.assertTrue(p.grosOrteilTypingIcon:IsShown())
+    end
+    receive("Bob-TestRealm","WHISPER"); tick()
+    T.assertEq(summary.text._textColor[2],ChatTypeInfo.WHISPER.g)
+    receive("Bob-TestRealm","PARTY"); tick()
+    for i=1,3 do T.assertEq(summary.text._textColor[i],1) end
+    receive("Bob-TestRealm","PARTY",false); tick()
+    T.assertEq(summary.text._textColor[2],ChatTypeInfo.WHISPER.g)
+    receive("Alice-TestRealm","WHISPER",false); tick()
+    T.assertFalse(summary:IsShown()); T.assertFalse(p.grosOrteilTypingIcon:IsShown())
+  end)
+  T.it("falls back when RP data is unavailable or its lookup fails",function()
+    reset(); receive("Alice-TestRealm","WHISPER"); tick()
+    T.assertEq(summary.text:GetText(),"Alice écrit…")
+    local original=LibRPNames
+    _G.LibRPNames={Get=function() error("RP data unavailable") end}
+    receive("Alice-TestRealm","WHISPER"); tick(3)
+    T.assertEq(summary.text:GetText(),"Alice-TestRealm écrit…")
+    T.assertTrue(summary:IsShown())
+    _G.LibRPNames=original
   end)
 end)
 local ok=T.run({verbose=true})
