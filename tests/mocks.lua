@@ -131,6 +131,9 @@ function M.install()
   end
   _G.IsInRaid = function() return false end
   _G.IsInGroup = function() return false end
+  _G.GetChannelName = function() return 1 end
+  _G.JoinTemporaryChannel = function() end
+  _G.LeaveChannelByName = function() end
 
   -- Sound stubs — silent.
   _G.PlaySound = function() end
@@ -153,6 +156,7 @@ function M.install()
   _G.C_ChatInfo = {
     RegisterAddonMessagePrefix = function(_) return true end,
     SendAddonMessage = function(prefix, msg, channel, target)
+      assert(channel ~= "SAY" and channel ~= "YELL", "Retail has no SAY/YELL addon transport")
       M.sentMessages[#M.sentMessages + 1] = {
         prefix = prefix, msg = msg, channel = channel, target = target,
       }

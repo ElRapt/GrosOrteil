@@ -123,6 +123,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
     if ns.Comm_Init then
       ns.Comm_Init()
     end
+    ns.Typing.Initialize()
     if ns.TargetPopup_Init then
       ns.TargetPopup_Init()
     end

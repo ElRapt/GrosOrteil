@@ -21,6 +21,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua${{ matrix.lua }}
       - name: Logic regressions
         run: lua${{ matrix.lua }} tests/run.lua
+      - name: Typing indicators
+        run: lua${{ matrix.lua }} tests/run_typing.lua
       - name: UI and packaged regressions
         run: |
           lua${{ matrix.lua }} tests/run_ui.lua

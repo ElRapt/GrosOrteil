@@ -1609,6 +1609,23 @@ function ns.UI_Init()
   distanceButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
   UI.distanceButton = distanceButton
 
+  local typingButton = mkButton(frame, "", 116, 22, 0, 0, function()
+    ns.Typing.SetEnabled(not ns.Typing.IsEnabled())
+    UI.typingButton:SetText(ns.Typing.IsEnabled() and "Saisie : activée" or "Saisie : masquée")
+  end)
+  typingButton:ClearAllPoints()
+  typingButton:SetPoint("LEFT", distanceButton, "RIGHT", 8, 0)
+  typingButton:SetText(ns.Typing.IsEnabled() and "Saisie : activée" or "Saisie : masquée")
+  typingButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:SetText("Indicateurs de saisie")
+    GameTooltip:AddLine("Affiche et partage la saisie avec les autres utilisateurs de GrosOrteil : dire à proximité, groupe/raid à toute distance, et chuchotements qui vous sont destinés.", 1, 1, 1, true)
+    GameTooltip:AddLine("Bulles sur les plaques de nom amicales ; résumé au-dessus du chat. Dire : position approximative partagée, portée horizontale de 60 m, hors combat/instance et sur le même canal de royaume. Aucun texte saisi n'est partagé.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  typingButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  UI.typingButton = typingButton
+
   -- Reset-to-defaults button: text button centred in the sidebar.
   local resetBtn = mkButton(sidebar, "Réinitialiser", SIDEBAR_W - (NAV_PAD * 2), 24, 0, 0, function()
     if StaticPopup_Show then StaticPopup_Show("GROSORTEIL_RESET_DEFAULTS") end
