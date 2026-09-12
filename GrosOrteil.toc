@@ -31,6 +31,7 @@ GrosOrteil_UI_Tabs.lua
 GrosOrteil_UI_Grimoire.lua
 GrosOrteil_UI.lua
 GrosOrteil_Comm.lua
+GrosOrteil_Typing.lua
 GrosOrteil_TargetPopup.lua
 GrosOrteil_Heal.lua
 GrosOrteil_MeterSync.lua

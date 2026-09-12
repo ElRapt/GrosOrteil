@@ -74,6 +74,12 @@ local function unitPosition(unit)
   return { x = x, y = y, map = map }
 end
 
+-- Shared safe world position for proximity features; no position in restricted contexts.
+function Distance.GetPlayerPosition()
+  if blockedReason() then return nil end
+  return unitPosition("player")
+end
+
 local function between(a, b, source)
   if a.map ~= b.map then return unavailable("different_map") end
   local dx, dy = a.x - b.x, a.y - b.y

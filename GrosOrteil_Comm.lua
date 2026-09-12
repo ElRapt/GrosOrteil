@@ -362,6 +362,23 @@ function Comm:RequestState(targetPlayer)
   sendAddonMessage(self.PREFIX, "REQUEST_STATE", "WHISPER", targetPlayer)
 end
 
+-- Small ephemeral status packets use the existing throttled transport.
+Comm.TYPING_CHANNEL = "GrosOrteilTyping"
+function Comm:SendTyping(channel, target, active, position)
+  local message = "TYPING:1:" .. (active and "1" or "0")
+  if channel == "SAY" then
+    -- Retail has no SAY addon transport. A dedicated channel carries position
+    -- with status so receivers can apply a horizontal local range check.
+    target = GetChannelName(self.TYPING_CHANNEL)
+    if target == 0 or (active and not position) then return false end
+    channel = "CHANNEL"
+    message = "TYPING:1:SAY:" .. (active and "1" or "0")
+    if active then message = message .. string.format(":%d:%.2f:%.2f", position.map, position.x, position.y) end
+  end
+  sendAddonMessage(self.PREFIX, message, channel, target)
+  return true
+end
+
 -- Heal handshake (raid panel). Healer -> target: "HEAL_REQ:<amount>[:PET]".
 -- The PET suffix asks the target to apply the heal to their pet. Clients
 -- predating the flag fail tonumber("<amt>:PET") and simply ignore the request.
@@ -493,6 +510,11 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
   local cmd, rest = strsplit(":", msg or "", 2)
   if not cmd then
     dbg("Message parse failed from %s", tostring(sender))
+    return
+  end
+
+  if cmd == "TYPING" then
+    if ns.Typing then ns.Typing.Receive(sender, channel, rest) end
     return
   end
 

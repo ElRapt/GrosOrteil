@@ -4,6 +4,7 @@ Run from the addon root with Lua 5.1 or 5.4:
 
 ```sh
 lua tests/run.lua
+lua tests/run_typing.lua
 lua tests/run_ui.lua
 lua tests/run_ui.lua legacy
 lua tests/run_ui.lua invalid
@@ -26,6 +27,13 @@ saved theme (which falls back to Slate). Removed-feature regressions now cover
 Beledar migration and harmless obsolete commands; Cambuse coverage is retained.
 They do not emulate Blizzard's rendering or taint engine.
 
+`run_typing.lua` checks channel/recipient routing, no draft content on the wire,
+idle/expiry/disable/world cleanup, realm-safe nameplate matching, recycled and
+forbidden plates, and 40 simultaneous typists. It reports the cost of 10,000
+idle and 40-peer samples and checks that heartbeats allocate no extra UI regions.
+It also checks TRP names and their fallback, profile changes on heartbeat,
+channel colors in the summary and nameplate bubbles, and mixed-channel crowds.
+
 Theme picker regressions cover live previews, confirmation, exact cancellation,
 combat deferral and ownership of the shared native picker. Palette tests cover
 atomic validation, a single repaint, editable colors and selection derived from
@@ -44,6 +52,23 @@ without polling hidden windows.
 ## In-client acceptance
 
 Before merging UI changes, check in WoW with Lua errors and taint logging enabled:
+
+- With two updated clients, enable **Saisie** in `/go`. Check `/say` while
+  ungrouped, inside and outside the 60-unit horizontal proximity radius; `/party`, `/raid`, and instance
+  chat at distance; and `/whisper` with a third observer who must see nothing.
+  Switch channels and whisper recipients while drafting, press Enter/Escape,
+  clear the draft, pause for 8 seconds, resume, toggle off, and reload. Stops
+  should be immediate or within one 0.2-second sample; missing stops expire
+  after 7 seconds. Network throttling may add delay.
+  Enable friendly nameplates for overhead icons; unavailable/forbidden plates
+  use the summary for group/whispers. Say additionally needs a visible plate,
+  shared realm/faction channel and accessible outdoor positions. Confirm it stays
+  silent in combat/instances, across phases and outside the proximity radius.
+  Check that the temporary channel joins after login and leaves on disable.
+  Confirm icons follow moving players, disappear as plates recycle, and remain
+  small and static in a crowd. With 40 typists the summary remains one line;
+  hover for channel-colored names. Verify the toggle persists per character,
+  and the footer fits the minimum window size in both themes.
 
 - Open `/go`, visit each page, change class and switch to a named pet. Confirm
   long RP names, numeric values and tooltips stay readable with and without TRP3.

@@ -23,6 +23,8 @@ function methods:RunScript(name, ...)
 end
 function methods:SetScript(name, fn) self._scripts[name] = fn end
 function methods:GetScript(name) return self._scripts[name] end
+function methods:IsForbidden() return self._forbidden == true end
+function methods:IsOwned(owner) return self._callSetOwner and self._callSetOwner[1] == owner or false end
 function methods:HookScript(name, fn)
   self._hooks[name] = self._hooks[name] or {}
   table.insert(self._hooks[name], fn)
