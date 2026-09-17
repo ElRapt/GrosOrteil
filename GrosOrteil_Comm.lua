@@ -45,7 +45,7 @@ end
 ---@diagnostic disable-next-line: unused-vararg
 local function dbg(...) end
 
-local function sendAddonMessage(prefix, msg, channel, target)
+local function sendAddonMessage(prefix, msg, channel, target, callback)
   dbg(
     "SendAddonMessage prefix=%s channel=%s target=%s bytes=%d",
     tostring(prefix),
@@ -55,15 +55,27 @@ local function sendAddonMessage(prefix, msg, channel, target)
   )
   if ChatThrottleLib and ChatThrottleLib.SendAddonMessage then
     dbg("Using ChatThrottleLib")
-    ChatThrottleLib:SendAddonMessage("NORMAL", prefix, msg, channel, target)
-    return
+    local accepted = true
+    local function completed(_, sent, result)
+      accepted = sent
+      if callback then callback(sent, result) end
+    end
+    -- A queued message is pending; only the completion callback confirms the
+    -- API result. Immediate rejections can also be returned to the caller.
+    ChatThrottleLib:SendAddonMessage("NORMAL", prefix, msg, channel, target, nil, completed)
+    return accepted
   end
   if C_ChatInfo and C_ChatInfo.SendAddonMessage then
     dbg("Using C_ChatInfo.SendAddonMessage")
-    C_ChatInfo.SendAddonMessage(prefix, msg, channel, target)
-    return
+    local result = C_ChatInfo.SendAddonMessage(prefix, msg, channel, target)
+    local results = Enum and Enum.SendAddonMessageResult
+    local sent = result == true or (results and result == results.Success) or result == nil
+    if callback then callback(not not sent, result) end
+    return not not sent
   end
   dbg("ERROR: no addon message transport available")
+  if callback then callback(false, "NO_TRANSPORT") end
+  return false
 end
 
 -- Numeric fields shared in the addon-message payload. Each entry: { key, default }.
@@ -362,21 +374,29 @@ function Comm:RequestState(targetPlayer)
   sendAddonMessage(self.PREFIX, "REQUEST_STATE", "WHISPER", targetPlayer)
 end
 
+-- Diagnostic uses just the legacy state request, without the normal panel's
+-- meter-sync wrapper, and retains the transport completion callback.
+function Comm:ProbeState(targetPlayer, callback)
+  return sendAddonMessage(self.PREFIX, "REQUEST_STATE", "WHISPER", targetPlayer, callback)
+end
+
 -- Small ephemeral status packets use the existing throttled transport.
 Comm.TYPING_CHANNEL = "GrosOrteilTyping"
-function Comm:SendTyping(channel, target, active, position)
+function Comm:SendTyping(channel, target, active, position, callback)
   local message = "TYPING:1:" .. (active and "1" or "0")
   if channel == "SAY" then
     -- Retail has no SAY addon transport. A dedicated channel carries position
     -- with status so receivers can apply a horizontal local range check.
     target = GetChannelName(self.TYPING_CHANNEL)
-    if target == 0 or (active and not position) then return false end
+    if target == 0 or (active and not position) then
+      if callback then callback(false, target == 0 and "NO_CHANNEL" or "NO_POSITION") end
+      return false
+    end
     channel = "CHANNEL"
     message = "TYPING:1:SAY:" .. (active and "1" or "0")
     if active then message = message .. string.format(":%d:%.2f:%.2f", position.map, position.x, position.y) end
   end
-  sendAddonMessage(self.PREFIX, message, channel, target)
-  return true
+  return sendAddonMessage(self.PREFIX, message, channel, target, callback)
 end
 
 -- Heal handshake (raid panel). Healer -> target: "HEAL_REQ:<amount>[:PET]".
@@ -511,6 +531,10 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
   if not cmd then
     dbg("Message parse failed from %s", tostring(sender))
     return
+  end
+
+  if ns.Typing and ns.Typing.OnDiagnosticMessage then
+    ns.Typing.OnDiagnosticMessage(sender, channel, cmd)
   end
 
   if cmd == "TYPING" then

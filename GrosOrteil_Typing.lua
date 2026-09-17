@@ -14,6 +14,50 @@ local announcedChannel, announcedTarget, lastSent
 local lastText, lastEdit, lastActivity
 local lastJoin
 local dirty = false
+local debugUntil = 0
+local diagnostics = { input = "no focused chat", sent = 0, failed = 0, received = 0 }
+local pendingProbe
+
+local function diagnostic(message)
+  print("|cFF00FF00GrosOrteil saisie|r " .. message)
+end
+
+local function trace(message)
+  if GetTime() < debugUntil then print("|cFF00FF00GrosOrteil saisie|r " .. message) end
+end
+
+local function inputStatus(status)
+  if diagnostics.input ~= status then
+    diagnostics.input = status
+    trace("Input: " .. status)
+  end
+end
+
+local function sendResult(sent, result)
+  local label = tostring(result)
+  for name, value in pairs(Enum and Enum.SendAddonMessageResult or {}) do
+    if value == result then label = name; break end
+  end
+  local key = sent and "sent" or "failed"
+  diagnostics[key] = diagnostics[key] + 1
+  diagnostics.result = (sent and "accepted" or "FAILED") .. " (" .. label .. ")"
+  trace("Transport: " .. diagnostics.result)
+end
+
+function Typing.Debug(command)
+  local mode, target = (command or ""):match("^(%S*)%s*(.-)$")
+  mode = mode:lower()
+  if mode == "test" then Typing.TestDisplay(); return end
+  if mode == "probe" then Typing.ProbePeer(target); return end
+  debugUntil = mode == "off" and 0 or GetTime() + 60
+  if mode == "off" then pendingProbe = nil end
+  print("|cFF00FF00GrosOrteil saisie|r enabled=" .. tostring(Typing.IsEnabled())
+    .. ", polling=" .. tostring(ticker ~= nil) .. ", input=" .. diagnostics.input
+    .. ", accepted=" .. diagnostics.sent .. ", failed=" .. diagnostics.failed
+    .. ", received=" .. diagnostics.received .. ", last=" .. (diagnostics.result or "none"))
+  print("|cFF00FF00GrosOrteil saisie|r " .. (mode == "off" and "Diagnostic off."
+    or "Diagnostic on for 60s. Type normally; draft text is never logged. Accepted means sent to WoW, not confirmed by a recipient."))
+end
 
 function Typing.IsEnabled()
   local settings = ns.GetDB().settings
@@ -74,7 +118,9 @@ local function inSayRange(position, player)
 end
 
 function Typing.Receive(sender, channel, payload)
-  if not Typing.IsEnabled() or not usable(channel) or not usable(payload) then return end
+  diagnostics.received = diagnostics.received + 1
+  trace("Receive: " .. (usable(sender) and sender or "?") .. " / " .. (usable(channel) and channel or "?"))
+  if not Typing.IsEnabled() or not usable(channel) or not usable(payload) then trace("Ignored: disabled/invalid packet"); return end
   local active, position
   if channel == "CHANNEL" then
     channel = "SAY"
@@ -82,27 +128,22 @@ function Typing.Receive(sender, channel, payload)
     else
       local map, x, y = payload:match("^1:SAY:1:(%-?%d+):([%d%.%-]+):([%d%.%-]+)$")
       map, x, y = tonumber(map), tonumber(x), tonumber(y)
-      if not map or not x or not y or map < 0 or map > 1e6 or math.abs(x) > 1e6 or math.abs(y) > 1e6 then return end
+      if not map or not x or not y or map < 0 or map > 1e6 or math.abs(x) > 1e6 or math.abs(y) > 1e6 then trace("Ignored: invalid SAY position"); return end
       position = { map = map, x = x, y = y }
       active = inSayRange(position, ns.Distance.GetPlayerPosition())
     end
   elseif channel ~= "SAY" and CHANNELS[channel] then
-    if payload ~= "1:1" and payload ~= "1:0" then return end
+    if payload ~= "1:1" and payload ~= "1:0" then trace("Ignored: unsupported payload"); return end
     active = payload == "1:1"
-  else return end
-  if groupChannel(channel) and not groupAvailable(channel) then return end
+  else trace("Ignored: unsupported channel"); return end
+  if groupChannel(channel) and not groupAvailable(channel) then trace("Ignored: no matching group"); return end
   local key = nameKey(sender)
-  if not key or key == unitKey("player") then return end
-  if active and channel == "SAY" then
-    -- A realm-wide channel also contains other shards/phases. Require a local
-    -- nameplate before treating a nearby coordinate as a visible speaker.
-    local visible = false
-    for unit in pairs(plates) do
-      if unitKey(unit) == key then visible = true; break end
-    end
-    active = visible
-  end
-  if not active then removePeer(key, channel); return end
+  if not key or key == unitKey("player") then trace("Ignored: self/invalid sender"); return end
+  -- Nameplates only control overhead icons. Their absence (including friendly
+  -- plates being disabled) must not discard a nearby SAY status for the summary.
+  -- World coordinates cannot distinguish overlapping shards/phases.
+  if not active then trace("Hidden: stopped/out of range/position unavailable"); removePeer(key, channel); return end
+  trace("Display: " .. channel)
   local peer = peers[key]
   if not peer then
     peer = { name = sender }
@@ -117,14 +158,67 @@ end
 
 local function stopSending()
   if announcedChannel then
-    ns.Comm:SendTyping(announcedChannel, announcedTarget, false)
+    trace("Stop: " .. announcedChannel)
+    ns.Comm:SendTyping(announcedChannel, announcedTarget, false, nil, sendResult)
     announcedChannel, announcedTarget = nil, nil
   end
 end
 
+-- Reuse the existing state request/reply, understood by unpatched peers. A
+-- reply proves addon traffic can make the round trip, not their typing UI.
+function Typing.ProbePeer(target)
+  if not usable(target) or target:find("%s") then
+    diagnostic("Usage: /go typingdebug probe Character-Realm")
+    return
+  end
+  local key = nameKey(target)
+  if not key or key == unitKey("player") then
+    diagnostic("Choose another player for the network check.")
+    return
+  end
+  if pendingProbe then diagnostic("A network check is already pending."); return end
+  local probe = { key = key, target = target }
+  pendingProbe = probe
+  diagnostic("Network check: requesting addon state from " .. target .. " (no update needed on their side).")
+  C_Timer.After(8, function()
+    if pendingProbe ~= probe then return end
+    pendingProbe = nil
+    diagnostic("No state reply from " .. target .. " within 8s. This does not identify the cause; check character/realm and that their addon is active.")
+  end)
+  ns.Comm:ProbeState(target, function(sent, result)
+    if pendingProbe ~= probe or sent then return end
+    pendingProbe = nil
+    diagnostic("Network check send failed: " .. tostring(result))
+  end)
+end
+
+function Typing.OnDiagnosticMessage(sender, channel, command)
+  local probe = pendingProbe
+  if not probe or channel ~= "WHISPER" or nameKey(sender) ~= probe.key then return end
+  if command ~= "STATE_DATA" and command ~= "STATE_DATA_COMPRESSED"
+      and command ~= "STATE_DATA_PART" and command ~= "STATE_DATA_COMPRESSED_PART" then return end
+  pendingProbe = nil
+  diagnostic("State reply received from " .. sender .. ": addon traffic works in both directions. Their typing setting/display is still unverified.")
+end
+
+local function focusedChat()
+  local getActive = ChatFrameUtil and ChatFrameUtil.GetActiveWindow or ChatEdit_GetActiveWindow
+  local edit = getActive and getActive()
+  if edit and edit:HasFocus() then return edit end
+  -- The active-window pointer can be absent/stale. Only inspect known chat
+  -- boxes, so typing in addon forms never broadcasts a typing status.
+  for _, name in ipairs(CHAT_FRAMES or {}) do
+    local chat = _G[name]
+    edit = chat and chat.editBox
+    if edit and edit:HasFocus() then return edit end
+  end
+  edit = DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox
+  if edit and edit:HasFocus() then return edit end
+end
+
 local function sampleInput(now)
-  local edit = ChatFrameUtil and ChatFrameUtil.GetActiveWindow()
-  local text = edit and edit:HasFocus() and edit:GetText() or nil
+  local edit = focusedChat()
+  local text = edit and edit:GetText() or nil
   if not usable(text) then text = nil end
   if edit ~= lastEdit or text ~= lastText then
     lastActivity = now
@@ -146,11 +240,15 @@ local function sampleInput(now)
   -- Limit new starts even when channels/recipients change rapidly.
   if channel and (not lastSent or now - lastSent >= (announcedChannel and HEARTBEAT or 1)) then
     local position = channel == "SAY" and ns.Distance.GetPlayerPosition() or nil
-    if channel == "SAY" and not position then stopSending(); return end
-    if ns.Comm:SendTyping(channel, target, true, position) then
-      announcedChannel, announcedTarget, lastSent = channel, target, now
+    if channel == "SAY" and not position then inputStatus("SAY position unavailable"); stopSending(); return end
+    -- Bound failed attempts as well as successful starts.
+    lastSent = now
+    trace("Send: " .. channel .. (target and (" / " .. target) or ""))
+    if ns.Comm:SendTyping(channel, target, true, position, sendResult) then
+      announcedChannel, announcedTarget = channel, target
     end
   end
+  inputStatus(channel and ("typing " .. channel) or (not edit and "no focused chat" or "draft inactive/unsupported"))
 end
 
 local function updatePlate(plate, unit)
@@ -200,6 +298,24 @@ local function refresh()
     summary:GetScript("OnEnter")(summary)
   end
   dirty = false
+end
+
+function Typing.TestDisplay()
+  if not frame or not ticker or not Typing.IsEnabled() then
+    diagnostic("Enable Saisie before running the local display test.")
+    return
+  end
+  local realm = GetNormalizedRealmName()
+  if not usable(realm) then diagnostic("Local realm unavailable."); return end
+  local sender = "GrosOrteilTypingTest-" .. realm
+  -- Inject locally through the normal message parser; nothing goes on the wire.
+  ns.Comm:OnChatMsgAddon(ns.Comm.PREFIX, "TYPING:1:1", "WHISPER", sender)
+  local peer = peers[nameKey(sender)]
+  if not peer then diagnostic("Local test failed: the receiver rejected the test signal."); return end
+  peer.name = "Test de saisie (local)"
+  dirty = true
+  refresh()
+  diagnostic("Local test: a pink typing summary should appear above chat for 7s. No message was sent to another player.")
 end
 
 local function tick()

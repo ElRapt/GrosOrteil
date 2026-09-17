@@ -4,6 +4,25 @@ local mocks = require("mocks")
 mocks.install()
 local frames = require("ui_mocks")
 frames.install()
+_G.Enum = { SendAddonMessageResult = { Success=0, AddonMessageThrottle=3, NotInGroup=5, GeneralError=9 } }
+if arg and arg[1] == "ctl" then
+  -- Exercise the bundled transport too, including its completion callbacks.
+  _G.GetFramerate = function() return 60 end
+  _G.securecallfunction = function(fn, ...) return fn(...) end
+  _G.unpack = table.unpack or unpack
+  table.wipe = function(t) for k in pairs(t) do t[k]=nil end; return t end
+  local hook = hooksecurefunc
+  _G.hooksecurefunc = function() end -- Traffic hooks are unrelated to queued sends.
+  if _VERSION == "Lua 5.1" then
+    local original = xpcall
+    _G.xpcall = function(fn, handler, ...)
+      local args, count = {...}, select("#", ...)
+      return original(function() return fn(unpack(args, 1, count)) end, handler)
+    end
+  end
+  dofile("Libs/ChatThrottleLib/ChatThrottleLib.lua")
+  _G.hooksecurefunc = hook
+end
 local ns = require("load").load()
 assert(loadfile("GrosOrteil_Typing.lua"))("GrosOrteil", ns)
 local T = require("framework")
@@ -72,7 +91,81 @@ local function plate(unit, name, realm)
   frames.fire("NAME_PLATE_UNIT_ADDED",unit)
   return p
 end
+local function withDiagnostics(fn)
+  local original,lines=print,{}
+  _G.print=function(line) lines[#lines+1]=line end
+  local ok,err=pcall(fn,lines)
+  _G.print=original
+  if not ok then error(err,0) end
+end
 T.describe("Typing indicators",function()
+  T.it("previews a local whisper indicator through the receiver without network traffic",function()
+    reset()
+    withDiagnostics(function()
+      typing.Debug("test")
+      T.assertTrue(summary:IsShown())
+      T.assertEq(summary.text:GetText(),"Test de saisie (local) écrit…")
+      T.assertEq(summary.text._textColor[2],ChatTypeInfo.WHISPER.g)
+      T.assertEq(#mocks.sentMessages,0)
+      tick(7); T.assertFalse(summary:IsShown())
+      typing.SetEnabled(false)
+      typing.Debug("test"); T.assertFalse(summary:IsShown())
+      T.assertEq(#mocks.sentMessages,0)
+    end)
+  end)
+  T.it("checks an unpatched peer with the existing state request and reply protocol",function()
+    reset()
+    withDiagnostics(function(lines)
+      typing.Debug("probe Sierafin-TestRealm")
+      T.assertEq(#mocks.sentMessages,1)
+      T.assertEq(mocks.sentMessages[1].msg,"REQUEST_STATE")
+      T.assertEq(mocks.sentMessages[1].target,"Sierafin-TestRealm")
+      local timeout=frames.timers[#frames.timers]
+      local count=#lines
+      ns.Comm:OnChatMsgAddon("GO_STATE","STATE_DATA:invalid","WHISPER","Other-TestRealm")
+      ns.Comm:OnChatMsgAddon("GO_STATE","STATE_DATA:invalid","PARTY","Sierafin-TestRealm")
+      T.assertEq(#lines,count)
+      -- An existing peer handles REQUEST_STATE with its ordinary state sender.
+      ns.Comm:SendStateData("TestPlayer-TestRealm")
+      for i=2,#mocks.sentMessages do
+        local msg=mocks.sentMessages[i]
+        ns.Comm:OnChatMsgAddon(msg.prefix,msg.msg,msg.channel,"Sierafin-TestRealm")
+      end
+      T.assertEq(#lines,count+1)
+      T.assertTrue(lines[#lines]:find("State reply received",1,true)~=nil)
+      timeout(); T.assertEq(#lines,count+1)
+    end)
+  end)
+  T.it("bounds peer checks and reports timeouts without claiming a delivery cause",function()
+    reset()
+    withDiagnostics(function(lines)
+      typing.Debug("probe"); typing.Debug("probe TestPlayer-TestRealm")
+      T.assertEq(#mocks.sentMessages,0)
+      typing.Debug("probe Sierafin")
+      local timeout=frames.timers[#frames.timers]
+      typing.Debug("probe AnotherPlayer")
+      T.assertEq(#mocks.sentMessages,1)
+      timeout()
+      T.assertTrue(lines[#lines]:find("No state reply",1,true)~=nil)
+      typing.Debug("probe Sierafin")
+      local cancelled=frames.timers[#frames.timers]
+      typing.Debug("off")
+      local count=#lines
+      cancelled(); T.assertEq(#lines,count)
+    end)
+  end)
+  T.it("reports a rejected peer check without a misleading timeout",function()
+    reset()
+    local send=C_ChatInfo.SendAddonMessage
+    C_ChatInfo.SendAddonMessage=function() return Enum.SendAddonMessageResult.GeneralError end
+    withDiagnostics(function(lines)
+      typing.Debug("probe Sierafin")
+      T.assertTrue(lines[#lines]:find("Network check send failed",1,true)~=nil)
+      local count=#lines
+      frames.timers[#frames.timers](); T.assertEq(#lines,count)
+    end)
+    C_ChatInfo.SendAddonMessage=send
+  end)
   T.it("sends say status with no draft text and stops on send/close",function()
     reset(); edit("SAY","a private draft"); tick()
     T.assertEq(#mocks.sentMessages,1)
@@ -92,6 +185,75 @@ T.describe("Typing indicators",function()
     instance=true; active:SetAttribute("chatType","INSTANCE_CHAT"); tick(1)
     T.assertEq(mocks.sentMessages[5].channel,"INSTANCE_CHAT")
   end)
+  T.it("finds the focused normal chat box when the active pointer is absent or stale",function()
+    reset(); local box=edit("WHISPER","private draft","Alice-TestRealm")
+    local chats,default=CHAT_FRAMES,DEFAULT_CHAT_FRAME
+    _G.CHAT_FRAMES={"TypingTestChat"}
+    _G.TypingTestChat={editBox=box}
+    active=nil; tick()
+    T.assertEq(mocks.sentMessages[1].channel,"WHISPER")
+    active=CreateFrame("EditBox",nil,UIParent)
+    box:SetText("still typing"); tick(3)
+    T.assertEq(mocks.sentMessages[2].msg,"TYPING:1:1")
+    _G.CHAT_FRAMES=nil; _G.DEFAULT_CHAT_FRAME={editBox=box}
+    tick(3); T.assertEq(mocks.sentMessages[3].msg,"TYPING:1:1")
+    box:ClearFocus(); tick()
+    T.assertEq(mocks.sentMessages[4].msg,"TYPING:1:0")
+    _G.CHAT_FRAMES,_G.DEFAULT_CHAT_FRAME=chats,default
+    _G.TypingTestChat=nil
+  end)
+  T.it("reports rejected sends and bounds retries instead of announcing success",function()
+    reset(); edit("WHISPER","private draft","Alice-TestRealm")
+    local send,attempts=C_ChatInfo.SendAddonMessage,0
+    C_ChatInfo.SendAddonMessage=function() attempts=attempts+1; return Enum.SendAddonMessageResult.GeneralError end
+    local sent,result
+    T.assertFalse(ns.Comm:SendTyping("WHISPER","Alice-TestRealm",true,nil,function(ok,code) sent,result=ok,code end))
+    T.assertFalse(sent); T.assertEq(result,Enum.SendAddonMessageResult.GeneralError)
+    tick(); tick(.2); tick(.2)
+    T.assertEq(attempts,2)
+    C_ChatInfo.SendAddonMessage=send
+    tick(1)
+    T.assertEq(mocks.sentMessages[1].msg,"TYPING:1:1")
+    active=nil; tick()
+    T.assertEq(mocks.sentMessages[2].msg,"TYPING:1:0")
+  end)
+  T.it("traces input, transport and receive without exposing draft text",function()
+    reset()
+    local original,lines=print,{}
+    _G.print=function(line) lines[#lines+1]=line end
+    typing.Debug(""); edit("WHISPER","DO_NOT_LOG_THIS","Alice-TestRealm"); tick()
+    receive("Alice-TestRealm","WHISPER"); tick()
+    typing.Debug("off")
+    local count=#lines
+    tick(3); receive("Alice-TestRealm","WHISPER")
+    _G.print=original
+    local output=table.concat(lines,"\n")
+    T.assertTrue(output:find("typing WHISPER",1,true)~=nil)
+    T.assertTrue(output:find("Transport: accepted",1,true)~=nil)
+    T.assertTrue(output:find("Receive: Alice-TestRealm",1,true)~=nil)
+    T.assertNil(output:find("DO_NOT_LOG_THIS",1,true))
+    T.assertEq(#lines,count)
+  end)
+  if ChatThrottleLib then
+    T.it("waits for the queued transport result and reports a delayed rejection",function()
+      reset()
+      local ctl=ChatThrottleLib
+      local send=C_ChatInfo.SendAddonMessage
+      C_ChatInfo.SendAddonMessage=function() return Enum.SendAddonMessageResult.GeneralError end
+      ctl.avail,ctl.LastAvailUpdate=0,GetTime()
+      local completed,result=false,nil
+      T.assertTrue(ns.Comm:SendTyping("WHISPER","Alice-TestRealm",true,nil,function(sent,code)
+        completed,result=true,code
+        T.assertFalse(sent)
+      end))
+      T.assertFalse(completed)
+      mocks.fakeNow=mocks.fakeNow+3
+      ctl.OnUpdate(ctl.Frame,.5)
+      T.assertTrue(completed); T.assertEq(result,Enum.SendAddonMessageResult.GeneralError)
+      C_ChatInfo.SendAddonMessage=send
+      ctl.OnUpdate(ctl.Frame,.5)
+    end)
+  end
   T.it("whispers only to the recipient and stops the old recipient on change",function()
     reset(); edit("WHISPER","secret","Alice-TestRealm"); tick()
     T.assertEq(mocks.sentMessages[1].target,"Alice-TestRealm")
@@ -164,6 +326,38 @@ T.describe("Typing indicators",function()
     receive("Friend-TestRealm","SAY",false); tick()
     T.assertTrue(summary:IsShown(),"a stop for another channel must not clear a whisper")
   end)
+  T.it("shows nearby say in the summary without friendly nameplates",function()
+    reset(); edit("SAY"); tick()
+    local packet=mocks.sentMessages[1]
+    ns.Comm:OnChatMsgAddon(packet.prefix,packet.msg,packet.channel,"Alice-TestRealm")
+    active=nil; tick()
+    T.assertTrue(summary:IsShown())
+    T.assertEq(summary.text:GetText(),"Alice écrit…")
+    T.assertEq(summary.text._textColor[2],ChatTypeInfo.SAY.g)
+    receive("Alice-TestRealm","SAY",false); tick()
+    T.assertFalse(summary:IsShown())
+    receive("Alice-TestRealm"); tick(); tick(7)
+    T.assertFalse(summary:IsShown())
+    receive("Alice-TestRealm"); tick()
+    frames.fire("CHAT_MSG_SAY","Bonjour","Alice-TestRealm")
+    T.assertFalse(summary:IsShown())
+  end)
+  T.it("keeps nearby say when a nameplate appears, disappears or is forbidden",function()
+    reset(); receive("Alice-TestRealm"); tick()
+    local p=plate("nameplate1","Alice")
+    T.assertTrue(p.grosOrteilTypingIcon and p.grosOrteilTypingIcon:IsShown())
+    frames.fire("NAME_PLATE_UNIT_REMOVED","nameplate1")
+    T.assertFalse(p.grosOrteilTypingIcon:IsShown())
+    receive("Alice-TestRealm"); tick(3)
+    T.assertTrue(summary:IsShown())
+    p._forbidden=true
+    frames.fire("NAME_PLATE_UNIT_ADDED","nameplate1")
+    receive("Alice-TestRealm"); tick(3)
+    T.assertTrue(summary:IsShown())
+    T.assertFalse(p.grosOrteilTypingIcon:IsShown())
+    playerX=61; tick()
+    T.assertFalse(summary:IsShown())
+  end)
   T.it("disable cancels polling, clears icons and stops both send and receive",function()
     reset(); local p=plate("nameplate1","Alice")
     edit("SAY"); receive("Alice-TestRealm"); tick()
@@ -205,7 +399,7 @@ T.describe("Typing indicators",function()
     T.assertEq(#frames.frames,count)
     tick(7); T.assertFalse(summary:IsShown())
   end)
-  T.it("filters say by range, world space and local visibility",function()
+  T.it("filters say by range and world space independently of nameplates",function()
     reset(); local p=plate("nameplate1","Alice")
     local function at(map,x,y)
       ns.Comm:OnChatMsgAddon("GO_STATE","TYPING:1:SAY:1:"..map..":"..x..":"..y,"CHANNEL","Alice-TestRealm")
@@ -216,7 +410,9 @@ T.describe("Typing indicators",function()
     at(2,0,0); T.assertFalse(p.grosOrteilTypingIcon:IsShown())
     at(1,0,0); playerX=100; tick()
     T.assertFalse(p.grosOrteilTypingIcon:IsShown())
-    playerX=0; receive("DifferentPhase-TestRealm"); tick()
+    playerX=0; receive("NoNameplate-TestRealm"); tick()
+    T.assertTrue(summary:IsShown())
+    receive("NoNameplate-TestRealm","SAY",false); tick()
     T.assertFalse(summary:IsShown())
     for _,payload in ipairs({"1:SAY:1:1:nan:0","1:SAY:1:1:1e999:0","1:SAY:1:-1:0:0","1:SAY:1:1:1000001:0","1:SAY:1:1:0:0:extra"}) do
       ns.Comm:OnChatMsgAddon("GO_STATE","TYPING:"..payload,"CHANNEL","Alice-TestRealm")

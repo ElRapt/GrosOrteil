@@ -22,7 +22,9 @@ jobs:
       - name: Logic regressions
         run: lua${{ matrix.lua }} tests/run.lua
       - name: Typing indicators
-        run: lua${{ matrix.lua }} tests/run_typing.lua
+        run: |
+          lua${{ matrix.lua }} tests/run_typing.lua
+          lua${{ matrix.lua }} tests/run_typing.lua ctl
       - name: UI and packaged regressions
         run: |
           lua${{ matrix.lua }} tests/run_ui.lua
