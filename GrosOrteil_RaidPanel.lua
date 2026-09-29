@@ -149,19 +149,28 @@ local function getDisplayData(name, state)
   }
 end
 
+local function memberName(unit)
+  local unitName = rawget(_G, "UnitName")
+  if not unitName then return nil end
+  local name, realm = unitName(unit)
+  if Shared.IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+  if Shared.IsSecret(realm) then return nil end
+  if not realm or realm == "" then
+    local getRealm = rawget(_G, "GetNormalizedRealmName")
+    realm = getRealm and getRealm()
+  end
+  if Shared.IsSecret(realm) then return nil end
+  if type(realm) == "string" and realm ~= "" and not name:find("-", 1, true) then
+    return name .. "-" .. realm
+  end
+  return name
+end
+
 local function getRaidMembers()
   -- Read-only lazy lookups (taint-neutral) so test overrides are visible.
   local isInRaid_   = rawget(_G, "IsInRaid")
   local isInGroup_  = rawget(_G, "IsInGroup")
   local unitExists_ = rawget(_G, "UnitExists")
-  local unitName_   = rawget(_G, "UnitName")
-
-  -- A secret name (WoW hands them back under addon taint) would raise later
-  -- in normalizeKey/SetText/comm sends; a nameless row is useless anyway.
-  local function usableName(n)
-    if n and not Shared.IsSecret(n) then return n end
-    return nil
-  end
 
   local out       = {}
   local isInRaid  = isInRaid_  and isInRaid_()
@@ -170,22 +179,22 @@ local function getRaidMembers()
     for i = 1, 40 do
       local u = "raid" .. i
       if unitExists_ and unitExists_(u) then
-        local n = usableName(unitName_ and unitName_(u))
+        local n = memberName(u)
         if n then out[#out + 1] = { name = n, unit = u } end
       end
     end
   elseif isInGroup then
-    local pn = usableName(unitName_ and unitName_("player"))
+    local pn = memberName("player")
     if pn then out[1] = { name = pn, unit = "player" } end
     for i = 1, 40 do
       local u = "party" .. i
       if unitExists_ and unitExists_(u) then
-        local n = usableName(unitName_ and unitName_(u))
+        local n = memberName(u)
         if n then out[#out + 1] = { name = n, unit = u } end
       end
     end
   else
-    local pn = usableName(unitName_ and unitName_("player"))
+    local pn = memberName("player")
     if pn then out[1] = { name = pn, unit = "player" } end
   end
   return out
@@ -346,14 +355,13 @@ local function applySavedOrder(members, order)
   end
   for _, k in ipairs(order) do
     local m = byKey[k]
-    if m and not used[k] then
-      used[k] = true
+    if m and not used[m] then
+      used[m] = true
       out[#out + 1] = m
     end
   end
   for _, m in ipairs(members) do
-    local k = safeNormalizeName(m.name)
-    if not (k and used[k]) then out[#out + 1] = m end
+    if not used[m] then out[#out + 1] = m end
   end
   return out
 end
@@ -532,8 +540,7 @@ end
 -- Prime it with the live Core state so self-changes show instantly instead of
 -- waiting for the addon-message loopback.
 local function primeSelfCache()
-  local unitName = rawget(_G, "UnitName")
-  local pn = unitName and unitName("player")
+  local pn = memberName("player")
   local Core = ns.Core
   local popup = ns.TargetPopup
   if pn and Core and Core.state and popup and popup.InjectState then
@@ -1635,7 +1642,8 @@ end
 -- GROUP_ROSTER_UPDATE fires in bursts while a raid forms; one state request
 -- per member every few seconds is plenty (peers throttle responses anyway).
 local REQUEST_BURST_COOLDOWN = 3
-local lastRequestBurst = 0
+local lastRequestBurst
+local requestBurstPending = false
 
 Refresh = function()
   currentMembers = applySavedOrder(getRaidMembers(), getSavedOrder())
@@ -1644,11 +1652,17 @@ Refresh = function()
   local GetTime = rawget(_G, "GetTime")
   local now = (GetTime and GetTime()) or 0
   if ns.Comm and ns.Comm.RequestState
-      and (now - lastRequestBurst) >= REQUEST_BURST_COOLDOWN then
+      and (not lastRequestBurst or (now - lastRequestBurst) >= REQUEST_BURST_COOLDOWN) then
     lastRequestBurst = now
     for _, m in ipairs(currentMembers) do
       ns.Comm:RequestState(m.name)
     end
+  elseif ns.Comm and ns.Comm.RequestState and not requestBurstPending then
+    requestBurstPending = true
+    C_Timer.After(REQUEST_BURST_COOLDOWN - (now - lastRequestBurst), function()
+      requestBurstPending = false
+      if frame and frame:IsShown() then Refresh() end
+    end)
   end
   relayout()
 end

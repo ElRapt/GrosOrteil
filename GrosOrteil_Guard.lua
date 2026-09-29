@@ -101,6 +101,7 @@ if MeterSync and MeterSync.Store and MeterSync.Get then
   MeterSync.Get = function(sender)
     local resolved = uniqueObservedIdentity(sender)
     if not resolved then return nil end
+    if resolved:find("-", 1, true) then return exactMeterTotals[resolved] end
     return exactMeterTotals[resolved] or originalGet(sender)
   end
 
@@ -137,6 +138,7 @@ if Popup and Popup.OnStateReceived and Popup.GetCachedState and Popup.InjectStat
     if not resolved then return nil end
     local state = exactStateCache[resolved]
     if state then return withLiveMeter(state, resolved) end
+    if resolved:find("-", 1, true) then return nil end
     return originalGetCachedState(name)
   end
 

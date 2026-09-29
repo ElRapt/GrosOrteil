@@ -100,18 +100,25 @@ T.describe("Comm multipart reassembly", function()
 end)
 
 T.describe("Comm REQUEST_STATE throttling", function()
-  T.it("rejects a second request from same sender within RESPONSE_COOLDOWN", function()
+  T.it("defers a second request from the same sender until RESPONSE_COOLDOWN", function()
     -- Wipe any sent messages and per-sender timestamps.
     _G.MOCKS.sentMessages = {}
     Comm.lastRequestServed = {}
+    local originalAfter, pending = C_Timer.After, {}
+    C_Timer.After = function(delay, callback) pending[#pending + 1] = { delay, callback } end
 
     Comm:OnChatMsgAddon(Comm.PREFIX, "REQUEST_STATE", "WHISPER", "PeerA")
     local firstSendCount = #_G.MOCKS.sentMessages
     T.assertTrue(firstSendCount > 0, "first request should have been served")
 
     Comm:OnChatMsgAddon(Comm.PREFIX, "REQUEST_STATE", "WHISPER", "PeerA")
+    C_Timer.After = originalAfter
     -- Cooldown < 3s elapsed (mocked GetTime) → no new send.
     T.assertEq(#_G.MOCKS.sentMessages, firstSendCount)
+    T.assertEq(#pending, 1)
+    T.assertTrue(pending[1][1] > 0)
+    pending[1][2]()
+    T.assertTrue(#_G.MOCKS.sentMessages > firstSendCount)
   end)
   T.it("does not throttle different senders", function()
     _G.MOCKS.sentMessages = {}

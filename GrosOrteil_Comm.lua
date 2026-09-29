@@ -308,8 +308,9 @@ function Comm:DeserializeState(cmd, payload, sender)
   return nil
 end
 
-function Comm:SendStateData(targetPlayer)
-  if type(targetPlayer) ~= "string" or targetPlayer == "" then
+function Comm:SendStateData(targetPlayer, channel)
+  channel = channel or "WHISPER"
+  if channel == "WHISPER" and (type(targetPlayer) ~= "string" or targetPlayer == "") then
     dbg("SendStateData aborted: invalid target")
     return
   end
@@ -350,7 +351,7 @@ function Comm:SendStateData(targetPlayer)
 
   if #message <= 255 then
     dbg("Sending single message cmd=%s to %s", cmd, tostring(targetPlayer))
-    sendAddonMessage(self.PREFIX, message, "WHISPER", targetPlayer)
+    sendAddonMessage(self.PREFIX, message, channel, targetPlayer)
     return
   end
 
@@ -361,8 +362,29 @@ function Comm:SendStateData(targetPlayer)
   for i = 1, totalParts do
     local chunk = encoded:sub((i - 1) * chunkSize + 1, i * chunkSize)
     local partMsg = string.format("%s:%d:%d:%s", partCmd, totalParts, i, chunk)
-    sendAddonMessage(self.PREFIX, partMsg, "WHISPER", targetPlayer)
+    sendAddonMessage(self.PREFIX, partMsg, channel, targetPlayer)
   end
+end
+
+local function groupChannel()
+  local isInGroup = rawget(_G, "IsInGroup")
+  local isInRaid = rawget(_G, "IsInRaid")
+  local instance = rawget(_G, "LE_PARTY_CATEGORY_INSTANCE")
+  if instance and isInGroup and isInGroup(instance) then return "INSTANCE_CHAT" end
+  if isInRaid and isInRaid() then return "RAID" end
+  if isInGroup and isInGroup() then return "PARTY" end
+end
+
+-- Coalesce mutations/roster events in the same frame into one current snapshot.
+-- Reuse STATE_DATA so existing peers and the popup/raid arrival path receive it.
+function Comm:QueueGroupState()
+  if self.groupStatePending or not groupChannel() then return end
+  self.groupStatePending = true
+  C_Timer.After(0, function()
+    self.groupStatePending = false
+    local channel = groupChannel()
+    if channel then self:SendStateData(nil, channel) end
+  end)
 end
 
 function Comm:RequestState(targetPlayer)
@@ -469,7 +491,7 @@ function Comm:OnVersionReceived(sender, remoteVersion)
   end
 end
 
-function Comm:HandleStateData(sender, cmd, rest)
+function Comm:HandleStateData(sender, cmd, rest, channel)
   dbg("HandleStateData cmd=%s sender=%s restBytes=%d", tostring(cmd), tostring(sender), #(rest or ""))
   if cmd == "STATE_DATA" or cmd == "STATE_DATA_COMPRESSED" then
     local state = self:DeserializeState(cmd, rest, sender)
@@ -484,11 +506,12 @@ function Comm:HandleStateData(sender, cmd, rest)
 
   if cmd == "STATE_DATA_PART" or cmd == "STATE_DATA_COMPRESSED_PART" then
     local total, index, part = strsplit(":", rest or "", 3)
+    -- A group broadcast can overlap a requested whisper from the same owner.
     local state = self:DeserializeState(cmd, {
       total = tonumber(total),
       index = tonumber(index),
       data = part,
-    }, sender)
+    }, channel and (sender .. ":" .. channel) or sender)
     if state and ns.TargetPopup and ns.TargetPopup.OnStateReceived then
       dbg("Forwarding multipart decoded state to popup for sender=%s", tostring(sender))
       ns.TargetPopup:OnStateReceived(sender, state)
@@ -514,10 +537,19 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
     -- Rate-limit per sender so a misbehaving peer can't flood our addon channel
     -- by spamming requests.
     self.lastRequestServed = self.lastRequestServed or {}
+    if self.pendingResponses and self.pendingResponses[sender] then return end
     local now = (GetTime and GetTime()) or 0
-    local last = self.lastRequestServed[sender or ""] or 0
-    if last > 0 and (now - last) < self.RESPONSE_COOLDOWN then
+    local last = self.lastRequestServed[sender or ""]
+    if last and (now - last) < self.RESPONSE_COOLDOWN then
       dbg("Throttled REQUEST_STATE from %s (last %.2fs ago)", tostring(sender), now - last)
+      self.pendingResponses = self.pendingResponses or {}
+      self.pendingResponses[sender] = true
+      C_Timer.After(self.RESPONSE_COOLDOWN - (now - last), function()
+        self.pendingResponses[sender] = nil
+        self.lastRequestServed[sender] = (GetTime and GetTime()) or 0
+        self:SendStateData(sender)
+        self:SendVersionTo(sender)
+      end)
       return
     end
     self.lastRequestServed[sender or ""] = now
@@ -563,7 +595,7 @@ function Comm:OnChatMsgAddon(prefixMsg, msg, channel, sender)
     return
   end
 
-  self:HandleStateData(sender, cmd, rest)
+  self:HandleStateData(sender, cmd, rest, channel)
 end
 
 function Comm:Initialize()
@@ -590,8 +622,12 @@ function Comm:Initialize()
       self:OnChatMsgAddon(...)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" then
       self:BroadcastVersion()
+      self:QueueGroupState()
     end
   end)
+  if ns.Core and ns.Core.OnChange then
+    ns.Core.OnChange(function() self:QueueGroupState() end)
+  end
   dbg("Initialize complete: CHAT_MSG_ADDON listener active")
 end
 
