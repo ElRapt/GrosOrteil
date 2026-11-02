@@ -61,9 +61,10 @@ Before merging UI changes, check in WoW with Lua errors and taint logging enable
   should be immediate or within one 0.2-second sample; missing stops expire
   after 7 seconds. Network throttling may add delay.
   Enable friendly nameplates for overhead icons; unavailable/forbidden plates
-  use the summary for group/whispers. Say additionally needs a visible plate,
-  shared realm/faction channel and accessible outdoor positions. Confirm it stays
-  silent in combat/instances, across phases and outside the proximity radius.
+  use the summary. Say needs a shared realm/faction channel and accessible
+  positions. Confirm it stays silent in combat/PvE/PvP instances and outside
+  the proximity radius. Overlapping outdoor shards/phases cannot be reliably
+  distinguished; housing copies are matched using their own identity (below).
   Check that the temporary channel joins after login and leaves on disable.
   Confirm icons follow moving players, disappear as plates recycle, and remain
   small and static in a crowd. With 40 typists the summary remains one line;
@@ -156,7 +157,7 @@ Before merging UI changes, check in WoW with Lua errors and taint logging enable
   a nearby party member, then move apart. Use **Mémoriser ici** and walk away
   from the origin. Place a native map pin with Ctrl+left click and switch to
   **Repère carte**. Check no-target/no-pin, a different continent, combat and
-  instance entry show an unavailable message rather than a false zero.
+  dungeon/raid entry show an unavailable message rather than a false zero.
   Close the panel and confirm its update callback stops.
 
 ## Distance capabilities and limits
@@ -182,7 +183,7 @@ yard-to-metre conversion. Categories have no overlapping endpoints:
 These are horizontal estimates, not spell-range or line-of-sight guarantees.
 Terrain height, obstacles and combat reach are not modelled. A non-group target
 may have no accessible position. The module conservatively suspends measuring
-in combat and all instances, rejects secret/invalid values, and polls only
+in combat and non-housing instances, rejects secret/invalid values, and polls only
 while its panel is visible (four times per second).
 
 API references: Blizzard's [unit API definitions](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_APIDocumentationGenerated/UnitDocumentation.lua)
@@ -190,6 +191,50 @@ API references: Blizzard's [unit API definitions](https://github.com/Gethe/wow-u
 and [map API definitions](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_APIDocumentationGenerated/MapDocumentation.lua)
 (`GetUserWaypoint`, `GetPlayerMapPosition`, `GetWorldPosFromMapPos` may return
 nothing). All unavailable paths need verification with the actual client.
+
+### Housing and instance restrictions
+
+`IsInInstance()` alone is not a capability test: it also includes housing.
+The module now recognizes housing with the public `C_Housing.IsInsideHouse`
+and `IsOnNeighborhoodMap` predicates, keeping known PvE/PvP/scenario and
+unrecognized instances blocked. Target distance still requires a checked
+`UnitDistanceSquared` result or two readable unit positions. For the player's
+own position, housing may fall back to `GetPlayerMapPosition` plus
+`GetWorldPosFromMapPos` when `UnitPosition` is unavailable. A secret value
+always ends the attempt; there is no fallback intended to recover secret data.
+
+Remembered origins and SAY statuses carry a neighborhood/house identity and
+coordinate basis. They cannot be compared with another copy or with the other
+coordinate system, even when numeric map IDs and coordinates coincide. Unknown
+house identity stays pending; missing house information is requested at most
+once per 10 seconds until resolved. Loading-screen transitions clear origins.
+
+Housing uses `TYPING:2:SAY:1:<scope>:<U|M>:<map>:<x>:<y>`, where scope starts
+with `N-` (neighborhood GUID) or `H-` (house GUID); `M` means world coordinates
+converted from map data. The existing v1 stop packet works for both formats.
+Outdoor/group/whisper messages retain their v1 format. Older clients ignore v2;
+new clients reject unscoped v1 positions while in housing. No draft text is sent.
+
+Regression coverage in `test_distance.lua`, `run_typing.lua` and the UI suite
+includes housing/raid/combat classification, missing and secret API results,
+map fallback, overlapping houses/neighborhoods, malformed packets, identity
+loading/retries, coordinate-basis changes, transitions and old-protocol behavior.
+
+**Required live acceptance (not verified by the offline mocks):** with two
+updated clients on the same realm/faction channel, test a neighborhood, the same
+house interior as owner/visitor, different houses at equivalent coordinates,
+and different neighborhoods. Exercise target/origin/map-pin modes separately;
+the client may expose one position source but not another. Check inside/outside
+separation, near/far SAY status, entry/exit while typing, and `/reload`. Confirm
+group/instance-chat/whisper indicators continue inside a raid while proximity
+remains unavailable. `/go typingdebug` reports availability/reason without
+printing coordinates or housing GUIDs. A nil/secret result from every available
+position source is a client limit, not something this PR can unlock.
+
+Primary references: Blizzard's [housing API definitions](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_APIDocumentationGenerated/HousingUIDocumentation.lua),
+[house information fields](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_APIDocumentationGenerated/HousingUISharedDocumentation.lua),
+the [7.1 positioning restriction announcement (archived Blizzard post)](https://www.bluetracker.gg/wow/topic/us-en/20749494846-notable-ui-changes-coming-in-71/)
+and [Midnight's combat/addon design explanation](https://news.blizzard.com/en-us/article/24246290/combat-philosophy-and-addon-disarmament-in-midnight).
 
 ## Presentation ownership
 
@@ -224,3 +269,4 @@ interpolates the authoritative bar value or replaces its event handler.
 
 `ns.UI_Show(false)` is synchronous for slash commands and callers expecting an
 immediate hide. Pointer controls use `ns.UI_Show(false, true)` to request a fade.
+

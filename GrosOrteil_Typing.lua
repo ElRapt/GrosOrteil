@@ -57,6 +57,8 @@ function Typing.Debug(command)
     .. ", received=" .. diagnostics.received .. ", last=" .. (diagnostics.result or "none"))
   print("|cFF00FF00GrosOrteil saisie|r " .. (mode == "off" and "Diagnostic off."
     or "Diagnostic on for 60s. Type normally; draft text is never logged. Accepted means sent to WoW, not confirmed by a recipient."))
+  local position, reason = ns.Distance.GetPlayerPosition()
+  diagnostic("SAY position: " .. (position and "available" or (reason or "unavailable")))
 end
 
 function Typing.IsEnabled()
@@ -112,7 +114,7 @@ local function removePeer(key, channel)
 end
 
 local function inSayRange(position, player)
-  if not player or player.map ~= position.map then return false end
+  if not ns.Distance.SameSpace(player, position) then return false end
   local dx, dy = player.x - position.x, player.y - position.y
   return dx * dx + dy * dy <= 60 * 60
 end
@@ -126,10 +128,11 @@ function Typing.Receive(sender, channel, payload)
     channel = "SAY"
     if payload == "1:SAY:0" then active = false
     else
-      local map, x, y = payload:match("^1:SAY:1:(%-?%d+):([%d%.%-]+):([%d%.%-]+)$")
+      local scope, basis, map, x, y = payload:match("^2:SAY:1:([%w%-]+):([UM]):(%d+):([%d%.%-]+):([%d%.%-]+)$")
+      if not scope then map, x, y = payload:match("^1:SAY:1:(%-?%d+):([%d%.%-]+):([%d%.%-]+)$") end
       map, x, y = tonumber(map), tonumber(x), tonumber(y)
-      if not map or not x or not y or map < 0 or map > 1e6 or math.abs(x) > 1e6 or math.abs(y) > 1e6 then trace("Ignored: invalid SAY position"); return end
-      position = { map = map, x = x, y = y }
+      position = { map = map, x = x, y = y, scope = scope, basis = basis == "M" and "M" or nil }
+      if not ns.Distance.IsValidPosition(position) then trace("Ignored: invalid SAY position"); return end
       active = inSayRange(position, ns.Distance.GetPlayerPosition())
     end
   elseif channel ~= "SAY" and CHANNELS[channel] then
@@ -141,7 +144,8 @@ function Typing.Receive(sender, channel, payload)
   if not key or key == unitKey("player") then trace("Ignored: self/invalid sender"); return end
   -- Nameplates only control overhead icons. Their absence (including friendly
   -- plates being disabled) must not discard a nearby SAY status for the summary.
-  -- World coordinates cannot distinguish overlapping shards/phases.
+  -- Outdoor coordinates cannot distinguish overlapping shards/phases. Housing
+  -- additionally requires the same neighborhood or house identity and basis.
   if not active then trace("Hidden: stopped/out of range/position unavailable"); removePeer(key, channel); return end
   trace("Display: " .. channel)
   local peer = peers[key]
@@ -445,3 +449,4 @@ function Typing.Initialize()
   end
   applyEnabled()
 end
+

@@ -1620,7 +1620,7 @@ function ns.UI_Init()
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
     GameTooltip:SetText("Indicateurs de saisie")
     GameTooltip:AddLine("Affiche et partage la saisie avec les autres utilisateurs de GrosOrteil : dire à proximité, groupe/raid à toute distance, et chuchotements qui vous sont destinés.", 1, 1, 1, true)
-    GameTooltip:AddLine("Bulles sur les plaques de nom amicales ; résumé au-dessus du chat. Dire : position approximative partagée, portée horizontale de 60 m, hors combat/instance et sur le même canal de royaume. Aucun texte saisi n'est partagé.", 1, 1, 1, true)
+    GameTooltip:AddLine("Bulles sur les plaques de nom amicales ; résumé au-dessus du chat. Dire : portée horizontale de 60 m, hors combat, quand WoW fournit une position. Logement : même quartier ou même intérieur de maison et versions compatibles. Canal de royaume commun requis. Aucun texte saisi n'est partagé.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
   typingButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1923,3 +1923,4 @@ function UI.NotifyUpdateAvailable(remoteVersion, localVersion)
   end
   updateBanner:Show()
 end
+

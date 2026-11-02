@@ -17,17 +17,18 @@ Distance.Categories = {
 
 local MESSAGES = {
   combat = "Mesure suspendue pendant le combat.",
-  instance = "Mesure indisponible dans les instances.",
+  instance = "Mesure indisponible dans cette instance PvE/PvP ou non reconnue.",
+  housing_context = "Identification du quartier ou de la maison en attente. Réessayez dans quelques instants.",
   restricted = "Cette position est masquée par WoW.",
   unavailable = "Position indisponible dans cette zone.",
-  target = "Cible non mesurable : essayez un membre du groupe, hors instance.",
+  target = "Position de la cible inaccessible : essayez un membre du groupe.",
   no_target = "Sélectionnez une cible pour mesurer sa distance.",
   no_origin = "Placez-vous au point de départ puis cliquez sur Mémoriser ici.",
   no_waypoint = "Placez un repère avec Ctrl + clic gauche sur la carte du monde.",
   different_map = "Le point et le personnage sont dans des espaces différents.",
 }
 
-local origin
+local origin, lastHouseRequest
 local function isSecret(value)
   return type(issecretvalue) == "function" and issecretvalue(value) or false
 end
@@ -49,8 +50,72 @@ end
 local function blockedReason()
   local ok, value = call(InCombatLockdown)
   if ok and (isSecret(value) or value) then return "combat" end
-  ok, value = call(IsInInstance)
-  if ok and (isSecret(value) or value) then return "instance" end
+  local kind
+  ok, value, kind = call(IsInInstance)
+  if ok and (isSecret(value) or isSecret(kind)) then return "restricted" end
+  if not ok and type(IsInInstance) == "function" then return "restricted" end
+  -- Housing is instanced too, but is not dungeon/raid/PvP content. Probe only
+  -- ordinary public APIs there; nil/error/secret results still remain unusable.
+  local instanced = ok and value
+  if instanced and (kind == "party" or kind == "raid" or kind == "pvp"
+      or kind == "arena" or kind == "scenario") then return "instance" end
+  -- Use housing's public predicates rather than treating every instance as a
+  -- combat map. Check indoors first: house interiors need their own identity.
+  ok, value = call(C_Housing and C_Housing.IsInsideHouse)
+  if not ok and C_Housing and type(C_Housing.IsInsideHouse) == "function" then return "housing_context" end
+  if ok and isSecret(value) then return "restricted" end
+  if ok and value == true then return nil, "interior" end
+  ok, value = call(C_Housing and C_Housing.IsOnNeighborhoodMap)
+  if ok and isSecret(value) then return "restricted" end
+  if ok and value == true then return nil, "neighborhood" end
+  if instanced then return "instance" end
+end
+
+function Distance.IsValidScope(scope)
+  return not isSecret(scope) and type(scope) == "string" and #scope <= 100
+    and scope:match("^[NH]%-[%w%-]+$") ~= nil
+end
+
+local function housingScope(kind)
+  if not kind then return nil end
+  local ok, id
+  if kind == "neighborhood" then
+    ok, id = call(C_Housing and C_Housing.GetCurrentNeighborhoodGUID)
+  else
+    local info
+    ok, info = call(C_Housing and C_Housing.GetCurrentHouseInfo)
+    if ok and isSecret(info) then return nil, "restricted" end
+    if ok and type(info) == "table" then id = info.houseGUID end
+    if ok and info == nil and C_Housing and type(C_Housing.RequestCurrentHouseInfo) == "function" then
+      -- House info is asynchronous and may not have been requested by the
+      -- default UI (e.g. a visitor). Poll normally, but bound server requests.
+      local now = GetTime()
+      if not lastHouseRequest or now - lastHouseRequest >= 10 then
+        lastHouseRequest = now
+        call(C_Housing.RequestCurrentHouseInfo)
+      end
+    end
+  end
+  if isSecret(id) then return nil, "restricted" end
+  if not ok or type(id) ~= "string" or #id == 0 or #id > 98 or id:find("[^%w%-]") then
+    return nil, "housing_context"
+  end
+  return (kind == "neighborhood" and "N-" or "H-") .. id
+end
+
+-- Map IDs identify layouts, not individual copies of a neighborhood/house.
+-- UnitPosition and C_Map also use different coordinate systems.
+function Distance.SameSpace(a, b)
+  return a and b and a.map == b.map and a.scope == b.scope and a.basis == b.basis
+end
+
+function Distance.IsValidPosition(p)
+  if isSecret(p) or type(p) ~= "table" then return false end
+  if not finite(p.map) or p.map < 0 or p.map > 1e6 or p.map ~= math.floor(p.map)
+      or not finite(p.x) or not finite(p.y) or math.abs(p.x) > 1e6 or math.abs(p.y) > 1e6
+      or isSecret(p.scope) or isSecret(p.basis) then return false end
+  if p.scope ~= nil and not Distance.IsValidScope(p.scope) then return false end
+  return p.basis == nil or (p.basis == "M" and p.scope ~= nil)
 end
 
 function Distance.Classify(value)
@@ -74,14 +139,8 @@ local function unitPosition(unit)
   return { x = x, y = y, map = map }
 end
 
--- Shared safe world position for proximity features; no position in restricted contexts.
-function Distance.GetPlayerPosition()
-  if blockedReason() then return nil end
-  return unitPosition("player")
-end
-
 local function between(a, b, source)
-  if a.map ~= b.map then return unavailable("different_map") end
+  if not Distance.SameSpace(a, b) then return unavailable("different_map") end
   local dx, dy = a.x - b.x, a.y - b.y
   -- UnitPosition's Z is not reliable. Both positions and map waypoints are
   -- explicitly horizontal estimates, with no line-of-sight/range guarantee.
@@ -133,6 +192,34 @@ local function mapPosition(map, pos)
   return { x = x, y = y, map = continent }
 end
 
+local function playerMapPosition()
+  local ok, map = call(C_Map and C_Map.GetBestMapForUnit, "player")
+  if ok and isSecret(map) then return nil, "restricted" end
+  if not ok or not finite(map) or map <= 0 then return nil, "unavailable" end
+  local position
+  ok, position = call(C_Map and C_Map.GetPlayerMapPosition, map, "player")
+  if not ok then return nil, "unavailable" end
+  return mapPosition(map, position)
+end
+
+-- Shared position for origin/proximity features. Never fall back after a secret
+-- result. A housing-only map fallback uses public normalized/world map APIs.
+function Distance.GetPlayerPosition()
+  local reason, kind = blockedReason()
+  if reason then return nil, reason end
+  local scope
+  scope, reason = housingScope(kind)
+  if reason then return nil, reason end
+  local position
+  position, reason = unitPosition("player")
+  if not position and kind and reason ~= "restricted" then
+    position, reason = playerMapPosition()
+    if position then position.basis = "M" end
+  end
+  if position then position.scope = scope end
+  return position, reason
+end
+
 local function measureWaypoint()
   local ok, waypoint = call(C_Map and C_Map.GetUserWaypoint)
   if not ok then return unavailable("no_waypoint") end
@@ -142,14 +229,8 @@ local function measureWaypoint()
   local point, reason = mapPosition(waypoint.uiMapID, waypoint.position)
   if not point then return unavailable(reason) end
 
-  local playerMap, playerPos
-  ok, playerMap = call(C_Map and C_Map.GetBestMapForUnit, "player")
-  if ok and isSecret(playerMap) then return unavailable("restricted") end
-  if not ok or not finite(playerMap) or playerMap <= 0 then return unavailable("unavailable") end
-  ok, playerPos = call(C_Map and C_Map.GetPlayerMapPosition, playerMap, "player")
-  if not ok then return unavailable("unavailable") end
   local player
-  player, reason = mapPosition(playerMap, playerPos)
+  player, reason = playerMapPosition()
   if not player then return unavailable(reason) end
   -- Convert both through C_Map: never mix its axes with UnitPosition's axes.
   return between(player, point, "waypoint")
@@ -163,7 +244,7 @@ function Distance.Measure(mode)
   if mode == "origin" then
     if not origin then return unavailable("no_origin") end
     local player
-    player, reason = unitPosition("player")
+    player, reason = Distance.GetPlayerPosition()
     if not player then return unavailable(reason) end
     return between(player, origin, "origin")
   end
@@ -171,10 +252,7 @@ function Distance.Measure(mode)
 end
 
 function Distance.RememberPlayerPosition()
-  local reason = blockedReason()
-  if reason then return false, MESSAGES[reason] end
-  local position
-  position, reason = unitPosition("player")
+  local position, reason = Distance.GetPlayerPosition()
   if not position then return false, MESSAGES[reason] end
   origin = position
   Distance.SetMode("origin")
@@ -193,3 +271,12 @@ function Distance.SetMode(mode)
   if Distance.Refresh then Distance.Refresh(changed) end
   return true
 end
+
+-- A saved point cannot survive a loading-screen phase/instance transition.
+local worldEvents = CreateFrame("Frame")
+worldEvents:RegisterEvent("PLAYER_LEAVING_WORLD")
+worldEvents:SetScript("OnEvent", function()
+  lastHouseRequest = nil
+  Distance.ClearOrigin()
+end)
+

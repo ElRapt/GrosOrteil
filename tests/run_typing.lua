@@ -29,6 +29,7 @@ local T = require("framework")
 local active, timer, raid, party, instance
 local nameplates = {}
 local playerX, playerY, playerMap = 0, 0, 1
+local originalSecret = _G.issecretvalue
 _G.UnitPosition = function() return playerX, playerY, 0, playerMap end
 _G.IsInInstance = function() return false end
 _G.GetNormalizedRealmName = function() return "TestRealm" end
@@ -58,6 +59,10 @@ local function reset()
   mocks.fakeNow = (mocks.fakeNow or 0) + 100
   active, raid, party, instance = nil, false, false, false
   playerX, playerY, playerMap = 0, 0, 1
+  _G.UnitPosition = function() return playerX, playerY, 0, playerMap end
+  _G.IsInInstance = function() return false end
+  _G.C_Housing, _G.C_Map, _G.issecretvalue = nil, nil, originalSecret
+  frames.combat = false
   typing.SetEnabled(true)
   mocks.sentMessages = {}
 end
@@ -427,6 +432,103 @@ T.describe("Typing indicators",function()
     T.assertEq(mocks.sentMessages[1].channel,"WHISPER")
     receive("Friend-TestRealm","WHISPER"); tick(); T.assertTrue(summary:IsShown())
   end)
+  local function housing(kind, id)
+    _G.IsInInstance=function() return true,kind end
+    _G.C_Housing={
+      IsInsideHouse=function() return kind=="interior" end,
+      IsOnNeighborhoodMap=function() return kind=="neighborhood" end,
+      GetCurrentNeighborhoodGUID=function() return id end,
+      GetCurrentHouseInfo=function() return {houseGUID=id} end,
+    }
+  end
+  local function receiveHousing(scope, x, basis)
+    ns.Comm:OnChatMsgAddon("GO_STATE","TYPING:2:SAY:1:"..scope..":"..(basis or "U")..":1:"..(x or 0)..":0",
+      "CHANNEL","Alice-TestRealm")
+    tick()
+  end
+  T.it("sends scoped housing positions and shows same-neighborhood typists without nameplates",function()
+    reset(); housing("neighborhood","Neighborhood-A"); edit("SAY","private draft"); tick()
+    local msg=mocks.sentMessages[1]
+    T.assertEq(msg.msg,"TYPING:2:SAY:1:N-Neighborhood-A:U:1:0.00:0.00")
+    T.assertEq(msg.channel,"CHANNEL"); T.assertFalse(msg.msg:find("private",1,true))
+    receiveHousing("N-Neighborhood-A",60); T.assertTrue(summary:IsShown())
+    receiveHousing("N-Neighborhood-A",60.01); T.assertFalse(summary:IsShown())
+    receiveHousing("N-Neighborhood-A",0); T.assertTrue(summary:IsShown())
+    ns.Comm:OnChatMsgAddon("GO_STATE","TYPING:1:SAY:0","CHANNEL","Alice-TestRealm")
+    tick(); T.assertFalse(summary:IsShown())
+    active:ClearFocus(); tick(); T.assertEq(mocks.sentMessages[#mocks.sentMessages].msg,"TYPING:1:SAY:0")
+  end)
+  T.it("rejects overlapping houses, neighborhoods, outdoor legacy packets and coordinate bases",function()
+    reset(); housing("interior","House-A")
+    receiveHousing("H-House-A"); T.assertTrue(summary:IsShown())
+    receiveHousing("H-House-B"); T.assertFalse(summary:IsShown())
+    receiveHousing("N-House-A"); T.assertFalse(summary:IsShown())
+    receive("Alice-TestRealm"); tick(); T.assertFalse(summary:IsShown())
+    receiveHousing("H-House-A",0,"M"); T.assertFalse(summary:IsShown())
+    housing("neighborhood","Neighborhood-A")
+    receiveHousing("N-Neighborhood-B"); T.assertFalse(summary:IsShown())
+    receiveHousing("N-Neighborhood-A"); T.assertTrue(summary:IsShown())
+    housing("neighborhood","Neighborhood-B"); tick(); T.assertFalse(summary:IsShown())
+    reset(); receiveHousing("N-Neighborhood-A"); T.assertFalse(summary:IsShown())
+  end)
+  T.it("uses matching map-coordinate housing packets when unit positions are unavailable",function()
+    reset(); housing("interior","House-A")
+    _G.UnitPosition=function() return nil end
+    _G.C_Map={GetBestMapForUnit=function() return 10 end,
+      GetPlayerMapPosition=function() return {x=0,y=0} end,
+      GetWorldPosFromMapPos=function() return 1,{x=0,y=0} end}
+    edit("SAY"); tick()
+    T.assertEq(mocks.sentMessages[1].msg,"TYPING:2:SAY:1:H-House-A:M:1:0.00:0.00")
+    receiveHousing("H-House-A",30,"M"); T.assertTrue(summary:IsShown())
+    receiveHousing("H-House-A",30,"U"); T.assertFalse(summary:IsShown())
+    _G.C_Map.GetPlayerMapPosition=function() return nil end
+    tick(3); T.assertEq(mocks.sentMessages[#mocks.sentMessages].msg,"TYPING:1:SAY:0")
+  end)
+  T.it("waits for house identity and coordinates and reports why without leaking them",function()
+    reset(); housing("interior",nil); edit("SAY"); tick()
+    T.assertEq(#mocks.sentMessages,0)
+    withDiagnostics(function(lines)
+      typing.Debug("")
+      T.assertTrue(table.concat(lines,"\n"):find("housing_context",1,true))
+      typing.Debug("off")
+    end)
+    housing("interior","House-Private"); tick(2); T.assertEq(#mocks.sentMessages,1)
+    local secret={}; _G.issecretvalue=function(v) return rawequal(v,secret) end
+    _G.UnitPosition=function() return secret,0,0,1 end
+    tick(3); T.assertEq(mocks.sentMessages[#mocks.sentMessages].msg,"TYPING:1:SAY:0")
+    withDiagnostics(function(lines)
+      typing.Debug(""); local log=table.concat(lines,"\n")
+      T.assertTrue(log:find("restricted",1,true)); T.assertFalse(log:find("House-Private",1,true))
+      typing.Debug("off")
+    end)
+  end)
+  T.it("keeps group and whisper indicators available inside raids while suppressing proximity",function()
+    for _,channel in ipairs({"PARTY","RAID","INSTANCE_CHAT","WHISPER","SAY"}) do
+      reset(); party,raid,instance=true,true,true
+      _G.IsInInstance=function() return true,"raid" end
+      _G.UnitPosition=function() error("must not query raid coordinates") end
+      edit(channel,"hello","Alice-TestRealm"); tick()
+      if channel=="SAY" then T.assertEq(#mocks.sentMessages,0)
+      else T.assertEq(mocks.sentMessages[1].channel,channel) end
+      receive("Alice-TestRealm",channel); tick()
+      T.assertEq(summary:IsShown(),channel~="SAY")
+    end
+  end)
+  T.it("rejects malformed housing packets and clears points/status on world transitions",function()
+    reset(); housing("interior","House-A")
+    for _,payload in ipairs({"2:SAY:1:H-House-A:Z:1:0:0","2:SAY:1:H-House-A:U:1:1e999:0",
+      "2:SAY:1:House-A:U:1:0:0","2:SAY:1:H-"..string.rep("A",101)..":U:1:0:0",
+      "2:SAY:1:H-House-A:U:1:0:0:extra"}) do
+      ns.Comm:OnChatMsgAddon("GO_STATE","TYPING:"..payload,"CHANNEL","Alice-TestRealm")
+    end
+    tick(); T.assertFalse(summary:IsShown())
+    receiveHousing("H-House-A"); T.assertTrue(summary:IsShown())
+    T.assertTrue(ns.Distance.RememberPlayerPosition())
+    frames.fire("PLAYER_LEAVING_WORLD"); T.assertFalse(summary:IsShown())
+    T.assertEq(ns.Distance.Measure("origin").reason,"no_origin")
+    housing("interior","House-B"); frames.fire("PLAYER_ENTERING_WORLD")
+    receiveHousing("H-House-A"); T.assertFalse(summary:IsShown())
+  end)
   T.it("joins the temporary channel with bounded retries and leaves when disabled",function()
     reset()
     local get,join,leave=GetChannelName,JoinTemporaryChannel,LeaveChannelByName
@@ -514,3 +616,4 @@ before=os.clock()
 for i=1,10000 do timer.callback() end
 print(string.format("Typing 40 nearby say peers: %.2f us/sample; %d new regions",(os.clock()-before)*100,#frames.frames-count))
 os.exit(ok and 0 or 1)
+

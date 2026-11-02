@@ -214,5 +214,27 @@ return function(T, ns, frames)
       SlashCmdList.GROSORTEIL("distance"); T.assertFalse(frame:IsShown())
       T.assertNil(frame:GetScript("OnUpdate"))
     end)
+    T.it("shows housing distances and API failures and clears a saved point when leaving the world",function()
+      reset()
+      local oldInstance,oldHousing,oldPosition,oldExists,oldSquared,oldMap=IsInInstance,C_Housing,UnitPosition,UnitExists,UnitDistanceSquared,C_Map
+      _G.IsInInstance=function() return true,"neighborhood" end
+      _G.C_Housing={IsOnNeighborhoodMap=function() return true end,
+        GetCurrentNeighborhoodGUID=function() return "Neighborhood-A" end}
+      _G.UnitExists=function() return true end
+      _G.UnitDistanceSquared=nil; _G.C_Map=nil
+      _G.UnitPosition=function(unit) return unit=="player" and 0 or 3,unit=="player" and 0 or 4,0,100 end
+      ns.Distance.Show("target"); local panel=ns.Distance.frame
+      T.assertEq(panel.result.distance,5); T.assertNeq(panel.value:GetText(),"Indisponible")
+      panel.rememberButton:RunScript("OnClick")
+      T.assertEq(panel.result.distance,0)
+      frames.fire("PLAYER_LEAVING_WORLD"); frames.fire("PLAYER_ENTERING_WORLD")
+      T.assertEq(panel.result.reason,"no_origin")
+      _G.UnitPosition=function() return nil end
+      ns.Distance.SetMode("target"); T.assertEq(panel.result.reason,"unavailable")
+      T.assertEq(panel.value:GetText(),"Indisponible")
+      _G.IsInInstance,_G.C_Housing,_G.UnitPosition,_G.UnitExists,_G.UnitDistanceSquared,_G.C_Map=oldInstance,oldHousing,oldPosition,oldExists,oldSquared,oldMap
+      panel:Hide(); ns.Distance.SetMode("target")
+    end)
   end)
 end
+
