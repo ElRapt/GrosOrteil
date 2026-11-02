@@ -690,7 +690,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
     GameTooltip:AddLine("Tour suivant", C.GOLD_BRIGHT[1], C.GOLD_BRIGHT[2], C.GOLD_BRIGHT[3])
     GameTooltip:AddLine("Termine un tour pour le personnage et le familier.\n"
-      .. "Les élixirs perdent un tour et leurs bonus disparaissent après le troisième.\n"
+      .. "Les effets à durée limitée perdent un tour et disparaissent à zéro.\n"
       .. "Cambuse reste actif. Vous pouvez annuler cette action.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
@@ -699,6 +699,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
     if Core and Core.NextTurn then Core.NextTurn() end
   end)
 
+  local refreshCustom = ns.UI_BuildCustomAffixes(ctx, page, isPet)
   local function refresh(s)
     local holder = isPet and (type(s.pet) == "table" and s.pet or {}) or s
     local af = (type(holder.affixes) == "table") and holder.affixes or {}
@@ -712,6 +713,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
     local playerTurns = s.affixTurns or {}
     local petTurns = s.pet and s.pet.affixTurns or {}
     setButtonEnabled(nextTurn, next(playerTurns) ~= nil or next(petTurns) ~= nil)
+    refreshCustom()
   end
 
   if isPet then

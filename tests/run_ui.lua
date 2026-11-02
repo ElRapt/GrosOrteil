@@ -421,6 +421,7 @@ require("test_ui_refresh")(T,ns,frames)
 require("test_ui_lifecycle")(T,ns,frames)
 require("test_themes")(T,ns,frames)
 require("test_mounts_ui")(ns, frames, mocks, T)
+require("test_custom_affixes_ui")(ns, frames, mocks, T)
 
 local ok=T.run({verbose=true})
 os.exit(ok and 0 or 1)

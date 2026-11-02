@@ -31,6 +31,7 @@ local TESTS = {
   "test_mounts",
   "test_history",
   "test_core",
+  "test_custom_affixes",
   "test_grimoire",
   "test_comm",
   "test_popup",

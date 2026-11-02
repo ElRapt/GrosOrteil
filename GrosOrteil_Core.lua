@@ -146,7 +146,7 @@ local SNAPSHOT_SCALARS = {
   -- Attack stats are mutated by the zone affixes and the insanity tier bonus;
   -- snapshotting them keeps an undone toggle consistent with its recorded
   -- applied deltas.
-  "attaqueMelee", "attaqueDistance", "insanityAtkApplied", "regenParTour",
+  "attaqueMelee", "attaqueDistance", "insanityAtkApplied", "regenParTour", "perception",
 }
 local SNAPSHOT_PET_FIELDS = {
   "enabled", "name", "hp", "maxHp",
@@ -209,6 +209,7 @@ end
 local function deepCopyState(s)
   local c = copyKeys(s, SNAPSHOT_SCALARS)
   c.affixes, c.affixApplied, c.affixTurns = copyAffixTables(s)
+  c.customAffixes = deepCopyTable(s.customAffixes)
   local ms = s.magicShield
   c.magicShield = ms and { hp = ms.hp, maxHp = ms.maxHp, armor = ms.armor } or nil
   local mns = s.manaShield
@@ -221,6 +222,7 @@ local function deepCopyState(s)
   local p = s.pet or {}
   local pc = copyKeys(p, SNAPSHOT_PET_FIELDS)
   pc.affixes, pc.affixApplied, pc.affixTurns = copyAffixTables(p)
+  pc.customAffixes = deepCopyTable(p.customAffixes)
   local pw = p.wounds or {}
   pc.wounds = { hit25 = pw.hit25, hit10 = pw.hit10 }
   local pms = p.magicShield
@@ -260,6 +262,7 @@ local function restoreSnapshot(snap)
   s.affixes      = affixes      or {}
   s.affixApplied = affixApplied or {}
   s.affixTurns   = affixTurns   or {}
+  s.customAffixes = deepCopyTable(snap.customAffixes) or {}
   s.wounds.hit25 = snap.wounds.hit25
   s.wounds.hit10 = snap.wounds.hit10
   if snap.meter then
@@ -278,6 +281,7 @@ local function restoreSnapshot(snap)
   p.affixes      = pAffixes or {}
   p.affixApplied = pApplied or {}
   p.affixTurns   = pTurns or {}
+  p.customAffixes = deepCopyTable(sp.customAffixes) or {}
   p.wounds.hit25 = sp.wounds.hit25; p.wounds.hit10 = sp.wounds.hit10
   local spms = sp.magicShield
   p.magicShield = p.magicShield or {}
@@ -705,7 +709,7 @@ function ns.Core_Init()
   if type(db.state.affixes)      ~= "table" then db.state.affixes      = {} end
   if type(db.state.affixApplied) ~= "table" then db.state.affixApplied = {} end
   migrateAffixes(db.state)
-  migrateAffixes(db.state.pet)
+  migrateAffixes(db.state.pet, true)
   -- Bonus d'attaque des paliers d'Insanité : applique la part manquante sur
   -- les vieilles sauvegardes (insanityAtkApplied absent = rien d'appliqué).
   if type(db.state.insanityAtkApplied) ~= "number" then db.state.insanityAtkApplied = 0 end
@@ -1603,6 +1607,15 @@ local AFFIX_DELTAS = {
   ELIXIR_RESISTANCE = { armor = 6 },
 }
 
+local function affixDeltas(t, key)
+  return AFFIX_DELTAS[key] or ns.Affixes.Deltas(t, key)
+end
+
+local function affixDuration(t, key)
+  local def = ns.Affixes.Find(t, key)
+  return TIMED_AFFIXES[key] or (def and def.duration)
+end
+
 local function ensureAffixTables(t)
   if type(t.affixes)      ~= "table" then t.affixes      = {} end
   if type(t.affixApplied) ~= "table" then t.affixApplied = {} end
@@ -1625,8 +1638,9 @@ local function applyAffixField(t, applied, field, delta)
 end
 
 local function applyAffix(t, key)
-  local deltas = AFFIX_DELTAS[key]
+  local deltas = affixDeltas(t, key)
   if not deltas then return end
+  local hpBefore = t.hp or 0
   local applied = {}
   -- maxHp d'abord, pour que le clamp des PV voie le nouveau plafond.
   if deltas.maxHp then applyAffixField(t, applied, "maxHp", deltas.maxHp) end
@@ -1636,6 +1650,7 @@ local function applyAffix(t, key)
   if deltas.maxHp or deltas.hp then
     clampHpToEffectiveMax(t)
     recomputeWounds(t)
+    if not AFFIX_DELTAS[key] then applied.hp = (t.hp or 0) - hpBefore end
   end
   t.affixApplied[key] = applied
 end
@@ -1650,11 +1665,30 @@ local function removeAffix(t, key)
   for field, delta in pairs(applied) do
     -- Only recorded, finite stat deltas can be reversed on legacy saves.
     if (field == "attaqueMelee" or field == "attaqueDistance" or field == "dodge"
-        or field == "armor" or field == "maxHp" or field == "hp" or field == "regenParTour")
+        or field == "armor" or field == "maxHp" or field == "hp" or field == "regenParTour"
+        or ns.Affixes.BY_STAT[field])
         and type(delta) == "number" and delta == delta and math.abs(delta) <= 1e9 then
-      t[field] = math.max(affixFieldMin(field), (t[field] or 0) - delta)
+      local before = t[field] or 0
+      t[field] = math.min(1e9, math.max(affixFieldMin(field), before - delta))
+      local removed = before - t[field]
+      -- An opposing effect may have clipped this contribution at zero/the cap.
+      -- Transfer that clipped part to its recorded delta so removal order cannot
+      -- manufacture stats (e.g. +10 then -30 armor, removed in either order).
+      local clipped = delta - removed
+      if clipped ~= 0 then
+        for _, other in pairs(t.affixApplied) do
+          local value = type(other) == "table" and other[field]
+          if type(value) == "number" and value == value and math.abs(value) <= 1e9
+              and value * clipped < 0 then
+            local transfer = math.min(math.abs(value), math.abs(clipped)) * (clipped > 0 and 1 or -1)
+            other[field] = value + transfer
+            clipped = clipped - transfer
+            if clipped == 0 then break end
+          end
+        end
+      end
       if field == "armor" and t.shamanPosture == "FEU" and t.shamanPostureBase then
-        t.shamanPostureBase.armor = math.max(0, (t.shamanPostureBase.armor or 0) - delta)
+        t.shamanPostureBase.armor = math.max(0, (t.shamanPostureBase.armor or 0) - removed - clipped)
       end
       if field == "maxHp" or field == "hp" then touchedHp = true end
     end
@@ -1667,7 +1701,7 @@ end
 
 -- Retire les anciens affixes une seule fois, à partir des deltas réellement
 -- appliqués (y compris les malus tronqués à zéro). L'Insanité déjà acquise reste.
-migrateAffixes = function(t)
+migrateAffixes = function(t, isPet)
   if type(t) ~= "table" then return end
   ensureAffixTables(t)
   removeAffix(t, "BELEDAR_JOUR")
@@ -1697,7 +1731,30 @@ migrateAffixes = function(t)
     clampHpToEffectiveMax(t)
     t._cambuseV2 = true
   end
-  for key, duration in pairs(TIMED_AFFIXES) do
+  local custom, valid, durations = {}, {}, {}
+  local serial = tonumber(t.customAffixSerial) or 0
+  if serial ~= serial or serial < 0 or serial > 1e12 then serial = 0 end
+  for _, def in ipairs(type(t.customAffixes) == "table" and t.customAffixes or {}) do
+    local id = type(def) == "table" and def.id
+    local number = type(id) == "string" and tonumber(id:match("^CUSTOM_(%d+)$"))
+    local normalized = number and number <= 1e12 and ns.Affixes.Validate(def, isPet)
+    if normalized and not valid[id] then
+      normalized.id = id
+      custom[#custom + 1], valid[id] = normalized, true
+      serial = math.max(serial, number)
+      if normalized.duration then durations[id] = normalized.duration
+      else t.affixTurns[id] = nil end
+    end
+  end
+  t.customAffixes, t.customAffixSerial = custom, math.floor(serial)
+  for key in pairs(t.affixes) do
+    if type(key) == "string" and key:match("^CUSTOM_") and not valid[key] then removeAffix(t, key) end
+  end
+  for key in pairs(t.affixTurns) do
+    if not t.affixes[key] or (not TIMED_AFFIXES[key] and not durations[key]) then t.affixTurns[key] = nil end
+  end
+  for key, duration in pairs(TIMED_AFFIXES) do durations[key] = duration end
+  for key, duration in pairs(durations) do
     if t.affixes[key] then
       local turns = t.affixTurns[key]
       if turns == nil then turns = duration end
@@ -1714,7 +1771,7 @@ end
 
 function Core.IsAffixActive(key)
   local s = Core.state
-  return (s and AFFIX_DELTAS[key] and type(s.affixes) == "table" and s.affixes[key]) and true or false
+  return (s and affixDeltas(s, key) and type(s.affixes) == "table" and s.affixes[key]) and true or false
 end
 
 local function toggleAffixTarget(t, key)
@@ -1724,16 +1781,67 @@ local function toggleAffixTarget(t, key)
   else
     applyAffix(t, key)
     t.affixes[key] = true
-    t.affixTurns[key] = TIMED_AFFIXES[key]
+    t.affixTurns[key] = affixDuration(t, key)
   end
 end
 
 function Core.ToggleAffix(key)
   local s = Core.state
   if not s then return end
-  if type(key) ~= "string" or not AFFIX_DELTAS[key] then return end
+  if type(key) ~= "string" or not affixDeltas(s, key) then return end
   toggleAffixTarget(s, key)
   bump(); notify()
+end
+
+-- Namespaced, local definitions stay separate from built-ins and from the wire
+-- payload. Each character/pet sheet has its own library and activation state.
+function Core.SaveCustomAffix(input, key, isPet)
+  local s = Core.state
+  if not s then return nil, "Fiche indisponible." end
+  local holder = isPet and ensurePet(s) or s
+  local def, err = ns.Affixes.Validate(input, isPet)
+  if not def then return nil, err end
+  local old, index = ns.Affixes.Find(holder, key)
+  if key and not old then return nil, "Cet affixe n'existe plus. Fermez l'éditeur et recommencez." end
+  ensureAffixTables(holder)
+  holder.customAffixes = holder.customAffixes or {}
+  if not old then
+    -- Never rewind this counter on undo: stale editors cannot reuse another ID.
+    holder.customAffixSerial = (holder.customAffixSerial or 0) + 1
+    key = string.format("CUSTOM_%.0f", holder.customAffixSerial)
+    index = #holder.customAffixes + 1
+  end
+  def.id = key
+  local active = holder.affixes[key]
+  local changed = not old
+  if old then
+    local before, after = ns.Affixes.Deltas(holder, key), {}
+    for _, effect in ipairs(def.effects) do after[effect.stat] = effect.value end
+    if after.maxHp then after.hp = after.maxHp end
+    for field, value in pairs(before) do if after[field] ~= value then changed = true end end
+    for field, value in pairs(after) do if before[field] ~= value then changed = true end end
+  end
+  -- Changing live effects would reapply HP and could restart an expiring buff.
+  -- Require an explicit deactivation for mechanical edits; cosmetic edits stay live.
+  if active and (changed or old.duration ~= def.duration) then
+    return nil, "Désactivez l'affixe avant de modifier ses statistiques ou sa durée."
+  end
+  holder.customAffixes[index] = def
+  bump(); notify()
+  return key
+end
+
+function Core.DeleteCustomAffix(key, isPet)
+  local s = Core.state
+  if not s then return false end
+  local holder = isPet and ensurePet(s) or s
+  local def, index = ns.Affixes.Find(holder, key)
+  if not def then return false end
+  ensureAffixTables(holder)
+  removeAffix(holder, key)
+  table.remove(holder.customAffixes, index)
+  bump(); notify()
+  return true
 end
 
 -- Optional per-range bases inherit Distance until edited. Keeping temporary
@@ -1749,7 +1857,7 @@ do
     local bonus = finiteNumber(s.insanityAtkApplied, 0, 1e9) or 0
     if type(s.affixes) == "table" then
       for key, active in pairs(s.affixes) do
-        local deltas = active and AFFIX_DELTAS[key]
+        local deltas = active and affixDeltas(s, key)
         if deltas then
           -- A capped general attack must not truncate a bonus on a lower
           -- custom range. Its effective value has its own independent cap.
@@ -1789,7 +1897,7 @@ function Core.TogglePetAffix(key)
   if not s then return end
   local p = ensurePet(s)
   if not p or not p.enabled then return end
-  if type(key) ~= "string" or not AFFIX_DELTAS[key] then return end
+  if type(key) ~= "string" or not affixDeltas(p, key) then return end
   toggleAffixTarget(p, key)
   bump(); notify()
 end
@@ -1798,9 +1906,9 @@ local function advanceAffixTurns(t)
   if not t then return false end
   ensureAffixTables(t)
   local changed = false
-  for key in pairs(TIMED_AFFIXES) do
+  for key, turns in pairs(t.affixTurns) do
     if t.affixes[key] then
-      local remaining = (t.affixTurns[key] or TIMED_AFFIXES[key]) - 1
+      local remaining = turns - 1
       if remaining <= 0 then removeAffix(t, key)
       else t.affixTurns[key] = remaining end
       changed = true

@@ -48,7 +48,7 @@ Voir [les tests et la vérification en jeu](tests/README.md).
 - **Cambuse : Attaque** ajoute 10 en attaque (CaC et distance) et 10 en esquive.
 - **Cambuse : Régénération** ajoute 2 à la régénération par tour. Utilisez le
   bouton de régénération pour recevoir le soin ; **Tour suivant** fait seulement
-  avancer les élixirs. Les anciens bonus Cambuse actifs sont mis à jour au chargement.
+  avancer les effets à durée limitée. Les anciens bonus Cambuse actifs sont mis à jour au chargement.
 
 Dans `/go` → **Familier** → **Montures**, invoquez une monture dans WoW pour
 créer sa fiche. Chaque monture du journal conserve son nom, ses PV, son armure
@@ -73,3 +73,31 @@ Les barres du cavalier restent visibles à côté du profil du personnage pour
 éviter le chevauchement. Sans profil de monture, les statistiques s'empilent
 au-dessus des barres du cavalier. TRP3 reste facultatif. Seule la fiche de la
 monture actuellement sortie est synchronisée, pas l'ensemble des fiches.
+
+## Affixes personnalisés (2.7)
+
+Dans **Affixes** → **Affixes personnalisés**, cliquez sur **+ Nouvel affixe**.
+Donnez-lui un nom, choisissez sa couleur et ajoutez autant de statistiques
+différentes que nécessaire avec **+ Statistique**. Chaque ligne possède sa
+propre valeur, positive ou négative ; les décimales sont acceptées. Les choix
+sont les PV maximum, l'armure, l'armure véritable, l'armure temporaire, l'esquive,
+l'attaque au corps à corps, l'attaque à distance, la régénération par tour et
+la perception (personnage uniquement). Un effet de PV maximum modifie aussi
+les PV actuels, dans les limites habituelles de la fiche.
+
+La durée est illimitée par défaut. Activez **Durée : limitée** pour choisir
+de 1 à 9999 tours, partagés par tous les effets de cet affixe. **Enregistrer**
+crée l'affixe sans l'activer. Cliquez ensuite sur sa carte pour appliquer ou
+retirer ses effets. **Tour suivant** avance les compteurs du personnage et du
+familier ; à zéro, l'affixe se désactive et reste disponible pour une prochaine
+utilisation. La régénération reste une action manuelle.
+
+Les créations restent séparées de Cambuse et des élixirs. Le personnage et le
+familier conservent chacun leurs créations et leurs activations, y compris
+après `/reload`. Une monture liée au familier partage ses statistiques modifiées.
+**Modifier** permet de changer le nom et la couleur d'un affixe actif sans
+relancer sa durée. Désactivez-le pour changer ses statistiques ou sa durée.
+**Supprimer** retire aussi ses effets actifs. Création, modification, suppression,
+activation et passage de tour sont compatibles avec **Annuler / Rétablir**.
+Seules les statistiques résultantes sont synchronisées avec le groupe, pas
+les définitions personnalisées.
