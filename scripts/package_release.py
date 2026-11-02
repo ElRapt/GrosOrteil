@@ -61,9 +61,8 @@ def main():
         if path.name.lower().startswith("readme"):
             raise ValueError(f"README in package: {name}")
 
-    outer = f"GrosOrteil-v{version}"
-    prefix = f"{outer}/GrosOrteil/"
-    destination = ROOT / "releases" / f"{outer}.zip"
+    prefix = "GrosOrteil/"
+    destination = ROOT / "releases" / f"GrosOrteil-v{version}.zip"
     destination.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, data in sorted(files.items()):
@@ -73,6 +72,8 @@ def main():
             archive.writestr(info, data)
     with zipfile.ZipFile(destination) as archive:
         assert archive.testzip() is None
+        assert {name.split("/")[0] for name in archive.namelist()} == {"GrosOrteil"}
+        assert "GrosOrteil/GrosOrteil.toc" in archive.namelist()
         assert set(archive.namelist()) == {prefix + name for name in files}
         for name, data in files.items():
             assert archive.read(prefix + name) == data

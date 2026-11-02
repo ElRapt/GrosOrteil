@@ -10,7 +10,9 @@ When releasing GrosOrteil:
 - Commit the release and tag that exact commit using the version number (for
   example `2.6.0`, matching the recent repository tag convention).
 - Run `python scripts/package_release.py 2.6.0` with the requested version.
-  Package from the tag, with `GrosOrteil-v2.6.0/GrosOrteil/` inside the ZIP.
+  Package from the tag as `GrosOrteil-v2.6.0.zip`, with `GrosOrteil/` directly
+  at the ZIP root. The version belongs only in the archive filename, never
+  in an extra enclosing directory inside the ZIP.
   Include runtime files and required library licenses; exclude Git metadata,
   caches, READMEs, development documentation and offline tests. Keep TOC-loaded
   in-game tests because the addon loads them at runtime.
