@@ -410,13 +410,22 @@ function Comm:SendTyping(channel, target, active, position, callback)
     -- Retail has no SAY addon transport. A dedicated channel carries position
     -- with status so receivers can apply a horizontal local range check.
     target = GetChannelName(self.TYPING_CHANNEL)
-    if target == 0 or (active and not position) then
+    if target == 0 or (active and not ns.Distance.IsValidPosition(position)) then
       if callback then callback(false, target == 0 and "NO_CHANNEL" or "NO_POSITION") end
       return false
     end
     channel = "CHANNEL"
     message = "TYPING:1:SAY:" .. (active and "1" or "0")
-    if active then message = message .. string.format(":%d:%.2f:%.2f", position.map, position.x, position.y) end
+    if active then
+      if position.scope then
+        -- New housing packets are ignored by older clients, whose map-only
+        -- comparison cannot distinguish overlapping neighborhood/house copies.
+        message = string.format("TYPING:2:SAY:1:%s:%s:%d:%.2f:%.2f",
+          position.scope, position.basis or "U", position.map, position.x, position.y)
+      else
+        message = message .. string.format(":%d:%.2f:%.2f", position.map, position.x, position.y)
+      end
+    end
   end
   return sendAddonMessage(self.PREFIX, message, channel, target, callback)
 end
@@ -634,3 +643,4 @@ end
 function ns.Comm_Init()
   Comm:Initialize()
 end
+
