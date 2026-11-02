@@ -257,3 +257,33 @@ TRP integration follows the upstream
 (`TRP3_CompanionTooltip`, distinct from `TRP3_CharacterTooltip`) and the active-mount
 lookup in
 [CompanionProviderJournal.lua](https://github.com/Total-RP/Total-RP-3/blob/main/totalRP3/Core/CompanionProviderJournal.lua).
+
+## Custom affixes acceptance (2.7)
+
+`test_custom_affixes.lua` covers multi-stat validation, signed/fractional deltas,
+caps and opposing effects, independent player/pet libraries, ranged attacks,
+expiry, reload/malformed saves, undo/redo, editing/deletion, shaman armor and
+linked mounts. `test_custom_affixes_ui.lua` drives the actual editor, stat menus,
+duration toggle, native color picker, cards and turn controls, including invalid
+drafts, cancellation, stale callbacks, frame reuse and layout. The existing CI
+matrix runs these with Lua 5.1 and 5.4 and all three theme initialization cases.
+
+In WoW:
+
+- Create an affix with at least three stats (for example +25 maximum HP, +10
+  attack and -5 dodge), choose a color and a two-turn duration. Activate it,
+  take damage, advance a turn and reload. Verify HP and remaining turns persist
+  without reapplying effects; the second turn removes the effects and retains
+  the definition. Also check an unlimited affix and manual regeneration.
+- Edit an inactive affix, add/remove stat rows, and test duplicate stats and
+  invalid values. Change an active affix's name/color and check its timer and
+  current HP stay unchanged. Mechanical edits require deactivation. Delete an
+  active affix and use undo/redo to restore its definition, effects and timer.
+- Repeat on the pet, including with a linked mount and with the pet hidden.
+  Verify separate lists and shared turn advancement. On another updated client,
+  check effective stats and ranged attacks in the target/raid UI.
+- At minimum window size in both themes, scroll through a long list and all
+  nine stat rows. Check menus, long names, error messages and card spacing.
+  Accept/cancel the native color picker, switch tabs while it is open and check
+  that another addon's picker is not closed. Offline tests do not render WoW
+  fonts/menus or certify the live client; this remains an in-game check.

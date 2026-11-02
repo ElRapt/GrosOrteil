@@ -47,6 +47,7 @@ local SOURCES = {
   "GrosOrteil_Theme.lua",
   "GrosOrteil_Distance.lua",
   "GrosOrteil_History.lua",
+  "GrosOrteil_Affixes.lua",
   "GrosOrteil_Core.lua",
   "GrosOrteil_Mounts.lua",
   "GrosOrteil_Grimoire.lua",

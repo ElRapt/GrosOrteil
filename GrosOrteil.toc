@@ -6,7 +6,7 @@
 ## X-Category: Jeu de rôle
 ## X-Tags: Jeu de rôle, RPG, UI, Tracker, Jeu de rôle
 ## Author: Zinnieth
-## Version: 2.6.0
+## Version: 2.7.0
 ## SavedVariables: GrosOrteilDB
 ## SavedVariablesPerCharacter: GrosOrteilDBPC
 
@@ -24,10 +24,12 @@ GrosOrteil_Theme.lua
 GrosOrteil_Distance.lua
 GrosOrteil_UI_Distance.lua
 GrosOrteil_History.lua
+GrosOrteil_Affixes.lua
 GrosOrteil_Core.lua
 GrosOrteil_Mounts.lua
 GrosOrteil_Grimoire.lua
 GrosOrteil_GrimoireIcons.lua
+GrosOrteil_UI_Affixes.lua
 GrosOrteil_UI_Tabs.lua
 GrosOrteil_UI_Mounts.lua
 GrosOrteil_UI_Grimoire.lua
