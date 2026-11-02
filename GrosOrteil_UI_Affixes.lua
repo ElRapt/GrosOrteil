@@ -28,10 +28,10 @@ function ns.UI_BuildCustomAffixes(ctx, page, isPet)
   root:SetPoint("TOP", page, "TOP", 0, -334); root:SetSize(410, 150)
   Theme.SectionHeader(root, "Affixes personnalisés", 0, 410)
   refs.newButton = mkButton(root, "+ Nouvel affixe", 190, 30, 0, -30)
-  label(root, "Vos créations sont propres à cette fiche. Cliquez sur un affixe pour l'activer ou le désactiver.", 0, -70, 410)
-  local empty = label(root, "Aucun affixe personnalisé. Créez votre premier affixe.", 0, -112, 410)
+  refs.newButton:ClearAllPoints()
+  refs.newButton:SetPoint("TOP", root, "TOP", 0, -30)
   local editor = CreateFrame("Frame", nil, root, "BackdropTemplate")
-  editor:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -110); editor:SetSize(410, 300)
+  editor:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -76); editor:SetSize(410, 300)
   editor:SetBackdrop({ bgFile = ctx.TEX.FLAT, edgeFile = ctx.TEX.FLAT, edgeSize = 1 })
   Theme.BindColor(editor, "SetBackdropColor", C.BROWN_DEEP, 0.95)
   Theme.BindColor(editor, "SetBackdropBorderColor", C.GOLD_MUTED, 0.7)
@@ -216,17 +216,16 @@ function ns.UI_BuildCustomAffixes(ctx, page, isPet)
 
   local function makeCard()
     local card = CreateFrame("Frame", nil, root)
-    card:SetWidth(410)
-    card.toggle = mkButton(card, "", 410, 30, 0, 0)
-    card.toggle._fs:SetWidth(384)
+    card:SetSize(200, 66)
+    card.toggle = mkButton(card, "", 200, 34, 0, 0)
+    card.toggle._fs:SetWidth(174)
     card.toggle._fs:SetMaxLines(1)
     card.swatch = card.toggle:CreateTexture(nil, "ARTWORK")
     card.swatch:SetPoint("TOPLEFT", card.toggle, "TOPLEFT", 2, -2)
     card.swatch:SetPoint("BOTTOMLEFT", card.toggle, "BOTTOMLEFT", 2, 2)
     card.swatch:SetWidth(4)
-    card.summary = label(card, "", 10, -38, 390)
-    card.edit = mkButton(card, "Modifier", 100, 24, 0, 0)
-    card.delete = mkButton(card, "Supprimer", 100, 24, 110, 0)
+    card.edit = mkButton(card, "Modifier", 95, 24, 0, -42)
+    card.delete = mkButton(card, "Supprimer", 95, 24, 105, -42)
     card.toggle:SetScript("OnClick", function()
       if isPet then Core.TogglePetAffix(card.key) else Core.ToggleAffix(card.key) end
     end)
@@ -253,29 +252,26 @@ function ns.UI_BuildCustomAffixes(ctx, page, isPet)
   refresh = function()
     local h = holder() or {}
     local list = h.customAffixes or {}
-    local y = draft and 110 + editor:GetHeight() + 16 or 110
-    empty:SetShown(#list == 0 and not draft)
+    local y = draft and 76 + editor:GetHeight() + 16 or 76
     -- Reuse cards; ordinary state updates never repopulate the editor's draft.
     for i, def in ipairs(list) do
       local card = refs.cards[i]
       if not card then card = makeCard(); refs.cards[i] = card end
       card.key = def.id
-      card:ClearAllPoints(); card:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -y)
+      local row, col = math.floor((i - 1) / 2), (i - 1) % 2
+      card:ClearAllPoints()
+      card:SetPoint("TOPLEFT", root, "TOPLEFT", col * 210, -y - row * 76)
       local turns = h.affixTurns and h.affixTurns[def.id]
       local active = h.affixes and h.affixes[def.id]
       card.toggle:SetText(def.name .. (turns and (" (" .. turns .. " tours)") or (active and " • Actif" or "")))
       Theme.SetButtonSelected(card.toggle, active and def.color or false)
       card.swatch:SetColorTexture(def.color.r, def.color.g, def.color.b, 1)
       ctx.setButtonEnabled(card.toggle, not isPet or h.enabled)
-      card.summary:SetText(Affixes.Summary(def) .. "\n" .. (def.duration and (def.duration .. " tours") or "Illimité"))
-      local textHeight = card.summary:GetStringHeight()
-      card.edit:ClearAllPoints(); card.edit:SetPoint("TOPLEFT", card, "TOPLEFT", 0, -46 - textHeight)
-      card.delete:ClearAllPoints(); card.delete:SetPoint("TOPLEFT", card, "TOPLEFT", 110, -46 - textHeight)
-      card:SetHeight(80 + textHeight); card:Show()
-      y = y + card:GetHeight() + 12
+      card:Show()
     end
     for i = #list + 1, #refs.cards do refs.cards[i]:Hide() end
-    root:SetHeight(y + 40); page:SetHeight(334 + y + 40)
+    local height = y + math.ceil(#list / 2) * 76 + 40
+    root:SetHeight(height); page:SetHeight(334 + height)
   end
   editor:Hide()
   if isPet then ns.UI.petCustomAffixes = refs else ns.UI.customAffixes = refs end
