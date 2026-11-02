@@ -115,8 +115,9 @@ end
 local function updateWindowTitle()
   if not UI or not UI.title or not UI.title.SetText then return end
   if UI.TAB_IDS and UI.activeTab and UI.activeTab >= UI.TAB_IDS.PET_MAIN then
-    local pet = Core and Core.state and Core.state.pet
-    UI.title:SetText(pet and pet.enabled and pet.name or "Familier")
+    local mountTab = UI.TAB_IDS and UI.activeTab == UI.TAB_IDS.MOUNTS
+    local pet = mountTab and ns.Mounts.GetSelected() or (Core and Core.state and Core.state.pet)
+    UI.title:SetText(pet and (mountTab or pet.enabled) and pet.name or "Familier")
     return
   end
   local profileName = getTRP3ProfileName()
@@ -638,7 +639,8 @@ function ns.UI_Init()
       "Restaurer PV",
       "Remet tous les PV au maximum (bonus inclus).",
       function()
-        if activeSectionRef.v == 2 then Core.PetRestoreHP() else Core.RestoreHP() end
+        if UI.TAB_IDS and UI.activeTab == UI.TAB_IDS.MOUNTS then Core.MountAction("RESTORE")
+        elseif activeSectionRef.v == 2 then Core.PetRestoreHP() else Core.RestoreHP() end
       end)
     iconRestore:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -BODY_X, FOOTER_Y + 2)
     UI.iconRestoreHP = iconRestore
@@ -658,7 +660,8 @@ function ns.UI_Init()
       "Régénération quotidienne PV",
       "Restaure 10 % du max de PV, ignorant les seuils de PV.",
       function()
-        if activeSectionRef.v == 2 then Core.PetDailyRegenHP() else Core.DailyRegenHP() end
+        if UI.TAB_IDS and UI.activeTab == UI.TAB_IDS.MOUNTS then Core.MountAction("DAILY")
+        elseif activeSectionRef.v == 2 then Core.PetDailyRegenHP() else Core.DailyRegenHP() end
       end)
     iconRegenHP:SetPoint("RIGHT", iconRestoreRes, "LEFT", -ICON_GAP, 0)
     UI.iconRegenHP = iconRegenHP
@@ -877,7 +880,11 @@ function ns.UI_Init()
   -- Floating combat text above the HP bar (dégâts, soins, esquive, blocage)
   local showCombatText = Shared.AttachFloatingText(hpBar)
   Core.SetCombatTextHandler(function(kind, amount, subject)
-    if subject and ((subject == "PET") ~= (activeSectionRef.v == 2)) then return end
+    local mountTab = UI.TAB_IDS and UI.activeTab == UI.TAB_IDS.MOUNTS
+    local mount = mountTab and ns.Mounts.GetSelected()
+    local expected = mountTab and (mount == Core.state.pet and "PET" or "MOUNT")
+      or (activeSectionRef.v == 2 and "PET" or "CHAR")
+    if subject and subject ~= expected then return end
     if kind == "DAMAGE" then
       showCombatText("-" .. Shared.Round(amount or 0), 1.00, 0.25, 0.25)
     elseif kind == "HEAL" then
@@ -1101,6 +1108,7 @@ function ns.UI_Init()
     PET_MAIN = 9,
     PET_HISTORY = 10,
     PET_AFFIXES = 11,
+    MOUNTS = 12,
   }
   local FIRST_PET_TAB = TAB_IDS.PET_MAIN
   local LAST_PLAYER_TAB = FIRST_PET_TAB - 1
@@ -1251,6 +1259,8 @@ function ns.UI_Init()
       end
     end
 
+    if changed and refreshHpDisplay and lastState then refreshHpDisplay(lastState) end
+
     if changed and UI.pages[active] then
       Theme.MakeFadeIn(UI.pages[active], 0.14):Play()
     end
@@ -1277,12 +1287,13 @@ function ns.UI_Init()
     "Familier",         -- 9  familiar section (merged)
     "Historique",       -- 10 familiar history
     "Affixes",          -- 11 familiar affixes
+    "Montures",         -- 12 mount sheets
   }
 
   local TAB_ICONS = {
     "INV_Misc_Book_09", "INV_Misc_Rune_01", "INV_Inscription_Pigment_Violet", "Ability_DualWield",
     "Spell_Shadow_UnholyFrenzy", "INV_Misc_GroupLooking", "INV_Misc_Book_11", "INV_Misc_Note_01",
-    "Ability_Hunter_BeastTaming", "INV_Misc_Note_01", "Spell_Shadow_UnholyFrenzy",
+    "Ability_Hunter_BeastTaming", "INV_Misc_Note_01", "Spell_Shadow_UnholyFrenzy", "Ability_Mount_RidingHorse",
   }
   local NAV_PAD = 8
   local NAV_GAP = 4
@@ -1299,6 +1310,7 @@ function ns.UI_Init()
     [9] = "Fiche du familier : PV, armure, attaque et actions.",
     [10] = "Journal des évènements du familier.",
     [11] = "Affixes de zone : bonus et malus temporaires appliqués au familier.",
+    [12] = "Montures : PV, armure, esquive et lien avec le familier.",
   }
 
   local function mkTab(text, idx)
@@ -1438,6 +1450,7 @@ function ns.UI_Init()
   local pagePetHP      = mkPage() -- 9: familiar – Fiche (merged)
   local pagePetArmor   = mkPage() -- 10: familiar – Historique
   local pagePetAffixes = mkPage() -- 11: familiar – Affixes
+  local pageMounts = mkPage()
   UI.pageHistory = pageHistory
   UI.grimoirePage = pageGrimoire
 
@@ -1736,6 +1749,9 @@ function ns.UI_Init()
   tabCtx.page = pageClasses
   ns.UI_BuildClassesTab(tabCtx)
 
+  tabCtx.page = pageMounts
+  ns.UI_BuildMountsTab(tabCtx)
+
   -- Onglet 7 : Grimoire
   tabCtx.page = pageGrimoire
   ns.UI_BuildGrimoireTab(tabCtx)
@@ -1743,17 +1759,18 @@ function ns.UI_Init()
   refreshHpDisplay = function(s)
     if activeSection == 2 then
       -- Familiar section: show pet HP on the main bar.
-      local pet       = type(s.pet) == "table" and s.pet or {}
-      local petEnabled = not not pet.enabled
+      local mountTab = UI.activeTab == TAB_IDS.MOUNTS
+      local pet = mountTab and ns.Mounts.GetSelected() or (type(s.pet) == "table" and s.pet or {})
+      local petEnabled = mountTab or not not pet.enabled
       if UI.updateSidebarEmblem then UI.updateSidebarEmblem(nil, true) end
-      if UI.plaqueSub then UI.plaqueSub:SetText("Familier") end
+      if UI.plaqueSub then UI.plaqueSub:SetText(mountTab and "Monture" or "Familier") end
       if petEnabled then
         if UI.title then UI.title:SetText(pet.name or "Familier") end
         local petHp    = tonumber(pet.hp)    or 0
         local petMaxHp = math.max(1, tonumber(pet.maxHp) or 1)
         local petPct   = petHp / petMaxHp
         hpBar:SetValue(math.max(0, math.min(1, petPct)))
-        hpText:SetText(string.format("PV familier : %d / %d (%d%%)", math.floor(petHp), math.floor(petMaxHp), roundPct(petPct)))
+        hpText:SetText(string.format((mountTab and "PV monture" or "PV familier") .. " : %d / %d (%d%%)", math.floor(petHp), math.floor(petMaxHp), roundPct(petPct)))
         local petMs = type(pet.magicShield) == "table" and pet.magicShield or {}
         Shared.UpdateHpShieldOverlays(
           UI.hpBlockOverlay, UI.hpMagicBlockOverlay, hpBar,
@@ -1784,7 +1801,7 @@ function ns.UI_Init()
       -- Character section: show character HP.
       updateWindowTitle()
       if UI.updateSidebarEmblem then UI.updateSidebarEmblem(s.classKey, false) end
-      if UI.plaqueSub then UI.plaqueSub:SetText(Shared.GetClassNameFr(s.classKey)) end
+      if UI.plaqueSub then UI.plaqueSub:SetText(Shared.GetClassNameFr(s.classKey) .. (s.mounted and " — En selle (esquive : 0)" or "")) end
       local baseMaxHp = (s.maxHp or 0)
       local hpNow     = (s.hp or 0)
       local hpPct     = (baseMaxHp > 0) and (hpNow / baseMaxHp) or 0
@@ -1923,3 +1940,4 @@ function UI.NotifyUpdateAvailable(remoteVersion, localVersion)
   end
   updateBanner:Show()
 end
+

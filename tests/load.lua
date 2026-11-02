@@ -48,6 +48,7 @@ local SOURCES = {
   "GrosOrteil_Distance.lua",
   "GrosOrteil_History.lua",
   "GrosOrteil_Core.lua",
+  "GrosOrteil_Mounts.lua",
   "GrosOrteil_Grimoire.lua",
   "GrosOrteil_GrimoireIcons.lua",
   "GrosOrteil_UI_Grimoire.lua",
@@ -103,3 +104,4 @@ function M.load(fullUI, savedDB)
 end
 
 return M
+

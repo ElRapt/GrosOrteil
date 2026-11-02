@@ -84,7 +84,7 @@ T.describe("Complete UI integration", function()
   end)
   T.it("loads the actual TOC and initializes all pages exactly once", function()
     T.assertNotNil(ns.Guard); T.assertNotNil(Core.PercentageHeal); T.assertNotNil(Core.PetPercentageHeal)
-    T.assertEq(#UI.pages,11)
+    T.assertEq(#UI.pages,12)
     local count=0
     for _,tab in ipairs(UI.tabs) do if tab:IsShown() then count=count+1 end end
     T.assertEq(count,6)
@@ -104,7 +104,7 @@ T.describe("Complete UI integration", function()
     end
     Core.SetPetEnabled(true)
     UI.setSidebarSection(2)
-    for _,tab in ipairs({9,10,11}) do UI.setTab(tab); T.assertTrue(UI.pages[tab]:IsShown()) end
+    for _,tab in ipairs({9,10,11,12}) do UI.setTab(tab); T.assertTrue(UI.pages[tab]:IsShown()) end
     UI.setSidebarSection(1); UI.setTab(1)
     noErrors()
   end)
@@ -238,9 +238,9 @@ T.describe("Complete UI integration", function()
     Core.ResetToDefaults(); Core.SetAttaque(10,20); Core.SetArmor(3,0)
     Core.SetPetEnabled(true); Core.SetPetAttaque(5,8); Core.SetPetArmor(2,0)
     UI.setSidebarSection(1); UI.setTab(UI.TAB_IDS.PLAYER_AFFIXES)
-    local keys={CAMBUSE_ATTAQUE=true,CAMBUSE_PV=true,ELIXIR_PUISSANCE=true,ELIXIR_RESISTANCE=true}
+    local keys={CAMBUSE_ATTAQUE=true,CAMBUSE_PV=true,CAMBUSE_REGEN=true,ELIXIR_PUISSANCE=true,ELIXIR_RESISTANCE=true}
     for _,buttons in ipairs({UI.affixButtons,UI.petAffixButtons}) do
-      T.assertEq(#buttons,4)
+      T.assertEq(#buttons,5)
       for _,b in ipairs(buttons) do T.assertTrue(keys[b._affixKey]) end
     end
     T.assertNil(find(function(f) return f._scKey or (f._affixKey and not keys[f._affixKey]) end))
@@ -420,5 +420,8 @@ require("test_grimoire_editor")(T,ns,frames)
 require("test_ui_refresh")(T,ns,frames)
 require("test_ui_lifecycle")(T,ns,frames)
 require("test_themes")(T,ns,frames)
+require("test_mounts_ui")(ns, frames, mocks, T)
+
 local ok=T.run({verbose=true})
 os.exit(ok and 0 or 1)
+

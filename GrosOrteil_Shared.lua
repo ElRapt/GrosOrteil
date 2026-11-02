@@ -670,3 +670,10 @@ function Shared.AttachScaleGrip(frame, opts)
 
   return grip
 end
+
+
+-- The base dodge remains editable while mounted; only effective defense is zero.
+function Shared.GetEffectiveDodge(state)
+  if state and state.mounted then return 0 end
+  return math.max(0, tonumber(state and state.dodge) or 0)
+end

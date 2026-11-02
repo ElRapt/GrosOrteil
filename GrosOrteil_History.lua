@@ -94,7 +94,7 @@ function History.FormatEntry(e)
 		return string.format(
 			"%s%s en pourcentage | Pourcentage %s%% | Résultat %d\n"
 				.. "%s | Max effectif %d\nAvant %d | Après %d",
-			e.subject == "PET" and "[Familier] " or "",
+			e.subject == "PET" and "[Familier] " or e.subject == "MOUNT" and "[Monture] " or "",
 			damage and "Dégâts" or "Soin", tostring(e.percent or 0),
 			fmtInt(tonumber(e.applied) or 0),
 			damage and "Armure et boucliers ignorés" or "Plafond bypassé",
@@ -116,6 +116,8 @@ function History.FormatEntry(e)
 	local function prefix(label, color)
 		if e.subject == "PET" then
 			label = "[Familier] " .. label
+		elseif e.subject == "MOUNT" then
+			label = "[Monture] " .. label
 		end
 		if t ~= "" then
 			return t .. " " .. colorize(label, color)
@@ -350,9 +352,9 @@ function History.FormatHistoryText(history, undoneCount, subjectFilter)
 			if subjectFilter and not isUndoRedo then
 				local eSub = e.subject
 				if subjectFilter == "PET" then
-					include = (eSub == "PET")
+					include = (eSub == "PET" or eSub == "MOUNT")
 				elseif subjectFilter == "CHAR" then
-					include = (eSub ~= "PET")
+					include = (eSub ~= "PET" and eSub ~= "MOUNT")
 				end
 			end
 			if include then
@@ -364,4 +366,5 @@ function History.FormatHistoryText(history, undoneCount, subjectFilter)
 	if #lines == 0 then return nil end
 	return table.concat(lines, "\n\n")
 end
+
 

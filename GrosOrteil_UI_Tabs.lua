@@ -573,7 +573,14 @@ end
 -- effects read pet.affixes, buttons grey out while no familiar is active.
 function ns.UI_BuildAffixesTab(ctx, opts)
   local UI    = ns.UI
-  local page  = ctx.page
+  local host = ctx.page
+  local scroll = CreateFrame("ScrollFrame", nil, host, "UIPanelScrollFrameTemplate")
+  scroll:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+  scroll:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -20, 0)
+  local page = CreateFrame("Frame", nil, scroll)
+  page:SetSize(440, 330)
+  scroll:SetScrollChild(page)
+  scroll:SetScript("OnSizeChanged", function() page:SetWidth(math.max(440, scroll:GetWidth())) end)
   local C     = ctx.C
   local TEX   = ctx.TEX
   local Core  = ctx.Core
@@ -585,9 +592,11 @@ function ns.UI_BuildAffixesTab(ctx, opts)
 
   local AFFIX_DEFS = {
     { key = "CAMBUSE_ATTAQUE", label = "Cambuse : Attaque", r = 1.00, g = 0.35, b = 0.10,
-      desc = "+10 attaque (CaC et distance)\n+5 esquive" },
+      desc = "+10 attaque (CaC et distance)\n+10 esquive" },
     { key = "CAMBUSE_PV", label = "Cambuse : PV", r = 0.25, g = 0.85, b = 0.35,
-      desc = "+20 PV maximum" },
+      desc = "+25 PV maximum" },
+    { key = "CAMBUSE_REGEN", label = "Cambuse : Régénération", r = 0.35, g = 0.90, b = 0.75,
+      desc = "+2 PV de régénération par tour. Utilisez l’action de régénération pour appliquer le soin." },
     { key = "ELIXIR_PUISSANCE", label = "Élixir de puissance", r = 0.95, g = 0.62, b = 0.20,
       desc = "Augmente le jet d'attaque de 30 (CaC et distance) pour les 3 prochains tours." },
     { key = "ELIXIR_RESISTANCE", label = "Élixir de résistance", r = 0.35, g = 0.65, b = 0.95,
@@ -625,6 +634,7 @@ function ns.UI_BuildAffixesTab(ctx, opts)
   local anchors = {
     mkRowAnchor(page, rowW, -92),
     mkRowAnchor(page, rowW, -(92 + BTN_H + GAP)),
+    mkRowAnchor(page, rowW, -(92 + 2 * (BTN_H + GAP))),
   }
 
   -- The sheet whose affixes this tab drives (from lastStateRef).
@@ -667,14 +677,14 @@ function ns.UI_BuildAffixesTab(ctx, opts)
   end
 
   local turnHint = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  turnHint:SetPoint("TOP", page, "TOP", 0, -192)
+  turnHint:SetPoint("TOP", page, "TOP", 0, -236)
   turnHint:SetWidth(420)
   turnHint:SetJustifyH("CENTER")
   Theme.BindColor(turnHint, "SetTextColor", C.TEXT_DIM, 1)
   turnHint:SetText("Les élixirs durent 3 tours. À la fin de chaque tour, cliquez sur\n"
     .. "« Tour suivant » pour le personnage et le familier.")
 
-  local turnAnchor = mkRowAnchor(page, BTN_W, -232)
+  local turnAnchor = mkRowAnchor(page, BTN_W, -276)
   local nextTurn = mkButton(turnAnchor, "Tour suivant", BTN_W, BTN_H, 0, 0)
   nextTurn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:ClearLines()
@@ -1128,7 +1138,7 @@ function ns.UI_BuildPetFicheTab(ctx)
     petContent:ClearAllPoints()
     petContent:SetPoint("TOPLEFT", petPane, "TOPLEFT", 0, -offset)
     petContent:SetPoint("TOPRIGHT", petPane, "TOPRIGHT", 0, -offset)
-    petPane:SetHeight(508 + offset)
+    petPane:SetHeight(530 + offset)
   end)
 
   -- Bouclier magique (above Actions). 1x3 grid on PV row (cur | max | Réinit).
@@ -1181,7 +1191,9 @@ function ns.UI_BuildPetFicheTab(ctx)
     if not Core.PetPercentageHeal(ctx.getNumber(petActionValEB)) then print(PERCENTAGE_ERROR) end
   end), "Pourcentage", PERCENTAGE_TOOLTIP)
 
-  petPane:SetHeight(508)
+  local regenRow = mkRowAnchor(petContent, PET_ROW_W, -466)
+  UI.petRegenButton = mkButton(regenRow, "Régénération / tour", 380, 22, 0, 0, Core.PetRegenParTour)
+  petPane:SetHeight(530)
 
   -- Write refs
   UI.petToggleBtn = petToggleBtn
@@ -1190,7 +1202,7 @@ function ns.UI_BuildPetFicheTab(ctx)
                      petAttaqueMeleeEB, petAttaqueDistanceEB, petTempArmorEB,
                      petMsHpEB, petMsMaxHpEB, petMsArmorEB, petActionValEB }
   UI.petButtons  = { petDmgArmorBtn, petDmgTrueBtn, petDmgDirectBtn,
-                     petHealBtn, petPercentageBtn }
+                     petHealBtn, petPercentageBtn, UI.petRegenButton }
   ctx.petInputs  = {
     petName = petNameEB, petHpCur = petHpCurEB, petHpMax = petHpMaxEB,
     petArmor = petArmorEB, petTrueArmor = petTrueArmorEB,
@@ -1503,6 +1515,8 @@ function ns.UI_BuildOnChangeCallback(ctx)
     if UI.refreshAffixButtons then UI.refreshAffixButtons(s) end
     if UI.refreshPetAffixButtons then UI.refreshPetAffixButtons(s) end
 
+    if UI.refreshMounts then UI.refreshMounts(s) end
+
     -- Scalar inputs
     ctx.setNumber(UI.inputs.hpCur, s.hp)
     ctx.setNumber(UI.inputs.hpMax, s.maxHp)
@@ -1605,6 +1619,10 @@ function ns.UI_BuildOnChangeCallback(ctx)
       for i = 1, #UI.petButtons do setButtonEnabled(UI.petButtons[i], petEnabled) end
     end
 
+    if UI.petRegenButton then
+      UI.petRegenButton:SetText("Régénération / tour : +" .. (p.regenParTour or 0) .. " PV")
+    end
+
     -- History tabs
     if UI.historyText and UI.historyChild then
       local text = formatHistoryText(s.history, "CHAR")
@@ -1630,3 +1648,4 @@ function ns.UI_BuildOnChangeCallback(ctx)
     end
   end
 end
+

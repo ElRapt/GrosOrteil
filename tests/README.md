@@ -224,3 +224,36 @@ interpolates the authoritative bar value or replaces its event handler.
 
 `ns.UI_Show(false)` is synchronous for slash commands and callers expecting an
 immediate hide. Pointer controls use `ns.UI_Show(false, true)` to request a fade.
+
+
+## Cambuse / mounts acceptance (2.6)
+
+`test_mounts.lua` covers riding/dismounting, independent mount sheets, shared pet
+health, damage/armor/dodge, wound caps, undo, reload, old-peer fallback, active-only
+network payloads and Cambuse migration/regeneration. `test_mounts_ui.lua` exercises
+the actual controls, footer routing and TRP tooltip stacking/hide lifecycles.
+
+In WoW, with two updated clients:
+
+- Load a save with active old Cambuse bonuses. Verify +25 HP, +10 dodge and +2
+  regeneration, then toggle off/on and reload to check no bonus accumulates.
+- Summon two different mounts and edit their sheets; dismount, remount and reload.
+  Verify their HP/armor/dodge persist independently. Test a mount with no journal
+  entry and login while already mounted. Confirm rider dodge is zero in saddle,
+  including true damage, and returns on dismount; mount dodge still works.
+- Toggle the pet link, damage/heal from both sheets, undo/redo, then unlink. Verify
+  a single health pool while linked and restoration of the separate mount sheet.
+- Hover the mounted rider with and without a TRP mount profile. Check the mount
+  stats sit above the mount profile, the rider bars beside the character profile,
+  and no overlapping/stale popup after dismount, profile change, hover change,
+  disabled GrosOrteil popups or TRP loading later. Repeat without TRP installed.
+- Check the Montures page and five affix buttons at minimum window size in both
+  themes. Check the mount title/HP bar and footer restoration target after tab
+  switches and window reopen. Validate actual Blizzard rendering and taint in game;
+  the offline frame doubles cannot certify those.
+
+TRP integration follows the upstream
+[RegisterTooltip.lua](https://github.com/Total-RP/Total-RP-3/blob/main/totalRP3/Modules/Register/Main/RegisterTooltip.lua)
+(`TRP3_CompanionTooltip`, distinct from `TRP3_CharacterTooltip`) and the active-mount
+lookup in
+[CompanionProviderJournal.lua](https://github.com/Total-RP/Total-RP-3/blob/main/totalRP3/Core/CompanionProviderJournal.lua).

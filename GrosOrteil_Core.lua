@@ -146,13 +146,13 @@ local SNAPSHOT_SCALARS = {
   -- Attack stats are mutated by the zone affixes and the insanity tier bonus;
   -- snapshotting them keeps an undone toggle consistent with its recorded
   -- applied deltas.
-  "attaqueMelee", "attaqueDistance", "insanityAtkApplied",
+  "attaqueMelee", "attaqueDistance", "insanityAtkApplied", "regenParTour",
 }
 local SNAPSHOT_PET_FIELDS = {
   "enabled", "name", "hp", "maxHp",
   "armor", "trueArmor", "dodge",
   "attaqueMelee", "attaqueDistance", "tempArmor",
-  "authorityEnabled",
+  "authorityEnabled", "regenParTour",
 }
 local RANGED_FIELDS = {}
 for _, def in ipairs(ns.Shared.RANGED_ATTACKS) do
@@ -226,6 +226,7 @@ local function deepCopyState(s)
   local pms = p.magicShield
   pc.magicShield = pms and { hp = pms.hp, maxHp = pms.maxHp, armor = pms.armor } or { hp = 0, maxHp = 0, armor = 0 }
   c.pet = pc
+  c.mounts = deepCopyTable(s.mounts)
   -- Grimoire authoring participates in the global undo stack. Its nested icon
   -- and cost tables must never be shared between live state and snapshots.
   c.grimoire = deepCopyTable(s.grimoire)
@@ -283,6 +284,13 @@ local function restoreSnapshot(snap)
   p.magicShield.hp    = spms and spms.hp    or 0
   p.magicShield.maxHp = spms and spms.maxHp or 0
   p.magicShield.armor = spms and spms.armor or 0
+  local restoredMounts = deepCopyTable(snap.mounts) or {}
+  -- Discovery is world state, not an undoable edit. Keep sheets first seen
+  -- after this snapshot, including the mount that is still physically out.
+  for id, mount in pairs(s.mounts or {}) do
+    if not restoredMounts[id] then restoredMounts[id] = deepCopyTable(mount) end
+  end
+  s.mounts = restoredMounts
   s.grimoire = deepCopyTable(snap.grimoire)
   if ns.Grimoire and ns.Grimoire.EnsureState then
     ns.Grimoire.EnsureState(s)
@@ -467,6 +475,7 @@ local function ensurePetDefaults(pet)
     if type(pet.magicShield.armor) ~= "number" then pet.magicShield.armor = 0 end
   end
   pet.tempMagicBlock = nil
+  if type(pet.regenParTour) ~= "number" then pet.regenParTour = 0 end
   if type(pet.authorityEnabled) ~= "boolean" then pet.authorityEnabled = false end
   if type(pet.affixes)      ~= "table" then pet.affixes      = {} end
   if type(pet.affixApplied) ~= "table" then pet.affixApplied = {} end
@@ -659,6 +668,7 @@ function ns.Core_Init()
   end
   ensureHistory(db.state)
   ensurePet(db.state)
+  if ns.Mounts then ns.Mounts.EnsureState(db.state) end
   if ns.Grimoire and ns.Grimoire.EnsureState then
     ns.Grimoire.EnsureState(db.state)
   else
@@ -710,6 +720,7 @@ function ns.Core_Init()
 
   Core.state = db.state
   updateWoundsSticky(Core.state)
+  if ns.Mounts then ns.Mounts.Sync() end
   prevSnapshot = deepCopyState(Core.state)
   notify()
 end
@@ -1243,7 +1254,7 @@ local function applyHit(s, t, rawAmount, opts)
 
   local hpBefore    = t.hp or 0
   local maxBefore   = t.maxHp or 0
-  local dodgeBefore = math.max(0, t.dodge or 0)
+  local dodgeBefore = opts.isPet and math.max(0, t.dodge or 0) or ns.Shared.GetEffectiveDodge(s)
   local manaBefore  = (not opts.isPet) and (s.res or 0) or nil
 
   -- Dodge
@@ -1262,7 +1273,7 @@ local function applyHit(s, t, rawAmount, opts)
       hpAfter   = hpBefore,
       maxHp     = maxBefore,
     })
-    emitCombatText("DODGE")
+    emitCombatText("DODGE", nil, opts.subject or "CHAR")
     bump(); notify()
     return
   end
@@ -1341,9 +1352,9 @@ local function applyHit(s, t, rawAmount, opts)
   end
 
   if dmg > 0 then
-    emitCombatText("DAMAGE", dmg)
+    emitCombatText("DAMAGE", dmg, opts.subject or "CHAR")
   elseif rawAmount > 0 then
-    emitCombatText("BLOCK")
+    emitCombatText("BLOCK", nil, opts.subject or "CHAR")
   end
 
   local entry = {
@@ -1429,7 +1440,7 @@ local function applyHeal(s, t, amount, opts)
                 woundCap = woundCapFn(target), healer = opts.healer })
   updateWoundsSticky(t)
   local appliedHeal = (t.hp or 0) - hpBefore
-  if appliedHeal > 0 then emitCombatText("HEAL", appliedHeal) end
+  if appliedHeal > 0 then emitCombatText("HEAL", appliedHeal, opts.subject or "CHAR") end
 
   if (t.hp or 0) > 0 and not opts.isPet then s.stabilise = nil end
   bump(); notify()
@@ -1585,8 +1596,9 @@ end
 local TIMED_AFFIXES = { ELIXIR_PUISSANCE = 3, ELIXIR_RESISTANCE = 3 }
 
 local AFFIX_DELTAS = {
-  CAMBUSE_ATTAQUE = { attaqueMelee = 10, attaqueDistance = 10, dodge = 5 },
-  CAMBUSE_PV = { maxHp = 20, hp = 20 },
+  CAMBUSE_ATTAQUE = { attaqueMelee = 10, attaqueDistance = 10, dodge = 10 },
+  CAMBUSE_PV = { maxHp = 25, hp = 25 },
+  CAMBUSE_REGEN = { regenParTour = 2 },
   ELIXIR_PUISSANCE = { attaqueMelee = 30, attaqueDistance = 30 },
   ELIXIR_RESISTANCE = { armor = 6 },
 }
@@ -1638,7 +1650,7 @@ local function removeAffix(t, key)
   for field, delta in pairs(applied) do
     -- Only recorded, finite stat deltas can be reversed on legacy saves.
     if (field == "attaqueMelee" or field == "attaqueDistance" or field == "dodge"
-        or field == "armor" or field == "maxHp" or field == "hp")
+        or field == "armor" or field == "maxHp" or field == "hp" or field == "regenParTour")
         and type(delta) == "number" and delta == delta and math.abs(delta) <= 1e9 then
       t[field] = math.max(affixFieldMin(field), (t[field] or 0) - delta)
       if field == "armor" and t.shamanPosture == "FEU" and t.shamanPostureBase then
@@ -1661,6 +1673,30 @@ migrateAffixes = function(t)
   removeAffix(t, "BELEDAR_JOUR")
   removeAffix(t, "BELEDAR_NUIT")
   t.specialCase = nil
+  -- Upgrade active pre-2.6 Cambuse effects only once, keeping the recorded
+  -- contribution reversible. Inactive effects pick up the new deltas on use.
+  if not t._cambuseV2 then
+    for _, key in ipairs({ "CAMBUSE_ATTAQUE", "CAMBUSE_PV" }) do
+      if t.affixes[key] then
+        local applied = t.affixApplied[key]
+        if type(applied) ~= "table" then
+          applied = key == "CAMBUSE_PV" and { hp = 20, maxHp = 20 }
+            or { attaqueMelee = 10, attaqueDistance = 10, dodge = 5 }
+          t.affixApplied[key] = applied
+        end
+        local fields = key == "CAMBUSE_PV" and { "maxHp", "hp" } or { "dodge" }
+        for _, field in ipairs(fields) do
+          local oldDelta = tonumber(applied[field]) or 0
+          local desired = AFFIX_DELTAS[key][field]
+          local before = t[field] or 0
+          t[field] = math.min(1e9, math.max(affixFieldMin(field), before + desired - oldDelta))
+          applied[field] = oldDelta + t[field] - before
+        end
+      end
+    end
+    clampHpToEffectiveMax(t)
+    t._cambuseV2 = true
+  end
   for key, duration in pairs(TIMED_AFFIXES) do
     if t.affixes[key] then
       local turns = t.affixTurns[key]
@@ -1939,6 +1975,50 @@ function Core.PetDailyRegenHP()
   bump(); notify()
 end
 
+function Core.PetRegenParTour()
+  local s = Core.state
+  local p = s and ensurePet(s)
+  if p and p.enabled then
+    applyHeal(s, p, p.regenParTour or 0, { kind = "HEAL", isPet = true, subject = "PET" })
+  end
+end
+
+-- Mount configuration uses the same undo, damage, wounds and history pipeline
+-- as pets. Runtime mounting is deliberately excluded from undo snapshots.
+function Core.CommitMountMutation()
+  if not Core.state then return end
+  bump(); notify()
+end
+
+function Core.RefreshMountState()
+  if not Core.state then return end
+  Core.state.rev = (Core.state.rev or 0) + 1
+  prevSnapshot = deepCopyState(Core.state)
+  notify()
+end
+
+function Core.MountAction(action, value)
+  local s = Core.state
+  local m = ns.Mounts and ns.Mounts.GetSelected()
+  if not s or not m then return end
+  local subject = m == s.pet and "PET" or "MOUNT"
+  if action == "HEAL" then
+    applyHeal(s, m, value, { kind = "HEAL", isPet = true, subject = subject })
+  elseif action == "RESTORE" or action == "DAILY" then
+    local before = m.hp
+    local gain = action == "DAILY" and math.floor(m.maxHp * 0.10 + 0.5) or m.maxHp
+    m.hp = math.min(m.maxHp, m.hp + gain)
+    recomputePetWounds(m)
+    pushHistory({ kind = action == "DAILY" and "DAILY_REGEN_HP" or "RESTORE_HP",
+      subject = subject, gain = gain, hpBefore = before, hpAfter = m.hp, maxHp = m.maxHp })
+    bump(); notify()
+  elseif action == "DAMAGE_ARMOR" or action == "DAMAGE_TRUE" or action == "DAMAGE_DIRECT" then
+    applyHit(s, m, value, { armor = action == "DAMAGE_ARMOR", isPet = true,
+      direct = action == "DAMAGE_DIRECT", ignoreDodge = action == "DAMAGE_DIRECT",
+      historyKind = action, subject = subject })
+  end
+end
+
 function Core.PetDailyRegenRes()
   -- Pets have no primary resource; no-op kept for button symmetry.
 end
@@ -1988,7 +2068,7 @@ end
 function API.GetDodge()
   local s = Core.state
   if not s then return nil end
-  return tonumber(s.dodge) or 0
+  return ns.Shared.GetEffectiveDodge(s)
 end
 
 function API.IsPetEnabled()
@@ -2005,3 +2085,4 @@ function API.OnChange(fn)
   if type(fn) ~= "function" then return end
   return Core.OnChange(function() fn() end)
 end
+
