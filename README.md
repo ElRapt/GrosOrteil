@@ -40,3 +40,36 @@ non listés sont ignorés. Les plaques interdites par WoW ne sont pas modifiées
 le résumé reste disponible pour le groupe et les chuchotements.
 
 Voir [les tests et la vérification en jeu](tests/README.md).
+
+
+## Cambuse et montures (2.6)
+
+- **Cambuse : PV** ajoute 25 PV et 25 PV maximum.
+- **Cambuse : Attaque** ajoute 10 en attaque (CaC et distance) et 10 en esquive.
+- **Cambuse : Régénération** ajoute 2 à la régénération par tour. Utilisez le
+  bouton de régénération pour recevoir le soin ; **Tour suivant** fait seulement
+  avancer les élixirs. Les anciens bonus Cambuse actifs sont mis à jour au chargement.
+
+Dans `/go` → **Familier** → **Montures**, invoquez une monture dans WoW pour
+créer sa fiche. Chaque monture du journal conserve son nom, ses PV, son armure
+et son esquive. **Précédente / Suivante** parcourent les fiches déjà créées ;
+**Actuelle** revient à la monture sortie. Une fiche générique couvre les
+montures que le journal ne peut pas identifier.
+
+**Utiliser mon familier** partage les statistiques et les PV du familier :
+les dégâts et soins appliqués depuis l'une des deux fiches affectent le même
+compagnon. Désactiver ce lien retrouve les valeurs propres à la monture.
+Les actions, les restaurations du pied de fenêtre et l'annulation fonctionnent
+sur la fiche affichée. Les événements des montures figurent dans l'historique
+**Familier**, identifiés par `[Monture]` lorsqu'elles sont indépendantes.
+
+Tant que WoW indique que le personnage est en selle, son esquive effective est
+nulle. Sa valeur de base est conservée et redevient disponible à pied. La monture
+garde sa propre esquive ; les dégâts du cavalier ne lui sont pas transférés.
+
+Au survol d'un cavalier utilisant cette version, les PV, l'armure et l'esquive de
+sa monture apparaissent au-dessus de son profil de monture TRP3, s'il existe.
+Les barres du cavalier restent visibles à côté du profil du personnage pour
+éviter le chevauchement. Sans profil de monture, les statistiques s'empilent
+au-dessus des barres du cavalier. TRP3 reste facultatif. Seule la fiche de la
+monture actuellement sortie est synchronisée, pas l'ensemble des fiches.

@@ -91,13 +91,13 @@ local NUMERIC_FIELDS = {
   { "auth", 0 }, { "maxAuth", 5 },
   { "attaqueMelee", 0 }, { "attaqueDistance", 0 },
   { "chance", 0 }, { "maxChance", 0 },
-  { "perception", 0 },
+  { "perception", 0 }, { "regenParTour", 0 },
 }
 local PET_NUMERIC_FIELDS = {
   { "hp", 0 }, { "maxHp", 0 },
   { "armor", 0 }, { "trueArmor", 0 }, { "dodge", 0 },
   { "attaqueMelee", 0 }, { "attaqueDistance", 0 },
-  { "tempArmor", 0 },
+  { "tempArmor", 0 }, { "regenParTour", 0 },
 }
 
 local function copyNumeric(src, fields)
@@ -165,6 +165,20 @@ local function buildPayload(src, petSrc, classKey)
     armor = tonumber(pms.armor) or 0,
   }
   out.pet = pet
+  out.mounted = src.mounted == true
+  -- Only the active mount crosses the wire, never the whole stable.
+  local mountSrc, config
+  if src.mounts and ns.Mounts then mountSrc, config = ns.Mounts.GetActive(src)
+  elseif type(src.mount) == "table" then mountSrc, config = src.mount, src.mount end
+  if out.mounted and type(mountSrc) == "table" then
+    out.mount = {
+      name = type(mountSrc.name) == "string" and mountSrc.name:sub(1, 120) or "Monture",
+      hp = receivedRange(mountSrc.hp, 0), maxHp = math.max(1, receivedRange(mountSrc.maxHp, 1)),
+      armor = receivedRange(mountSrc.armor, 0), dodge = receivedRange(mountSrc.dodge, 0),
+      isPet = config.isPet == true,
+    }
+    out.mount.hp = math.min(out.mount.hp, out.mount.maxHp)
+  end
   return out
 end
 
@@ -634,3 +648,4 @@ end
 function ns.Comm_Init()
   Comm:Initialize()
 end
+

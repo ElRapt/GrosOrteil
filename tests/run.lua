@@ -28,6 +28,7 @@ _G.T = require("framework")
 -- Register test files. Add new ones to this list.
 local TESTS = {
   "test_shared",
+  "test_mounts",
   "test_history",
   "test_core",
   "test_grimoire",
@@ -55,3 +56,4 @@ end
 
 local ok = _G.T.run({ verbose = verbose })
 os.exit(ok and 0 or 1)
+

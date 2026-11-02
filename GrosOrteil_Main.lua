@@ -119,6 +119,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
     initMinimapIcon()
   elseif event == "PLAYER_LOGIN" then
     ns.Core_Init()
+    ns.Mounts.Initialize()
     ns.UI_Init()
     if ns.Comm_Init then
       ns.Comm_Init()
@@ -232,3 +233,4 @@ f:SetScript("OnEvent", function(_, event, arg1)
     end
   end
 end)
+

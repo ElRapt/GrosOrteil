@@ -75,6 +75,9 @@ local CACHE_MAX  = 64  -- entry cap; oldest are dropped when exceeded
 
 -- Hover popup forward declarations (functions defined at end of file)
 local hoverFrame
+local mountHoverFrame
+local hoverOwnerName
+local updateMountHover
 local tryShowHover
 local hideHoverPopup
 local reanchorHover
@@ -983,7 +986,7 @@ local function showForState(targetName, state, petOnly)
 
   local armor = tonumber(state.armor) or 0
   local trueArmor = tonumber(state.trueArmor) or 0
-  local dodge = tonumber(state.dodge) or 0
+  local dodge = Shared.GetEffectiveDodge(state)
   popupFrame.armorText:SetText(string.format("Armure : %d (+%d)", roundNumber(armor), roundNumber(trueArmor)))
   popupFrame.dodgeText:SetText(string.format("Esquive : %d", roundNumber(dodge)))
 
@@ -1313,36 +1316,37 @@ function Popup:Initialize()
     end)
   end
 
-  -- Hook TRP3_CharacterTooltip; retry via ADDON_LOADED if not ready yet
-  local function hookTRP3Tooltip()
-    local trpTip = rawget(_G, "TRP3_CharacterTooltip")
-    if not trpTip then return false end
-    trpTip:HookScript("OnShow", function()
-      if C_Timer then
-        C_Timer.After(0, function()
-          if tryShowHover then tryShowHover() end
-          if reanchorHover then reanchorHover() end
+  -- TRP shows mount profiles in a second tooltip, above the character.
+  -- Hook both lifecycles independently, including late creation/loading.
+  local hooked = {}
+  local function hookTRP3Tooltips()
+    for _, name in ipairs({ "TRP3_CharacterTooltip", "TRP3_CompanionTooltip" }) do
+      local tip = rawget(_G, name)
+      if tip and not hooked[tip] then
+        hooked[tip] = true
+        tip:HookScript("OnShow", function()
+          C_Timer.After(0, function() if tryShowHover then tryShowHover() end end)
+        end)
+        tip:HookScript("OnHide", function()
+          if mountHoverFrame then mountHoverFrame:Hide() end
+          C_Timer.After(0, function()
+            local charTip = rawget(_G, "TRP3_CharacterTooltip")
+            if (charTip and charTip:IsShown()) or (gt and gt:IsShown()) then
+              if tryShowHover then tryShowHover() end
+            elseif hideHoverPopup then hideHoverPopup() end
+          end)
         end)
       end
-    end)
-    trpTip:HookScript("OnHide", function()
-      if not gt or not gt:IsShown() then
-        if hideHoverPopup then hideHoverPopup() end
-      end
-    end)
-    return true
+    end
   end
-
-  if not hookTRP3Tooltip() then
-    local trpWaitFrame = CreateFrame("Frame")
-    trpWaitFrame:RegisterEvent("ADDON_LOADED")
-    trpWaitFrame:SetScript("OnEvent", function(_, _, addonName)
-      if addonName == "totalRP3" then
-        hookTRP3Tooltip()
-        trpWaitFrame:UnregisterAllEvents()
-      end
-    end)
-  end
+  hookTRP3Tooltips()
+  local trpWaitFrame = CreateFrame("Frame")
+  trpWaitFrame:RegisterEvent("ADDON_LOADED")
+  trpWaitFrame:SetScript("OnEvent", hookTRP3Tooltips)
+  ns.Core.OnChange(function()
+    hookTRP3Tooltips()
+    if tryShowHover then tryShowHover() end
+  end)
 
   -- Refresh the popup title the moment TRP3 receives a profile update for
   -- anyone, instead of relying only on the 2s deferred retry. Cheap: a single
@@ -1465,30 +1469,81 @@ local function createHoverPopup()
 end
 
 
+local function matchingTooltip(name)
+  local tip = rawget(_G, name)
+  local target = tip and tip.target
+  if tip and tip:IsShown() and not isSecret(target)
+      and (target == nil or namesMatch(target, hoverOwnerName)) then return tip end
+end
+
 reanchorHover = function()
   if not hoverFrame then return end
-  local trpTip = rawget(_G, "TRP3_CharacterTooltip")
-  if trpTip and trpTip:IsShown() then
-    hoverFrame:ClearAllPoints()
-    hoverFrame:SetPoint("BOTTOMLEFT", trpTip, "TOPLEFT", 0, 2)
-    return
-  end
+  local trpTip = matchingTooltip("TRP3_CharacterTooltip")
+  local mountTip = matchingTooltip("TRP3_CompanionTooltip")
   local gt = rawget(_G, "GameTooltip")
-  if gt and gt:IsShown() then
-    hoverFrame:ClearAllPoints()
+  hoverFrame:ClearAllPoints()
+  if trpTip then
+    if mountTip then
+      -- The mount profile owns the space above the character profile.
+      hoverFrame:SetPoint("BOTTOMLEFT", trpTip, "BOTTOMRIGHT", 4, 0)
+    else
+      hoverFrame:SetPoint("BOTTOMLEFT", trpTip, "TOPLEFT", 0, 2)
+    end
+  elseif gt and gt:IsShown() then
     hoverFrame:SetPoint("BOTTOMLEFT", gt, "TOPLEFT", 0, 2)
-    return
+  else
+    hoverFrame:Hide()
+    if mountHoverFrame then mountHoverFrame:Hide() end
   end
-  hoverFrame:Hide()
 end
 
 hideHoverPopup = function()
+  if mountHoverFrame then mountHoverFrame:Hide() end
   if not hoverFrame then return end
   if hoverFrame.fadeOut and hoverFrame:IsShown() and not hoverFrame.fadeOut:IsPlaying() then
     hoverFrame.fadeOut:Play()
   else
     hoverFrame:Hide()
   end
+end
+
+updateMountHover = function(state, petOnly)
+  local mount = state.mounted and (state.mount or (ns.Mounts and ns.Mounts.GetActive(state)))
+  if petOnly or type(mount) ~= "table" then
+    if mountHoverFrame then mountHoverFrame:Hide() end
+    return
+  end
+  if not mountHoverFrame then
+    mountHoverFrame = CreateFrame("Frame", "GrosOrteilMountHoverPopup", UIParent, "BackdropTemplate")
+    mountHoverFrame:SetFrameStrata("TOOLTIP")
+    mountHoverFrame:SetFrameLevel(10)
+    mountHoverFrame:SetSize(HOVER_BAR_W + HOVER_PAD * 2, 76)
+    Theme.ApplyBoardSkin(mountHoverFrame)
+    mountHoverFrame.title = mountHoverFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    mountHoverFrame.title:SetPoint("TOPLEFT", HOVER_PAD, -HOVER_PAD)
+    mountHoverFrame.title:SetWidth(HOVER_BAR_W)
+    mountHoverFrame.title:SetHeight(18)
+    mountHoverFrame.title:SetWordWrap(false)
+    mountHoverFrame.hp = createHoverBar(mountHoverFrame)
+    mountHoverFrame.hp.frame:SetPoint("TOPLEFT", HOVER_PAD, -30)
+    mountHoverFrame.defense = mountHoverFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    mountHoverFrame.defense:SetPoint("TOPLEFT", HOVER_PAD, -52)
+    mountHoverFrame.defense:SetWidth(HOVER_BAR_W)
+  end
+  local maxHp = math.max(1, tonumber(mount.maxHp) or 1)
+  local hp = math.max(0, math.min(maxHp, tonumber(mount.hp) or 0))
+  mountHoverFrame.title:SetText("Monture : " .. (mount.name or "Monture"))
+  mountHoverFrame.hp.bar:SetMinMaxValues(0, maxHp)
+  mountHoverFrame.hp.bar:SetValue(hp)
+  mountHoverFrame.hp.bar:SetStatusBarColor(0.95, 0.62, 0.18, 1)
+  mountHoverFrame.hp.label:SetText(string.format("PV : %d / %d", roundNumber(hp), roundNumber(maxHp)))
+  mountHoverFrame.defense:SetText(string.format("Armure : %d | Esquive : %d",
+    roundNumber(mount.armor or 0), roundNumber(mount.dodge or 0)))
+  local mountTip = matchingTooltip("TRP3_CompanionTooltip")
+  local anchor = mountTip or hoverFrame
+  mountHoverFrame:ClearAllPoints()
+  mountHoverFrame:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 2)
+  mountHoverFrame:Show()
 end
 
 -- Public: subscribe to incoming states. Returns an unsubscribe function.
@@ -1715,7 +1770,14 @@ end
 
 tryShowHover = function()
   local settings = getSettings()
-  if settings.popupOnTarget == false then return end
+  if settings.popupOnTarget == false then hideHoverPopup(); return end
+
+  local charTip = rawget(_G, "TRP3_CharacterTooltip")
+  local gt = rawget(_G, "GameTooltip")
+  if not ((charTip and charTip:IsShown()) or (gt and gt:IsShown())) then
+    hideHoverPopup()
+    return
+  end
 
   -- Resolve hovered unit name and detect whether it is a pet.
   local unitName, isPet
@@ -1748,8 +1810,8 @@ tryShowHover = function()
   local cacheKey = toCacheKey(unitName)
   local state = getCached(cacheKey)
 
-  -- Fallback for the local player: use ns.Core.state directly (never cached).
-  if not state and UnitName then
+  -- Local state is always fresher than a cached self-response.
+  if UnitName then
     local playerName = UnitName("player")
     if playerName and namesMatch(unitName, playerName) then
       state = ns.Core and ns.Core.state
@@ -1773,7 +1835,9 @@ tryShowHover = function()
     return
   end
 
+  hoverOwnerName = unitName
   showHoverForState(state, isPet)
+  updateMountHover(state, isPet)
 end
 
 -- ============================================================
@@ -1804,3 +1868,4 @@ Popup._test = {
 function ns.TargetPopup_Init()
   Popup:Initialize()
 end
+
